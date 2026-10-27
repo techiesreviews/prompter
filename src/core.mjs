@@ -10,7 +10,7 @@ export const MAX_DECODED_BYTES = 1_000_000;
 
 export const FORMAT = [
   { syntax: "### **TITLE · mm:ss**", meaning: "Starts a section. The time is optional and is when the section should start." },
-  { syntax: "- Label: https://full-url", meaning: "A link. Put links first under the title. Number keys 1–9 open them on the main screen." },
+  { syntax: "- Label: https://full-url", meaning: "A link, on its own line. Right under the title, the first link opens on the main screen when the section starts. Or put a link where you talk about it: it opens automatically when you reach that line, and the prompter shows a small \"opens here\" marker there. Every link of a section also gets a button at the top; number keys 1–9 open them." },
   { syntax: "QL: question", meaning: "The one main question of the section. Read it silently and answer it in your own words; it is not read aloud. Shown at the top of the section." },
   { syntax: "Plain line", meaning: "A spoken line." },
   { syntax: "Next: … / Now: …", meaning: "A transition: where you are going, then what you do now." },
@@ -34,7 +34,7 @@ export const PRESETS = {
     rules: [
       "Order: prep first, then intro, then the show.",
       "Section titles: small (five words or fewer), numbered, ALL CAPS, with start time. PREP needs no number or time; INTRO needs no number.",
-      "Each section: links first, then one QL main question, then lines of five words or fewer (only URLs may be longer). This includes the intro, transitions and reminders. PREP needs no QL.",
+      "Each section: links either first (they open when the section starts) or on the line where you talk about them (they open when you reach that line). Then one QL main question, then lines of five words or fewer (only URLs may be longer). This includes the intro, transitions and reminders. PREP needs no QL.",
       "Transitions are two short lines: `Next: …` then `Now: …`.",
       "Livestreams: one main topic in depth for most of the stream; the last 5–10 minutes for other things you worked on. The title and thumbnail promise the main topic.",
     ],
@@ -52,7 +52,7 @@ export const PRESETS = {
     prepThenIntro: false,
     rules: [
       "Every section has a title. A start time is optional.",
-      "Put links first under the title.",
+      "Put a link first under the title to open it when the section starts, or on the line where you talk about it to open it when you reach that line.",
       "Keep lines short: a warning above ten words (URLs do not count).",
       "A QL main question is optional; use at most one per section.",
     ],
@@ -108,12 +108,12 @@ Now: links on screen.
 ### **2 · LINKS ON SCREEN · 06:00**
 
 - Docs: https://developer.mozilla.org/
-- Video: https://www.youtube.com/watch?v=aqz-KE-bpKQ
 
 QL: How do links help viewers?
 
-Press 1 for the docs.
-Press 2 for the video.
+The docs open first.
+Then the video plays.
+- Video: https://www.youtube.com/watch?v=aqz-KE-bpKQ
 The main screen follows along.
 
 Next: wrap up.
@@ -127,7 +127,7 @@ QL: What should they try first?
 
 - Write one question
 - Five words per line
-- Links first, always
+- Links where you talk
 
 Thanks for watching.
 `;
@@ -180,16 +180,18 @@ Now: connect your main screen.
 
 ---
 
-### **2 · LINKS FIRST · 01:30**
+### **2 · LINKS ON SCREEN · 01:30**
 
 - Example site: https://example.com
-- Example video: https://www.youtube.com/watch?v=aqz-KE-bpKQ
 
 QL: How do links help viewers?
 
-Links go first, always.
-Each section opens its link.
-Press 2 for the video.
+A first link opens here.
+Or put links mid-section.
+Like this video link:
+- Example video: https://www.youtube.com/watch?v=aqz-KE-bpKQ
+It opens when reached.
+Or press 2 any time.
 Next and Now: transitions.
 
 Next: your privacy.
@@ -285,6 +287,9 @@ export function classify(line) {
  * Parse a script into sections. Each section has title, time, line, links,
  * items (everything but links, with gaps) and entries (all non-gap lines in
  * order, links included). Lines are 1-based in the original text.
+ * A link right under the title (before any other line) is a top link; one
+ * after other lines is inline (`inline: true`) and `at` is its place among
+ * the section's items: it sits just before items[at].
  */
 export function parse(md) {
   const text = String(md ?? "").replace(/\r/g, "");
@@ -313,10 +318,31 @@ export function parse(md) {
     }
     if (/^#{1}\s|^#{4,}\s/.test(line)) entry.heading = true;
     cur.entries.push(entry);
-    if (entry.type === "link") cur.links.push(entry);
+    if (entry.type === "link") cur.links.push({ ...entry, inline: cur.items.length > 0, at: cur.items.length });
     else cur.items.push(entry);
   });
   return out;
+}
+
+/**
+ * The link that belongs on the main screen at a reading point: the most recent
+ * one above the reading line. `si` is the section at the reading line and
+ * `reached` the index (in its links) of the last inline link the reading line
+ * has passed there, or -1. Each section's first top link counts from the
+ * section start; inline links count from their own line. Returns { s, l } or
+ * null when no link is above the reading line.
+ */
+export function linkAt(sections, si, reached = -1) {
+  if (reached >= 0 && sections[si]?.links[reached]) return { s: si, l: reached };
+  for (let k = Math.min(si, sections.length - 1); k >= 0; k--) {
+    const links = sections[k].links;
+    if (k < si) {
+      const last = links.findLastIndex((l) => l.inline);
+      if (last >= 0) return { s: k, l: last };
+    }
+    if (links[0] && !links[0].inline) return { s: k, l: 0 };
+  }
+  return null;
 }
 
 // ---------- Checking ----------
@@ -338,6 +364,8 @@ export function youtubeSeconds(t) {
 
 /** "mm:ss" (minutes may exceed 59) to seconds. */
 export function toSeconds(t) { const [m, s] = t.split(":").map(Number); return m * 60 + s; }
+// "- Label: www.site.com" or "- Label: site.com/page": a link without https://.
+const bareAddressRe = /^[^:]{1,40}:\s+(?:www\.\S+|[\w-]+(?:\.[\w-]+)*\.(?:com|org|net|io|dev|app|ai|co|tools|review|tv|me|uk|de|nl|eu)(?:\/\S*)?)$/i;
 const isPrep = (title) => /^PREP\b/i.test(title);
 const isIntro = (title) => /^INTRO\b/i.test(title);
 
@@ -383,13 +411,10 @@ export function check(md, presetName) {
 
     if (!s.entries.length) add("warning", "empty-section", s, i, s.line, `${where} is empty.`);
 
-    // Links first.
-    let seenOther = false;
+    // Links: first under the title, or inline where they are talked about.
     for (const e of s.entries) {
-      if (e.type === "link") {
-        if (seenOther) add(hard, "link-not-first", s, i, e.line, `${where}: move the link "${e.label}" up, before the other lines.`);
-        if (!hostOf(e.url)) add("error", "bad-link", s, i, e.line, `${where}: "${e.url}" is not a valid web address.`);
-      } else seenOther = true;
+      if (e.type === "link" && !hostOf(e.url)) add("error", "bad-link", s, i, e.line, `${where}: "${e.url}" is not a valid web address.`);
+      if (e.type === "bullet" && bareAddressRe.test(e.text)) add("warning", "link-no-url", s, i, e.line, `${where}: "${e.text}" looks like a link but never opens; write the full address, like "- Label: https://example.com".`);
     }
     if (s.links.length > 9) add("warning", "too-many-links", s, i, s.links[9].line, `${where} has ${s.links.length} links; only the first 9 have number keys.`);
 

@@ -88,3 +88,29 @@ export function followLine(lines, current, heard, { ahead = 6, back = 1, tailWor
   }
   return pick;
 }
+
+/**
+ * Find the link whose label the speaker just said. `links` are candidates with
+ * a `label`, in priority order (the current section's links, then the next
+ * section's); `heard` is recent recognised text. A label matches when all its
+ * words are heard together as whole words (case and accents ignored) within
+ * the last `tailWords` words, so a label said a while ago does not match
+ * again. When several match, the one said last wins; a tie goes to the
+ * earlier candidate. Returns the candidate or null.
+ */
+export function heardLink(links, heard, { tailWords = 8 } = {}) {
+  const tail = speechWords(heard).slice(-tailWords);
+  let pick = null;
+  let pickEnd = -1;
+  for (const link of links) {
+    const words = speechWords(link?.label);
+    if (!words.length) continue;
+    for (let end = tail.length; end >= words.length; end--) {
+      if (words.every((w, i) => tail[end - words.length + i] === w)) {
+        if (end > pickEnd) { pick = link; pickEnd = end; }
+        break;
+      }
+    }
+  }
+  return pick;
+}

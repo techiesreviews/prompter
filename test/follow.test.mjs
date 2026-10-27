@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DEMO_SCRIPT, parse } from "../src/core.mjs";
-import { followLine, sameWord, speechWords } from "../src/follow.mjs";
+import { followLine, heardLink, sameWord, speechWords } from "../src/follow.mjs";
 
 const script = [
   "Writing scripts takes too long.",
@@ -71,4 +71,28 @@ test("the demo script's spoken lines are all reachable in order", () => {
     at = followLine(spoken, at, spoken[k].join(" "));
     assert.equal(at, k, `line ${k}: ${spoken[k].join(" ")}`);
   }
+});
+
+test("heardLink: a link label said as whole words, case-insensitive, opens that link", () => {
+  const links = [{ label: "Patchstack", id: "p" }, { label: "Plugin Check", id: "pc" }, { label: "Café Docs", id: "c" }];
+  assert.equal(heardLink(links, "and then PATCHSTACK finds it")?.id, "p");
+  assert.equal(heardLink(links, "run plugin check now")?.id, "pc");
+  assert.equal(heardLink(links, "see the cafe docs")?.id, "c", "accents ignored");
+  assert.equal(heardLink(links, "patchstacks are great"), null, "whole words only");
+  assert.equal(heardLink(links, "patch stack"), null);
+  assert.equal(heardLink(links, "plugin and check"), null, "all words together");
+  assert.equal(heardLink(links, "the plugin"), null, "part of a label is not enough");
+  assert.equal(heardLink(links, ""), null);
+  assert.equal(heardLink([], "patchstack"), null);
+  assert.equal(heardLink([{ label: "" }], "anything"), null);
+});
+
+test("heardLink: the label said last wins; old words fall out of the tail", () => {
+  const links = [{ label: "Patchstack", id: "p" }, { label: "Wordfence", id: "w" }];
+  assert.equal(heardLink(links, "patchstack and wordfence")?.id, "w");
+  assert.equal(heardLink(links, "wordfence then patchstack")?.id, "p");
+  assert.equal(heardLink(links, "patchstack one two three four five six seven eight"), null, "said more than 8 words ago");
+  assert.equal(heardLink(links, "patchstack one two three four five six seven")?.id, "p");
+  const twice = [{ label: "Docs", id: "a" }, { label: "docs", id: "b" }];
+  assert.equal(heardLink(twice, "open the docs")?.id, "a", "a tie goes to the earlier candidate (current section first)");
 });

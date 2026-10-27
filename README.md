@@ -5,10 +5,10 @@ A free teleprompter for talking to camera, plus an MCP server so your AI assista
 **Live:** https://prompter.techies.tools
 
 - Big text, auto-scroll, a reading line and a show clock.
-- A second "main screen" window that opens each section's links as you reach them (YouTube links play full size).
+- A second "main screen" window that opens each link as you reach it, at the start of a section or on the line where you talk about it (YouTube links play full size). With Follow my voice, saying a link's name opens it.
 - Follow my voice (Chrome and Edge): the prompter listens and keeps the line you are reading at the reading mark. Your browser's speech service hears your voice; the script stays on your device.
 - Sliders for speed and text size, and a narrow column to keep your eyes near the camera.
-- A checker (through the MCP server) that points out long lines, a missing main question, links in the wrong place and similar problems.
+- A checker (through the MCP server) that points out long lines, a missing main question, a link without its full address and similar problems.
 - Works offline: the page is one self-contained HTML file.
 
 ## Your script stays with you
@@ -46,12 +46,15 @@ QL: Why one question per section?
 
 One question keeps you focused.
 
+Here is the example page.
+- Example page: https://example.com/page
+
 Next: show the tool.
 Now: links on screen.
 ```
 
 - `### **TITLE · mm:ss**` starts a section (time optional). `---` is ignored.
-- `- Label: https://full-url` is a link; put links first. Number keys 1–9 open them.
+- `- Label: https://full-url` is a link. Right under the title, it opens when the section starts. Put it where you talk about it, and it opens automatically when you reach that line (the prompter shows an "opens here" marker). Number keys 1–9 open a section's links any time.
 - `QL: question` is the one main question: read it silently and answer it; it is not read aloud. Shown at the top of the section.
 - Plain lines are spoken. `Next: …` / `Now: …` are transitions. `[text]` is a private reminder. `- text` is a bullet.
 

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { check, countWords, describeProblems, EXAMPLE_SCRIPT, formatGuide, parse, PRESETS, toSeconds, youtubeSeconds } from "../src/core.mjs";
+import { check, countWords, describeProblems, EXAMPLE_SCRIPT, formatGuide, linkAt, parse, PRESETS, toSeconds, youtubeSeconds } from "../src/core.mjs";
 
 // The parser from the original single-file prompter, kept to prove compatibility.
 function legacyParse(md) {
@@ -125,7 +125,86 @@ test("the built-in example passes both presets with no problems", () => {
 
 const codes = (r) => r.problems.map((p) => p.code);
 
-test("lex preset flags long lines, missing QL, late links, titles and transitions", () => {
+// A section with a top link and two inline links between spoken lines.
+const INLINE = `### **PREP**
+
+- Water
+
+### **INTRO · 00:00**
+
+- Intro: https://example.com/intro
+
+QL: Who protects plugins?
+
+First a quick story.
+Patchstack finds the holes.
+- Patchstack: https://patchstack.com
+
+They pay researchers.
+- Wordfence: https://www.wordfence.com
+Last line here.
+
+### **1 · NO TOP LINK · 05:00**
+
+QL: What next?
+
+Words before.
+- Later: https://example.org
+Words after.
+
+### **2 · NOTHING · 09:00**
+
+QL: Done?
+
+No links here.
+`;
+
+test("parser marks top and inline links with their place among the items", () => {
+  const [, s1, s2] = parse(INLINE);
+  assert.deepEqual(s1.links.map(({ label, inline, at }) => ({ label, inline, at })), [
+    { label: "Intro", inline: false, at: 0 },
+    { label: "Patchstack", inline: true, at: 4 },
+    { label: "Wordfence", inline: true, at: 6 },
+  ]);
+  // Each inline link sits just before items[at]: after the line that talks about it.
+  assert.equal(s1.items[3].text, "Patchstack finds the holes.");
+  assert.equal(s1.items[4].type, "gap");
+  assert.equal(s1.items[5].text, "They pay researchers.");
+  assert.equal(s1.items[6].text, "Last line here.");
+  assert.equal(s1.links[1].line, INLINE.split("\n").indexOf("- Patchstack: https://patchstack.com") + 1);
+  assert.deepEqual(s2.links.map(({ inline, at }) => [inline, at]), [[true, 3]]);
+  assert.ok(s1.items.every((it) => it.type !== "link"), "links stay out of items");
+});
+
+test("linkAt picks the most recent link above the reading line", () => {
+  const sections = parse(INLINE);
+  assert.equal(linkAt(sections, 0, -1), null, "PREP has no link and nothing is above it");
+  assert.deepEqual(linkAt(sections, 1, -1), { s: 1, l: 0 }, "section start: its top link");
+  assert.deepEqual(linkAt(sections, 1, 1), { s: 1, l: 1 }, "passed Patchstack");
+  assert.deepEqual(linkAt(sections, 1, 2), { s: 1, l: 2 }, "passed Wordfence");
+  assert.deepEqual(linkAt(sections, 2, -1), { s: 1, l: 2 }, "no top link: the last inline link above stays");
+  assert.deepEqual(linkAt(sections, 2, 0), { s: 2, l: 0 });
+  assert.deepEqual(linkAt(sections, 3, -1), { s: 2, l: 0 }, "a section without links keeps the link above");
+  // Moving back: above section 2's inline link, the previous section's last link returns.
+  assert.deepEqual(linkAt(sections, 2, -1), { s: 1, l: 2 });
+  assert.equal(linkAt([], 0, -1), null);
+  const onlyTop = parse("### **A**\n- One: https://a.test\n- Two: https://b.test\nHi\n### **B**\nHo");
+  assert.deepEqual(linkAt(onlyTop, 1, -1), { s: 0, l: 0 }, "top links: the first one counts, as before");
+});
+
+test("inline links are fine in both presets; a link without https:// is flagged", () => {
+  for (const name of Object.keys(PRESETS)) {
+    const r = check(INLINE, name);
+    assert.deepEqual(r.problems, [], `${name}: ${describeProblems(r)}`);
+  }
+  const bare = check("### **INTRO · 00:00**\n\nQL: Why?\n\nLook here.\n- Patchstack: patchstack.com/db\n- Site: www.example.com\n- Tool: Node.js", "lex");
+  const flagged = bare.problems.filter((p) => p.code === "link-no-url");
+  assert.deepEqual(flagged.map((p) => p.line), [6, 7]);
+  assert.ok(flagged.every((p) => p.severity === "warning"));
+  assert.ok(codes(check("### **A**\nHi\n- Bad: https://[x", "lex")).includes("bad-link"), "an inline link still needs a valid address");
+});
+
+test("lex preset flags long lines, missing QL, titles and transitions", () => {
   const md = `### **PREP**
 
 - Water
@@ -148,7 +227,7 @@ Now: alone.
   const c = codes(r);
   assert.ok(c.includes("line-too-long"));
   assert.ok(c.includes("missing-ql"));
-  assert.ok(c.includes("link-not-first"));
+  assert.ok(!c.includes("link-not-first"), "a link mid-section is an inline link");
   assert.ok(c.includes("title-caps"));
   assert.ok(c.includes("title-number"));
   assert.equal(c.filter((x) => x === "transition-pair").length, 2);
@@ -157,8 +236,6 @@ Now: alone.
   assert.equal(long.section, 2);
   assert.equal(long.line, 9);
   assert.equal(long.severity, "error");
-  const late = r.problems.find((p) => p.code === "link-not-first");
-  assert.equal(late.line, 14);
 });
 
 test("lex preset wants QL first, one QL, times in order and prep then intro", () => {
@@ -193,7 +270,7 @@ This line here has eleven words in it, which is too many.
 `;
   const r = check(md, "default");
   assert.equal(r.ok, true);
-  assert.deepEqual(codes(r).sort(), ["line-too-long", "link-not-first"]);
+  assert.deepEqual(codes(r).sort(), ["line-too-long"]);
   assert.ok(r.problems.every((p) => p.severity === "warning"));
 });
 
@@ -222,6 +299,8 @@ test("format guide carries the format, the preset rules and the example", () => 
   assert.match(lex, /prep first, then intro/);
   assert.match(lex, /five words or fewer/);
   assert.match(lex, /Livestreams/);
+  assert.match(lex, /opens automatically when you reach that line/);
+  assert.match(lex, /links either first \(they open when the section starts\) or on the line where you talk about them/);
   assert.ok(lex.includes(EXAMPLE_SCRIPT.trim()));
   assert.match(formatGuide("default"), /Preset: default/);
 });
@@ -238,4 +317,7 @@ test("the demo script follows the lex preset and names its PREP actions", async 
   assert.deepEqual(bullets, Object.keys(DEMO_ACTIONS));
   const types = new Set(parse(DEMO_SCRIPT).flatMap((s) => s.entries.map((e) => e.type)));
   for (const t of ["link", "ql", "say", "next", "now", "note", "bullet"]) assert.ok(types.has(t), `demo shows ${t}`);
+  const links = parse(DEMO_SCRIPT).flatMap((s) => s.links);
+  assert.equal(links.filter((l) => l.inline).length, 1, "the demo shows one inline link");
+  assert.ok(links.some((l) => !l.inline), "and a top link");
 });
