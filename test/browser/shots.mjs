@@ -29,6 +29,53 @@ const SPEECH_STUB = () => {
   window.SpeechRecognition = FakeRecognition;
   delete window.webkitSpeechRecognition;
 };
+// Replaces window.open with a fake main-screen window that records every
+// address it is sent to: window.__screen.visits.
+const SCREEN_STUB = () => {
+  const visits = [];
+  let href = "about:blank";
+  const fake = {
+    closed: false,
+    document: { title: "", body: { style: {}, textContent: "" } },
+    location: { get href() { return href; }, set href(url) { href = url; visits.push(url); } },
+  };
+  window.__screen = { visits };
+  window.open = (url) => { if (url) fake.location.href = url; return fake; };
+};
+
+// A script with a top link and an inline link mid-section, then a section
+// whose only link is inline.
+const INLINE_SCRIPT = `### **PREP**
+
+- Water within reach
+
+### **INTRO · 00:00**
+
+- Intro: https://example.com/intro
+
+QL: Who keeps plugins safe?
+
+First a short story.
+A plugin had a hole.
+Someone found it fast.
+Patchstack finds the holes.
+- Patchstack: https://patchstack.com
+They pay researchers.
+Researchers report bugs.
+Owners fix them quickly.
+Everyone stays safer.
+
+### **1 · THE FIREWALL · 03:00**
+
+QL: What blocks attacks?
+
+Firewalls block bad traffic.
+Here is one example.
+- Wordfence: https://www.wordfence.com
+It watches every request.
+Thanks for watching.
+`;
+
 const NO_SPEECH = () => { delete window.SpeechRecognition; delete window.webkitSpeechRecognition; };
 
 export async function run({ browser, base, mode, dist, out }) {
@@ -286,6 +333,105 @@ export async function run({ browser, base, mode, dist, out }) {
   await voiced.close();
   ok("Follow my voice: shown with the API, notice before first use, follows spoken lines to the reading line, skips QL, pauses auto-scroll, handles a blocked mic, remembers consent");
 
+  // ---- Links open at the point where they are talked about ----
+  const inlineLink = await makeLink(INLINE_SCRIPT, "lex", base);
+  const linked = await browser.newContext(DESKTOP);
+  await linked.addInitScript(SCREEN_STUB);
+  await linked.addInitScript(SPEECH_STUB);
+  const L = await linked.newPage();
+  watch(L, "inline links");
+  await L.goto(inlineLink);
+  await L.locator(".section").first().waitFor();
+  const intro = L.locator(".section").nth(1);
+  assert.deepEqual(await intro.locator(".links .link").allTextContents(), ["1 · Introexample.com", "2 · Patchstackpatchstack.com"], "every link still gets a numbered button at the top");
+  const markEl = intro.locator(".mark");
+  assert.equal(await markEl.textContent(), "↗ Patchstack · opens here");
+  assert.equal(await markEl.getAttribute("data-k"), null, "the marker is not a spoken line");
+  assert.equal(await L.evaluate(() => document.querySelector(".section:nth-child(2) .mark").previousElementSibling.textContent), "Patchstack finds the holes.");
+  await L.locator(".connect").click();
+  const visits = () => L.evaluate(() => window.__screen.visits.slice());
+  const lastVisit = async () => (await visits()).at(-1);
+  await L.waitForTimeout(900);
+  assert.deepEqual(await visits(), [], "PREP has no link: nothing opens");
+  await scrollToSection(L, 1);
+  await L.waitForFunction(() => window.__screen.visits.at(-1) === "https://example.com/intro");
+  ok("section start opens its top link on the main screen, as before");
+  // Scroll so the reading line passes the inline link's marker.
+  const passMark = (page, sel, dy = 0) => page.evaluate(([q, d]) => {
+    const el = document.querySelector(q);
+    window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - window.innerHeight * 0.34 - 2 + d);
+  }, [sel, dy]);
+  await passMark(L, ".section:nth-child(2) .mark");
+  await L.waitForTimeout(300);
+  assert.equal(await lastVisit(), "https://example.com/intro", "waits for the settle delay");
+  await L.waitForFunction(() => window.__screen.visits.at(-1) === "https://patchstack.com", null, { timeout: 2000 });
+  assert.equal(await markEl.getAttribute("data-shown"), "true");
+  assert.match(await L.locator(".status").textContent(), /On main screen: Patchstack/);
+  await shot(L, "inline-link-desktop");
+  // Back above the marker: the link above the reading line (Intro) returns.
+  await passMark(L, ".section:nth-child(2) .mark", -120);
+  await L.waitForFunction(() => window.__screen.visits.at(-1) === "https://example.com/intro", null, { timeout: 2000 });
+  assert.equal(await markEl.getAttribute("data-shown"), "false");
+  // Fast scrolling past the marker and back within the settle delay opens nothing.
+  const before = (await visits()).length;
+  await passMark(L, ".section:nth-child(2) .mark", 40);
+  await L.waitForTimeout(150);
+  await passMark(L, ".section:nth-child(2) .mark", -120);
+  await L.waitForTimeout(1000);
+  assert.equal((await visits()).length, before, "no flash while scrolling quickly");
+  ok("an inline link opens when the reading line passes it (after the settle delay); scrolling back re-shows the link above; quick scrolling flashes nothing");
+  // Follow my voice: saying the next section's link label opens it at once.
+  await L.evaluate(() => localStorage.setItem("prompter-voice-ok", "yes"));
+  await L.locator(".voice").click();
+  assert.equal(await L.locator(".voice").getAttribute("aria-pressed"), "true");
+  await L.evaluate(() => window.__speech.say("and then wordfence"));
+  await L.waitForFunction(() => window.__screen.visits.at(-1) === "https://www.wordfence.com", null, { timeout: 300 });
+  await L.evaluate(() => window.__speech.say("and then wordfence blocks it"));
+  await L.waitForTimeout(100);
+  assert.equal((await visits()).filter((u) => u === "https://www.wordfence.com").length, 1, "the same label heard again does not reopen it");
+  await L.locator(".voice").click();
+  ok("Follow my voice: saying a link's label (next section) opens it at once, before the reading line gets there");
+  await linked.close();
+
+  // The demo's inline video link: YouTube plays in the page's own #player view.
+  const demoLinked = await browser.newContext(DESKTOP);
+  await demoLinked.addInitScript(SCREEN_STUB);
+  const D = await demoLinked.newPage();
+  watch(D, "demo inline link");
+  await D.goto(`${base}/`);
+  await D.locator(".section").first().waitFor();
+  await D.locator(".connect").click();
+  const demoMark = D.locator(".section .mark");
+  assert.equal(await demoMark.count(), 1, "the demo shows one inline link");
+  assert.equal(await demoMark.textContent(), "↗ Example video · opens here");
+  await passMark(D, ".section .mark", 2);
+  await D.waitForFunction(() => /#player=aqz-KE-bpKQ&start=0$/.test(window.__screen.visits.at(-1) || ""), null, { timeout: 2000 });
+  await shot(D, "inline-link-demo-desktop");
+  ok("the demo's inline YouTube link opens the full-window #player view");
+  await demoLinked.close();
+
+  // No main screen: one gentle hint, once, that does not change the toolbar.
+  const hinted = await browser.newContext(DESKTOP);
+  const H = await hinted.newPage();
+  watch(H, "screen hint");
+  await H.goto(inlineLink);
+  await H.locator(".section").first().waitFor();
+  const barBefore = await H.locator(".bar").evaluate((el) => el.getBoundingClientRect().height);
+  await scrollToSection(H, 1);
+  await H.locator(".screen-hint:not([hidden])").waitFor({ timeout: 2000 });
+  assert.match(await H.locator(".hint-text").textContent(), /“Intro” would open on your main screen now/);
+  assert.equal(await H.locator(".connect").getAttribute("data-hint"), "true");
+  assert.equal(await H.locator(".bar").evaluate((el) => el.getBoundingClientRect().height), barBefore, "the hint floats below the toolbar");
+  assert.equal(await H.locator(".note-row.alert").isHidden(), true, "no alert, just the hint");
+  await shot(H, "screen-hint-desktop");
+  await H.locator('.screen-hint [data-action="hint-ok"]').click();
+  assert.equal(await H.locator(".screen-hint").isHidden(), true);
+  await passMark(H, ".section:nth-child(2) .mark");
+  await H.waitForTimeout(1000);
+  assert.equal(await H.locator(".screen-hint").isHidden(), true, "shown once per page");
+  await hinted.close();
+  ok("without a main screen nothing opens; a one-time hint near Connect main screen, toolbar height unchanged");
+
   // ---- Mobile ----
   const mobile = await browser.newContext(MOBILE);
   await mobile.addInitScript(SPEECH_STUB);
@@ -319,6 +465,21 @@ export async function run({ browser, base, mode, dist, out }) {
   await m.locator(".voice-notice:not([hidden])").waitFor();
   await noOverflow(m, "mobile voice notice");
   await shot(m, "voice-notice-mobile");
+  await m.locator('[data-action="voice-cancel"]').click();
+  await m.locator(".more-btn").click();
+  await m.goto(inlineLink);
+  await m.reload(); // only the #s= part changed: load the page again so the hint is fresh
+  await m.locator(".section").first().waitFor();
+  await m.evaluate(() => {
+    const el = document.querySelector(".section:nth-child(2) .mark");
+    window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - window.innerHeight * 0.34 + 60);
+  });
+  await m.locator(".screen-hint:not([hidden])").waitFor({ timeout: 2000 });
+  await noOverflow(m, "mobile inline link and hint");
+  const hintBox = await m.locator(".screen-hint").boundingBox();
+  assert.ok(hintBox.y > 844 * 0.34 + 40, `mobile hint at ${Math.round(hintBox.y)}px stays clear of the reading line`);
+  assert.ok(hintBox.y + hintBox.height <= 844, "mobile hint fits on screen");
+  await shot(m, "inline-link-mobile");
   ok("mobile 390px: one-row toolbar, More reveals sliders and column without sideways scroll, voice notice fits", `${Math.round(mobileBar)}px / ${Math.round(openBar)}px`);
   await mobile.close();
 

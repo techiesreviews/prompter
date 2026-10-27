@@ -1,6 +1,6 @@
 // Page logic. scripts/build.mjs inlines src/core.mjs and src/follow.mjs above
 // this file inside one function, so parse, PRESETS, DEMO_SCRIPT, encodeScript,
-// followLine, speechWords … are in scope here.
+// followLine, heardLink, linkAt, speechWords … are in scope here.
 
 // ---------- Player view ----------
 // The main-screen window shows a YouTube video full size via this same page.
@@ -32,6 +32,7 @@ const autoBtn = $(".auto");
 const voiceBtn = $(".voice");
 const voiceNotice = $(".voice-notice");
 const alertEl = $(".note-row.alert");
+const hintEl = $(".screen-hint");
 const openMenu = $(".open-menu");
 const pasteDialog = $(".paste-dialog");
 const speedInput = $(".speed");
@@ -59,6 +60,11 @@ let active = -1;
 let mainWin = null;
 let shownUrl = "";
 let settleTimer = 0;
+let anchor = null; // the link above the reading line: { s, l } or null (see linkAt)
+let anchorKey = "";
+let hintShown = false;
+let hintTimer = 0;
+let voiceLinkKey = ""; // the link Follow my voice opened last by hearing its label
 let clockStart = 0;
 let autoOn = false;
 let speed = Number(store.get("prompter-speed")) || 40;
@@ -150,6 +156,10 @@ function demoActions(items) {
   return `<div class="actions">${html}</div><div class="ai-slot" id="ai-slot" hidden></div>`;
 }
 
+// A link placed mid-section: a small marker at its line, not a spoken line.
+const mark = (l, i, j) =>
+  `<button class="mark" type="button" data-s="${i}" data-l="${j}" title="Opens on the main screen when it reaches the reading line">↗ ${esc(l.label)}<span class="mark-note"> · opens here</span></button>`;
+
 function render() {
   voiceLines = [];
   const demo = isDemo();
@@ -161,7 +171,10 @@ function render() {
     // The QL main question is read silently: always show it at the top.
     const qls = s.items.filter((it) => it.type === "ql")
       .map((it) => `<p class="ql"><small>Main question · answer it, don't read it</small>${esc(it.text)}</p>`).join("");
-    let rest = s.items.filter((it) => it.type !== "ql");
+    // Items in order, with each inline link's marker just before items[at].
+    const marksAt = (n) => s.links.flatMap((l, j) => (l.inline && l.at === n ? [{ type: "mark", l, j }] : []));
+    let rest = s.items.flatMap((it, n) => [...marksAt(n), it]).concat(marksAt(s.items.length))
+      .filter((it) => it.type !== "ql");
     let actions = "";
     if (demo && i === 0) {
       const isAction = (it) => it.type === "bullet" && DEMO_ACTIONS[it.text];
@@ -171,6 +184,7 @@ function render() {
     while (rest[0]?.type === "gap") rest.shift();
     const items = rest.map((it) => {
       if (it.type === "gap") return `<div class="gap"></div>`;
+      if (it.type === "mark") return mark(it.l, i, it.j);
       const k = SPOKEN.has(it.type) ? ` data-k="${voiceLines.push(speechWords(it.text)) - 1}"` : "";
       if (it.type === "next" || it.type === "now") return `<p class="${it.type}"${k}>${lead(it.text)}</p>`;
       return `<p class="${it.type}"${k}>${esc(it.text)}</p>`;
@@ -179,6 +193,10 @@ function render() {
   }).join("");
   active = -1;
   shownUrl = "";
+  anchor = null;
+  anchorKey = "";
+  voiceLinkKey = "";
+  clearTimeout(settleTimer);
   voiceAt = -1;
   updateActive();
 }
@@ -203,12 +221,22 @@ function updateActive() {
   const y = readingLineY();
   let idx = 0;
   els.forEach((el, i) => { if (el.getBoundingClientRect().top <= y + 4) idx = i; });
-  if (idx === active) return;
-  active = idx;
-  els.forEach((el, i) => el.classList.toggle("active", i === idx));
+  if (idx !== active) {
+    active = idx;
+    els.forEach((el, i) => el.classList.toggle("active", i === idx));
+    updateClock();
+  }
+  // The most recent link above the reading line goes on the main screen once
+  // the reader settles there, so fast scrolling does not flash every link.
+  let reached = -1;
+  els[idx]?.querySelectorAll(".mark").forEach((el) => { if (el.getBoundingClientRect().top <= y + 4) reached = Number(el.dataset.l); });
+  const at = linkAt(sections, idx, reached);
+  const key = at ? `${at.s}:${at.l}` : "";
+  if (key === anchorKey) return;
+  anchor = at;
+  anchorKey = key;
   clearTimeout(settleTimer);
-  settleTimer = setTimeout(() => showLink(active, 0, false), SETTLE_MS);
-  updateClock();
+  if (at) settleTimer = setTimeout(() => showLink(at.s, at.l, false), SETTLE_MS);
 }
 
 // ---------- Main screen ----------
@@ -231,8 +259,9 @@ function connect() {
   } catch { /* already showing another site; fine */ }
   setConnected(true);
   setStatus("");
+  hideHint();
   shownUrl = "";
-  showLink(active, 0, false);
+  if (anchor) showLink(anchor.s, anchor.l, false);
 }
 
 // YouTube watch pages cut the link between the prompter and its window (their
@@ -261,6 +290,7 @@ function showLink(si, li, fromUser) {
     setConnected(false);
     if (!fromUser) {
       if (wasConnected) lost();
+      else showHint(s.links[li].label);
       return;
     }
     mainWin = window.open(url, WINDOW_NAME, "popup=yes,width=1400,height=900");
@@ -271,7 +301,7 @@ function showLink(si, li, fromUser) {
     try { mainWin.location.href = url; } catch { mainWin = window.open(url, WINDOW_NAME); }
     shownUrl = url;
   }
-  main.querySelectorAll(".link").forEach((b) => {
+  main.querySelectorAll(".link, .mark").forEach((b) => {
     b.dataset.shown = String(screenUrl(sections[b.dataset.s].links[b.dataset.l].url) === shownUrl);
   });
   setStatus(`On main screen: ${s.links[li].label}`);
@@ -283,6 +313,21 @@ function setStatus(t) { statusEl.textContent = t; statusEl.title = t; }
 function showAlert(t) {
   alertEl.hidden = !t;
   $(".alert-text").textContent = t;
+}
+
+// Once per page: a link would have opened by itself, but no main screen is connected.
+function showHint(label) {
+  if (hintShown) return;
+  hintShown = true;
+  $(".hint-text").textContent = `“${label}” would open on your main screen now. Connect a main screen and links open by themselves.`;
+  hintEl.hidden = false;
+  connectBtn.dataset.hint = "true";
+  hintTimer = setTimeout(hideHint, 15000);
+}
+function hideHint() {
+  clearTimeout(hintTimer);
+  hintEl.hidden = true;
+  delete connectBtn.dataset.hint;
 }
 
 function lost() { showAlert("Main screen window lost. Click “Connect main screen” or a link button."); }
@@ -404,6 +449,7 @@ function startVoice() {
   }
   voiceOn = true;
   voiceRestarts = 0;
+  voiceLinkKey = "";
   voiceAt = lineAtReadingLine();
   resumeAuto = autoOn;
   setAuto(false);
@@ -431,6 +477,17 @@ function onVoiceResult(e) {
   for (let i = Math.max(0, e.results.length - 3); i < e.results.length; i++) heard += ` ${e.results[i][0].transcript}`;
   const k = followLine(voiceLines, voiceAt, heard);
   if (k !== voiceAt && k >= 0) { voiceAt = k; markLine(k); }
+  // Saying a link's label (this section or the next) opens it at once.
+  const said = heardLink(voiceLinkCandidates(), heard);
+  if (said && said.key !== voiceLinkKey) {
+    voiceLinkKey = said.key;
+    clearTimeout(settleTimer);
+    showLink(said.s, said.l, false);
+  }
+}
+
+function voiceLinkCandidates() {
+  return [active, active + 1].flatMap((si) => (sections[si]?.links || []).map((l, li) => ({ label: l.label, s: si, l: li, key: `${si}:${li}` })));
 }
 
 const VOICE_ERRORS = {
@@ -526,7 +583,7 @@ $(".more-btn").addEventListener("click", (e) => {
   e.currentTarget.setAttribute("aria-expanded", String(open));
 });
 main.addEventListener("click", (e) => {
-  const b = e.target.closest(".link");
+  const b = e.target.closest(".link, .mark");
   if (b) showLink(Number(b.dataset.s), Number(b.dataset.l), true);
 });
 document.addEventListener("click", (e) => {
@@ -540,6 +597,8 @@ document.addEventListener("click", (e) => {
   else if (action === "ai") toggleAiPanel(button);
   else if (action === "copy-mcp") copyText(mcpUrl(), "Server address copied.", "Copy the server address:");
   else if (action === "dismiss") showAlert("");
+  else if (action === "connect") connect();
+  else if (action === "hint-ok") hideHint();
   else if (action === "voice-ok") { store.set(VOICE_OK_KEY, "yes"); startVoice(); }
   else if (action === "voice-cancel") { voiceNotice.hidden = true; }
 });

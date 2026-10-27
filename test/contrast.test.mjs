@@ -37,6 +37,7 @@ const PAIRS = [
   ["accent-dim", "bg", "other sections' Now: label"],
   ["accent", "panel", "paste errors"],
   ["ok", "panel-2", "on main screen"],
+  ["ok", "bg", "inline link marker on main screen"],
   ["on-accent", "accent", "primary buttons"],
 ];
 
