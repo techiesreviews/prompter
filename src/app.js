@@ -235,6 +235,7 @@ function updateActive() {
   if (key === anchorKey) return;
   anchor = at;
   anchorKey = key;
+  voiceLinkKey = ""; // the reading point moved on: a label heard again opens again
   clearTimeout(settleTimer);
   if (at) settleTimer = setTimeout(() => showLink(at.s, at.l, false), SETTLE_MS);
 }
@@ -477,9 +478,10 @@ function onVoiceResult(e) {
   for (let i = Math.max(0, e.results.length - 3); i < e.results.length; i++) heard += ` ${e.results[i][0].transcript}`;
   const k = followLine(voiceLines, voiceAt, heard);
   if (k !== voiceAt && k >= 0) { voiceAt = k; markLine(k); }
-  // Saying a link's label (this section or the next) opens it at once.
+  // Saying a link's label (this section or the next) opens it at once. The
+  // same label heard again is skipped while the main screen still shows it.
   const said = heardLink(voiceLinkCandidates(), heard);
-  if (said && said.key !== voiceLinkKey) {
+  if (said && !(said.key === voiceLinkKey && screenUrl(sections[said.s].links[said.l].url) === shownUrl)) {
     voiceLinkKey = said.key;
     clearTimeout(settleTimer);
     showLink(said.s, said.l, false);

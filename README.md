@@ -5,7 +5,7 @@ A free teleprompter for talking to camera, plus an MCP server so your AI assista
 **Live:** https://prompter.techies.tools
 
 - Big text, auto-scroll, a reading line and a show clock.
-- A second "main screen" window that opens each link as you reach it, at the start of a section or on the line where you talk about it (YouTube links play full size). With Follow my voice, saying a link's name opens it.
+- A second "main screen" window that opens links as you reach them: the first link under the title opens when the section starts; the others are on number keys. A link placed on the line where you talk about it opens when you reach that line (YouTube links play full size). With Follow my voice, saying a link's name opens it.
 - Follow my voice (Chrome and Edge): the prompter listens and keeps the line you are reading at the reading mark. Your browser's speech service hears your voice; the script stays on your device.
 - Sliders for speed and text size, and a narrow column to keep your eyes near the camera.
 - A checker (through the MCP server) that points out long lines, a missing main question, a link without its full address and similar problems.
@@ -54,7 +54,7 @@ Now: links on screen.
 ```
 
 - `### **TITLE · mm:ss**` starts a section (time optional). `---` is ignored.
-- `- Label: https://full-url` is a link. Right under the title, it opens when the section starts. Put it where you talk about it, and it opens automatically when you reach that line (the prompter shows an "opens here" marker). Number keys 1–9 open a section's links any time.
+- `- Label: https://full-url` is a link. Right under the title, the first link opens when the section starts; the others are on number keys. Put it where you talk about it, and it opens automatically when you reach that line (the prompter shows an "opens here" marker). Number keys 1–9 open a section's links any time. With Follow my voice, saying a link's label opens it, so a short one-word label (like "Docs") can open when you only mention the word in passing; give links distinctive labels.
 - `QL: question` is the one main question: read it silently and answer it; it is not read aloud. Shown at the top of the section.
 - Plain lines are spoken. `Next: …` / `Now: …` are transitions. `[text]` is a private reminder. `- text` is a bullet.
 

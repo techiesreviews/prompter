@@ -176,6 +176,14 @@ test("parser marks top and inline links with their place among the items", () =>
   assert.ok(s1.items.every((it) => it.type !== "link"), "links stay out of items");
 });
 
+test("a link right after the QL is still a top link: it opens when the section starts", () => {
+  const sections = parse("### **INTRO · 00:00**\n\nQL: Why?\n\n- Site: https://example.com\n\nHello.");
+  assert.equal(sections[0].links[0].inline, false);
+  assert.deepEqual(linkAt(sections, 0, -1), { s: 0, l: 0 });
+  const afterLine = parse("### **INTRO · 00:00**\n\nQL: Why?\n\nHello.\n- Site: https://example.com");
+  assert.equal(afterLine[0].links[0].inline, true, "after a spoken line it is inline");
+});
+
 test("linkAt picks the most recent link above the reading line", () => {
   const sections = parse(INLINE);
   assert.equal(linkAt(sections, 0, -1), null, "PREP has no link and nothing is above it");
@@ -185,8 +193,6 @@ test("linkAt picks the most recent link above the reading line", () => {
   assert.deepEqual(linkAt(sections, 2, -1), { s: 1, l: 2 }, "no top link: the last inline link above stays");
   assert.deepEqual(linkAt(sections, 2, 0), { s: 2, l: 0 });
   assert.deepEqual(linkAt(sections, 3, -1), { s: 2, l: 0 }, "a section without links keeps the link above");
-  // Moving back: above section 2's inline link, the previous section's last link returns.
-  assert.deepEqual(linkAt(sections, 2, -1), { s: 1, l: 2 });
   assert.equal(linkAt([], 0, -1), null);
   const onlyTop = parse("### **A**\n- One: https://a.test\n- Two: https://b.test\nHi\n### **B**\nHo");
   assert.deepEqual(linkAt(onlyTop, 1, -1), { s: 0, l: 0 }, "top links: the first one counts, as before");
@@ -300,7 +306,7 @@ test("format guide carries the format, the preset rules and the example", () => 
   assert.match(lex, /five words or fewer/);
   assert.match(lex, /Livestreams/);
   assert.match(lex, /opens automatically when you reach that line/);
-  assert.match(lex, /links either first \(they open when the section starts\) or on the line where you talk about them/);
+  assert.match(lex, /links either first \(the first link under the title opens when the section starts; the others are on number keys\) or on the line where you talk about them/);
   assert.ok(lex.includes(EXAMPLE_SCRIPT.trim()));
   assert.match(formatGuide("default"), /Preset: default/);
 });

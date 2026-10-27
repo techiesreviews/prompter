@@ -10,7 +10,7 @@ export const MAX_DECODED_BYTES = 1_000_000;
 
 export const FORMAT = [
   { syntax: "### **TITLE · mm:ss**", meaning: "Starts a section. The time is optional and is when the section should start." },
-  { syntax: "- Label: https://full-url", meaning: "A link, on its own line. Right under the title, the first link opens on the main screen when the section starts. Or put a link where you talk about it: it opens automatically when you reach that line, and the prompter shows a small \"opens here\" marker there. Every link of a section also gets a button at the top; number keys 1–9 open them." },
+  { syntax: "- Label: https://full-url", meaning: "A link, on its own line. Right under the title (before or after the QL), the first link opens on the main screen when the section starts; the others are on number keys. Or put a link where you talk about it: it opens automatically when you reach that line, and the prompter shows a small \"opens here\" marker there. Every link of a section also gets a numbered button at the top; number keys 1–9 open them any time." },
   { syntax: "QL: question", meaning: "The one main question of the section. Read it silently and answer it in your own words; it is not read aloud. Shown at the top of the section." },
   { syntax: "Plain line", meaning: "A spoken line." },
   { syntax: "Next: … / Now: …", meaning: "A transition: where you are going, then what you do now." },
@@ -34,7 +34,7 @@ export const PRESETS = {
     rules: [
       "Order: prep first, then intro, then the show.",
       "Section titles: small (five words or fewer), numbered, ALL CAPS, with start time. PREP needs no number or time; INTRO needs no number.",
-      "Each section: links either first (they open when the section starts) or on the line where you talk about them (they open when you reach that line). Then one QL main question, then lines of five words or fewer (only URLs may be longer). This includes the intro, transitions and reminders. PREP needs no QL.",
+      "Each section: links either first (the first link under the title opens when the section starts; the others are on number keys) or on the line where you talk about them (they open when you reach that line). Then one QL main question, then lines of five words or fewer (only URLs may be longer). This includes the intro, transitions and reminders. PREP needs no QL.",
       "Transitions are two short lines: `Next: …` then `Now: …`.",
       "Livestreams: one main topic in depth for most of the stream; the last 5–10 minutes for other things you worked on. The title and thumbnail promise the main topic.",
     ],
@@ -52,7 +52,7 @@ export const PRESETS = {
     prepThenIntro: false,
     rules: [
       "Every section has a title. A start time is optional.",
-      "Put a link first under the title to open it when the section starts, or on the line where you talk about it to open it when you reach that line.",
+      "Put a link first under the title (the first link under the title opens when the section starts; the others are on number keys), or on the line where you talk about it to open it when you reach that line.",
       "Keep lines short: a warning above ten words (URLs do not count).",
       "A QL main question is optional; use at most one per section.",
     ],
@@ -287,9 +287,10 @@ export function classify(line) {
  * Parse a script into sections. Each section has title, time, line, links,
  * items (everything but links, with gaps) and entries (all non-gap lines in
  * order, links included). Lines are 1-based in the original text.
- * A link right under the title (before any other line) is a top link; one
- * after other lines is inline (`inline: true`) and `at` is its place among
- * the section's items: it sits just before items[at].
+ * A link right under the title (before any spoken or visible line; the QL
+ * does not count) is a top link; one after such a line is inline
+ * (`inline: true`) and `at` is its place among the section's items: it sits
+ * just before items[at].
  */
 export function parse(md) {
   const text = String(md ?? "").replace(/\r/g, "");
@@ -318,7 +319,7 @@ export function parse(md) {
     }
     if (/^#{1}\s|^#{4,}\s/.test(line)) entry.heading = true;
     cur.entries.push(entry);
-    if (entry.type === "link") cur.links.push({ ...entry, inline: cur.items.length > 0, at: cur.items.length });
+    if (entry.type === "link") cur.links.push({ ...entry, inline: cur.items.some((it) => it.type !== "ql" && it.type !== "gap"), at: cur.items.length });
     else cur.items.push(entry);
   });
   return out;
