@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Builds dist/: one self-contained index.html (core + app inlined) and the
+// Builds dist/: one self-contained index.html (core, follow + app inlined) and the
 // _headers file whose Content-Security-Policy pins that inline script's hash.
 // Usage: node scripts/build.mjs [outDir=dist]
 import { createHash } from "node:crypto";
@@ -9,13 +9,19 @@ import { join, resolve } from "node:path";
 const root = resolve(import.meta.dirname, "..");
 const read = (file) => readFileSync(join(root, file), "utf8");
 
-/** Inline the page script: core without `export`, then the app, in one function scope. */
+/** Shared modules inlined into the page, in this order, without `export`. */
+export const INLINED = ["src/core.mjs", "src/follow.mjs"];
+
+/** Inline the page script: the shared modules, then the app, in one function scope. */
 export function pageScript() {
-  const core = read("src/core.mjs");
-  if (/^\s*import\s/m.test(core)) throw new Error("src/core.mjs must not import anything");
-  const stripped = core.replace(/^export (?=(async )?function |const |let |class )/gm, "");
-  if (/^export\b/m.test(stripped)) throw new Error("src/core.mjs has an export form the build cannot strip");
-  return `\n(() => {\n${stripped}\n${read("src/app.js")}\n})();\n`;
+  const modules = INLINED.map((file) => {
+    const source = read(file);
+    if (/^\s*import\s/m.test(source)) throw new Error(`${file} must not import anything`);
+    const stripped = source.replace(/^export (?=(async )?function |const |let |class )/gm, "");
+    if (/^export\b/m.test(stripped)) throw new Error(`${file} has an export form the build cannot strip`);
+    return stripped;
+  });
+  return `\n(() => {\n${modules.join("\n")}\n${read("src/app.js")}\n})();\n`;
 }
 
 export function build(dir = join(root, "dist")) {
@@ -40,7 +46,7 @@ export function build(dir = join(root, "dist")) {
   Content-Security-Policy: ${csp}
   Referrer-Policy: strict-origin-when-cross-origin
   X-Content-Type-Options: nosniff
-  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  Permissions-Policy: camera=(), microphone=(self), geolocation=()
 `;
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "index.html"), html);

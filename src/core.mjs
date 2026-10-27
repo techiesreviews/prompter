@@ -132,6 +132,105 @@ QL: What should they try first?
 Thanks for watching.
 `;
 
+/**
+ * The script the page opens with when there is no link and no remembered
+ * script. It follows the "lex" preset and teaches the format by example. In
+ * PREP, the page shows the bullets named in DEMO_ACTIONS as buttons.
+ */
+export const DEMO_SCRIPT = `### **PREP**
+
+- Open a script file
+- Paste a script
+- Drop a file anywhere
+- Use your AI
+
+[Scripts stay on your device]
+
+---
+
+### **INTRO · 00:00**
+
+QL: What is this page?
+
+[Brackets are private reminders]
+
+This is your prompter.
+Read at the dashed line.
+Big text, short lines.
+Scroll, or press Space.
+Or let your voice scroll.
+
+Next: how sections work.
+Now: one main question.
+
+---
+
+### **1 · ONE MAIN QUESTION · 00:30**
+
+QL: Why one question per section?
+
+The yellow box is QL.
+Answer it in your words.
+It is never read aloud.
+Keep every line short.
+Five words or fewer.
+
+Next: links on screen.
+Now: connect your main screen.
+
+---
+
+### **2 · LINKS FIRST · 01:30**
+
+- Example site: https://example.com
+- Example video: https://www.youtube.com/watch?v=aqz-KE-bpKQ
+
+QL: How do links help viewers?
+
+Links go first, always.
+Each section opens its link.
+Press 2 for the video.
+Next and Now: transitions.
+
+Next: your privacy.
+Now: where scripts live.
+
+---
+
+### **3 · YOUR SCRIPT STAYS HERE · 02:30**
+
+QL: Where does my script go?
+
+Nowhere. It stays here.
+No accounts, no server storage.
+A link carries the script.
+Only after the # sign.
+Browsers never send that part.
+
+Next: your own script.
+Now: open, paste or ask.
+
+---
+
+### **4 · YOUR TURN · 03:30**
+
+QL: What will you say first?
+
+[Scroll up to PREP]
+
+Open a file or paste.
+Or ask your AI.
+Thanks for trying Prompter.
+`;
+
+/** PREP bullets in the demo that the page turns into controls. */
+export const DEMO_ACTIONS = {
+  "Open a script file": "open-file",
+  "Paste a script": "paste",
+  "Drop a file anywhere": "drop-hint",
+  "Use your AI": "ai",
+};
+
 /** Plain-text format guide for one preset, used by the MCP and docs. */
 export function formatGuide(presetName) {
   const preset = getPreset(presetName);

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { check, countWords, EXAMPLE_SCRIPT, formatGuide, parse, PRESETS, toSeconds, youtubeSeconds } from "../src/core.mjs";
+import { check, countWords, describeProblems, EXAMPLE_SCRIPT, formatGuide, parse, PRESETS, toSeconds, youtubeSeconds } from "../src/core.mjs";
 
 // The parser from the original single-file prompter, kept to prove compatibility.
 function legacyParse(md) {
@@ -224,4 +224,18 @@ test("format guide carries the format, the preset rules and the example", () => 
   assert.match(lex, /Livestreams/);
   assert.ok(lex.includes(EXAMPLE_SCRIPT.trim()));
   assert.match(formatGuide("default"), /Preset: default/);
+});
+
+test("the demo script follows the lex preset and names its PREP actions", async () => {
+  const { DEMO_ACTIONS, DEMO_SCRIPT } = await import("../src/core.mjs");
+  const r = check(DEMO_SCRIPT, "lex");
+  assert.equal(r.errors, 0, describeProblems(r));
+  assert.equal(r.warnings, 0, describeProblems(r));
+  const [prep, intro] = parse(DEMO_SCRIPT);
+  assert.equal(prep.title, "PREP");
+  assert.equal(intro.title, "INTRO");
+  const bullets = prep.items.filter((it) => it.type === "bullet").map((it) => it.text);
+  assert.deepEqual(bullets, Object.keys(DEMO_ACTIONS));
+  const types = new Set(parse(DEMO_SCRIPT).flatMap((s) => s.entries.map((e) => e.type)));
+  for (const t of ["link", "ql", "say", "next", "now", "note", "bullet"]) assert.ok(types.has(t), `demo shows ${t}`);
 });
