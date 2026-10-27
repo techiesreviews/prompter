@@ -61,7 +61,7 @@ try {
   } else if (command === "specs") {
     await buildInto(join(out, "dist"));
     const pattern = args.find((a) => !a.startsWith("-"));
-    const testArgs = ["--test", "--test-reporter=spec", "--test-reporter-destination=stdout", "--test-reporter=tap", `--test-reporter-destination=${join(out, "specs.tap")}`, ...(pattern ? [`--test-name-pattern=${pattern}`] : []), "test/"];
+    const testArgs = ["--test", "--test-reporter=spec", "--test-reporter-destination=stdout", "--test-reporter=tap", `--test-reporter-destination=${join(out, "specs.tap")}`, ...(pattern ? [`--test-name-pattern=${pattern}`] : []), "test/*.test.mjs"];
     const code = await new Promise((accept) => {
       const child = spawn(process.execPath, testArgs, { cwd: root, stdio: ["ignore", "inherit", "inherit"], env: { ...process.env, PROMPTER_DIST: join(out, "dist") } });
       child.on("close", accept);
