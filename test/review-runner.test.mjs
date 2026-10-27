@@ -14,6 +14,10 @@ test("review runner: a small Claude helper passes, a large one fails", () => {
   assert.throws(() => claudeResult(run({ "claude-opus-5-5": usage(100), "claude-haiku-5-5": usage(11) }), "claude-opus-5-5"), /requested model/);
 });
 
+test("review runner: a helper with no output from the requested model fails", () => {
+  assert.throws(() => claudeResult(run({ "claude-opus-5-5": usage(0), "claude-haiku-5-5": usage(0) }), "claude-opus-5-5"), /requested model/);
+});
+
 test("review runner: non-Claude helpers and a missing requested model fail", () => {
   assert.throws(() => claudeResult(run({ "claude-opus-5-5": usage(1000), "gpt-6.1-sol": usage(1) }), "claude-opus-5-5"), /requested model/);
   assert.throws(() => claudeResult(run({ "claude-haiku-5-5": usage(100) }), "claude-opus-5-5"), /requested model/);

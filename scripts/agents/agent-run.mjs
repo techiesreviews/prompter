@@ -129,12 +129,12 @@ export function claudeResult(stdout, requested, allowEmpty = false) {
   const usage = result.modelUsage ?? {};
   const models = [...new Set([...Object.keys(usage), ...(typeof result.model === "string" ? [result.model] : [])])];
   // Claude Code may call a small helper model (for example Haiku) for side tasks.
-  // Accept that only when the requested model is present and wrote most output.
+  // Accept only claude-* helpers, each writing at most a tenth of the requested model's output.
   const output = model => usage[model]?.outputTokens ?? 0;
   const requestedModels = models.filter(model => claudeModelMatches(model, requested));
   const helpers = models.filter(model => !claudeModelMatches(model, requested));
   const mainOutput = requestedModels.reduce((sum, model) => sum + output(model), 0);
-  if (!requestedModels.length || !helpers.every(model => /^claude-/i.test(claudeModelName(model)) && output(model) * 10 <= mainOutput)) {
+  if (!requestedModels.length || (helpers.length && mainOutput <= 0) || !helpers.every(model => /^claude-/i.test(claudeModelName(model)) && output(model) * 10 <= mainOutput)) {
     throw new Error(`Claude result does not name requested model ${requested} (actual: ${models.join(", ") || "missing"})`);
   }
   if (helpers.length) process.stderr.write(`note: helper model use accepted: ${helpers.map(model => `${model} ${output(model)} output tokens`).join(", ")}; ${requested} ${mainOutput}\n`);

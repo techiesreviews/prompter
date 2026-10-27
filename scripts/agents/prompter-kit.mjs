@@ -14,7 +14,7 @@ const root = process.env.KIT_ROOT || resolve(import.meta.dirname, "../..");
 const modulePath = process.env.KIT_PLAYWRIGHT_MODULE || "/home/ubulex/Projects/native-site-editor-dev/node_modules/playwright/index.mjs";
 const usage = {
   doctor: "Usage: kit doctor\nChecks Node >=24, git, the build, every kit command's help, Playwright + Chromium launch, cached Wrangler and conflict markers.",
-  specs: "Usage: kit specs [name-pattern]\nBuilds dist/ into scratch, then runs node:test files in test/ (parser, presets/checker, #s= round trip, MCP JSON-RPC, size cap, rate limit, build).\nOptional pattern is passed to --test-name-pattern.",
+  specs: "Usage: kit specs [name-pattern]\nBuilds dist/ into scratch, then runs node:test files in test/ (parser, presets/checker, #s= round trip, MCP JSON-RPC, size cap, rate limit, build, review-runner model check).\nOptional pattern is passed to --test-name-pattern.",
   shots: "Usage: kit shots [--static]\nServes the build through local `wrangler dev` (cached Wrangler only) or, with --static or without Wrangler, a local static server.\nCaptures desktop and mobile screenshots of home and the example script opened from a #s= link (made by the local /mcp when Wrangler runs), checks the problems dialog, offline file:// use and MCP basics.\nBrowser tooling: KIT_PLAYWRIGHT_MODULE or " + modulePath + ".",
   size: "Usage: kit size\nReports raw and gzip bytes of the built page and the Worker sources. Report only; no budget.",
 };

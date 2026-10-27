@@ -92,6 +92,13 @@ export async function run({ browser, base, mode, dist, out }) {
   await shot(page, "check-dialog-desktop");
   await page.locator('.problem-tabs [data-preset="default"]').click();
   assert.match(await page.locator(".problem-list").textContent(), /No problems with the Default style/);
+  assert.doesNotMatch(await page.evaluate(() => location.hash), /&p=/);
+  await page.locator('.problem-tabs [data-preset="lex"]').click();
+  assert.match(await page.evaluate(() => location.hash), /&p=lex$/);
+  await page.reload();
+  await page.locator(".problems-btn").click();
+  await page.locator("dialog.problems[open]").waitFor();
+  assert.match(await page.locator(".problem-list").textContent(), /Lex style/);
   await page.locator('[data-action="close-problems"]').click();
   ok("check dialog shows both presets");
 
