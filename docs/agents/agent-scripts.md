@@ -1,0 +1,23 @@
+# Agent Kit (techies-prompter)
+
+Agent Kit is required for all coding in this repo, for every model and provider, including delegated workers. Run `scripts/agents/kit --help`, then each relevant command's `--help`, and `kit doctor` before implementing. After changes run `kit specs`, and `kit shots` and `kit size` when the page changes. Every command ends with one `RESULT: ok|fail …` line naming its evidence folder.
+
+The dispatcher, shared helpers (`kit-lib.sh`, `kit-lib.mjs`), `wait`, `version`, the review runner (`agent-run.mjs`, `review-brief.mjs`) and `ci-summary.mjs` are copied from the static-site kit in `/home/ubulex/Projects/techies-reviews/scripts/agents` (itself from native-site-editor `origin/dev`). The main root is adapted to this repo, and review is pinned to Claude. `doctor`, `specs`, `shots` and `size` are this project's adapters in `scripts/agents/prompter-kit.mjs`.
+
+| Command | What it does | Evidence |
+| --- | --- | --- |
+| `kit doctor` | Node >=24 (found on PATH, in the npx cache or nvm), git HEAD, required files, a scratch build, every other command's `--help`, Playwright import and Chromium launch, cached Wrangler (reported, not required), conflict markers. | `.scratch/prompter/doctor-*/doctor.json` |
+| `kit specs [pattern]` | Builds `dist/` into scratch, then runs `node --test test/`: parser (compatible with Lex's existing scripts), presets and checker, `#s=` encode/decode round trip and damaged/oversized links, MCP JSON-RPC (initialize, tools/list, each tool, prompts, ping, notifications, batches, errors), 200 KB body cap, rate limit, build output and CSP hash. | `specs.tap`, `specs.json` |
+| `kit shots [--static]` | Serves the build through local `wrangler dev` (cached Wrangler only, isolated temporary config, local rate-limit simulation) or, with `--static` or no Wrangler, a local static server. Playwright captures home and the example script (opened from a `#s=` link the local `/mcp` made) at desktop 1366×900 and mobile 390×844, plus the check dialog. Also checks: no page errors, CSP header, QL shown first, link buttons, Home button, file:// offline use, MCP initialize/tools, GET 405 and the 413 size cap. | `shots.json`, `*.png`, `wrangler-local.log` |
+| `kit size` | Raw and gzip bytes of `dist/index.html` and the Worker sources. Report only; no invented budget. | `size.json` |
+| `kit wait …` | Canonical waiting on an owned pid, a log line or CI (no remote here, so CI waits do not apply). | stdout |
+| `kit review [--commit SHA \| --base REF]` | Read-only Claude review of a commit (default `--commit HEAD`) or range. Model `ASE_REVIEW_MODEL` or `claude-opus-5-5`, effort medium, `--permission-mode plan`. Non-Claude models are refused: GPT/Codex review is off for this project (Lex's GPT budget). | `.scratch/reviews/<owner>/<time>/` |
+| `kit version` | Kit commit, owner and Node version. | stdout |
+
+Browser tooling is external and never installed here: `KIT_PLAYWRIGHT_MODULE` may point to Playwright's `index.mjs`; default `/home/ubulex/Projects/native-site-editor-dev/node_modules/playwright/index.mjs`, with Chromium installed for that version. Wrangler must already be cached (`npx --no-install --package wrangler`). Tests start and stop their own servers on free localhost ports.
+
+`.scratch/`, `dist/` and `.wrangler/` are git-ignored. Only `dist/` (built by `node scripts/build.mjs`) is uploaded as static assets.
+
+## Deploy (lead-authorized only)
+
+Deploy is not a kit command. With explicit authorization: `node scripts/build.mjs && npx --no-install --package wrangler wrangler deploy`. It deploys only the `techies-prompter` Worker with the custom domain `prompter.techies.tools`. Never touch other Workers (for example `lex-prompter`), routes or domains.
