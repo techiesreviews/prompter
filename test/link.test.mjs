@@ -30,6 +30,8 @@ test("makeLink and readHash agree; default preset is omitted", async () => {
 test("damaged link data is refused with a plain message", async () => {
   await assert.rejects(decodeScript("not base64!"), /damaged/);
   await assert.rejects(decodeScript("AAAA"), /damaged/);
+  await assert.rejects(decodeScript("A"), /damaged/); // cut-off link: invalid base64 length
+  await assert.rejects(decodeScript("AAAAA"), /damaged/);
 });
 
 test("decompression refuses oversized scripts (zip bombs)", async () => {

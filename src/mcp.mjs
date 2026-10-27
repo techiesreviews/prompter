@@ -175,15 +175,23 @@ async function readCapped(request) {
   return new TextDecoder().decode(all);
 }
 
-/** Fallback when no rate-limit binding exists: a per-isolate sliding window. */
-export function memoryLimiter(limit = RATE_LIMIT, windowMs = 60_000, now = () => Date.now()) {
+/**
+ * Per-isolate fixed-window counter. Runs on every request next to the Workers
+ * binding. When full, it drops expired entries, then the oldest ones, so that
+ * rotating many IPs cannot reset everyone's count.
+ */
+export function memoryLimiter(limit = RATE_LIMIT, windowMs = 60_000, now = () => Date.now(), maxKeys = 10_000) {
   const hits = new Map();
   return {
     async limit({ key }) {
       const t = now();
       const entry = hits.get(key);
       if (!entry || t - entry.start >= windowMs) {
-        if (hits.size > 10_000) hits.clear();
+        if (hits.size >= maxKeys) {
+          for (const [k, v] of hits) if (t - v.start >= windowMs) hits.delete(k);
+          for (const k of hits.keys()) { if (hits.size < maxKeys) break; hits.delete(k); }
+        }
+        hits.delete(key);
         hits.set(key, { start: t, count: 1 });
         return { success: true };
       }
@@ -193,14 +201,14 @@ export function memoryLimiter(limit = RATE_LIMIT, windowMs = 60_000, now = () =>
   };
 }
 
-const fallbackLimiter = memoryLimiter();
+const instanceGuard = memoryLimiter();
 
 /**
  * Handle one HTTP request to /mcp. `limiter` follows the Workers rate-limit
  * binding API. The binding is approximate and per location, so the per-isolate
  * guard always runs too; a request must pass both.
  */
-export async function handleMcp(request, { limiter, guard = fallbackLimiter } = {}) {
+export async function handleMcp(request, { limiter, guard = instanceGuard } = {}) {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
   if (request.method !== "POST") {
     return json(rpcError(null, -32000, "Method not allowed. This MCP server only accepts POST (no SSE stream)."), 405, { Allow: "POST, OPTIONS" });

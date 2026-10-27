@@ -108,7 +108,8 @@ async function route() {
   const hash = location.hash;
   if (hash.startsWith("#s=") || hash.includes("&s=")) {
     const { data, preset: p } = readHash(hash);
-    if (p) { preset = p; store.set(PRESET_KEY, p); }
+    preset = p || "default"; // a link without &p= was made for the default preset
+    store.set(PRESET_KEY, preset);
     try {
       await openScript(await decodeScript(data || ""), { fromLink: true, label: "Opened from link" });
     } catch (error) {
@@ -202,11 +203,17 @@ function screenUrl(url) {
     if (u.hostname === "youtu.be") id = u.pathname.slice(1);
     else if (/(^|\.)youtube\.com$/.test(u.hostname) && u.pathname === "/watch") id = u.searchParams.get("v") || "";
     if (!id) return url;
-    const start = parseInt(u.searchParams.get("t") || u.searchParams.get("start") || "0", 10) || 0;
+    const start = youtubeSeconds(u.searchParams.get("t") || u.searchParams.get("start") || "0");
     // Played inside this page's own player view: YouTube's embed refuses to play
     // when opened directly (error 153), and a same-origin page keeps the link.
     return `${location.href.split("#")[0]}#player=${encodeURIComponent(id)}&start=${start}`;
   } catch { return url; }
+}
+
+/** YouTube start times: "90", "90s" or "1h2m30s". */
+function youtubeSeconds(t) {
+  const parts = /^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s?)?$/.exec(t);
+  return parts ? (Number(parts[1] || 0) * 3600) + (Number(parts[2] || 0) * 60) + Number(parts[3] || 0) : 0;
 }
 
 function showLink(si, li, fromUser) {
@@ -248,7 +255,6 @@ function blocked() {
 }
 
 // ---------- Clock ----------
-const toSec = (t) => { const [m, s] = t.split(":").map(Number); return m * 60 + s; };
 const fmt = (sec) => `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`;
 
 function updateClock() {
@@ -256,7 +262,7 @@ function updateClock() {
   const el = Math.floor((Date.now() - clockStart) / 1000);
   clockEl.textContent = fmt(el);
   const next = sections.slice(active + 1).find((s) => s.time);
-  clockEl.dataset.late = String(Boolean(next && el > toSec(next.time)));
+  clockEl.dataset.late = String(Boolean(next && el > toSeconds(next.time)));
 }
 setInterval(updateClock, 1000);
 
@@ -349,9 +355,6 @@ async function loadFile(file) {
 // ---------- Events ----------
 window.addEventListener("scroll", () => requestAnimationFrame(updateActive), { passive: true });
 window.addEventListener("resize", updateActive);
-window.addEventListener("hashchange", () => {
-  if (location.hash.startsWith("#s=")) route();
-});
 connectBtn.addEventListener("click", connect);
 $(".start").addEventListener("click", (e) => {
   clockStart = Date.now(); e.target.textContent = "Restart clock"; updateClock();
@@ -404,6 +407,7 @@ document.addEventListener("drop", (e) => {
   e.preventDefault();
   loadFile(file);
 });
+// Fires for Back/Forward and for a new #s= link pasted into the address bar.
 window.addEventListener("popstate", () => { if (!location.hash) showHome(); else route(); });
 document.addEventListener("keydown", (e) => {
   if (view !== "prompter" || dialog.open || e.target.closest("input, textarea, select") || e.metaKey || e.ctrlKey || e.altKey) return;

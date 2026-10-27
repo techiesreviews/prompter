@@ -231,7 +231,8 @@ export function countWords(text) {
     .filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
 }
 
-const toSeconds = (t) => { const [m, s] = t.split(":").map(Number); return m * 60 + s; };
+/** "mm:ss" (minutes may exceed 59) to seconds. */
+export function toSeconds(t) { const [m, s] = t.split(":").map(Number); return m * 60 + s; }
 const isPrep = (title) => /^PREP\b/i.test(title);
 const isIntro = (title) => /^INTRO\b/i.test(title);
 
@@ -347,7 +348,8 @@ function toBase64Url(bytes) {
 function fromBase64Url(text) {
   if (!/^[A-Za-z0-9_-]*$/.test(text)) throw new Error("Link data is damaged.");
   const b64 = text.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((text.length + 3) % 4);
-  const bin = atob(b64);
+  let bin;
+  try { bin = atob(b64); } catch { throw new Error("Link data is damaged."); }
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return bytes;

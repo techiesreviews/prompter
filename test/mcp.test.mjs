@@ -157,6 +157,12 @@ test("rate limit: 429 with Retry-After once the per-IP limit is spent", async ()
   assert.equal((await post({ jsonrpc: "2.0", id: 0, method: "ping" }, { guard, headers: { "cf-connecting-ip": "203.0.113.10" } })).status, 200);
   t = 60_000;
   assert.equal((await post({ jsonrpc: "2.0", id: 0, method: "ping" }, { guard, headers })).status, 200);
+  // A full guard evicts old keys instead of resetting everyone.
+  const small = memoryLimiter(2, 60_000, () => t, 3);
+  await small.limit({ key: "a" }); await small.limit({ key: "a" });
+  assert.equal((await small.limit({ key: "a" })).success, false);
+  for (const k of ["b", "c"]) await small.limit({ key: k });
+  assert.equal((await small.limit({ key: "a" })).success, false, "a keeps its count while b and c arrive");
   // The binding can refuse on its own, even when the in-isolate guard allows.
   const refuse = { async limit() { return { success: false }; } };
   assert.equal((await post({ jsonrpc: "2.0", id: 0, method: "ping" }, { limiter: refuse })).status, 429);

@@ -108,6 +108,15 @@ export async function run({ browser, base, mode, dist, out }) {
   await page.waitForFunction(() => location.hash.startsWith("#s="));
   ok("pasted script opens and gets a #s= address");
 
+  // A link made for the default preset is checked with Default, even after Lex was chosen.
+  await page.evaluate(() => localStorage.setItem("prompter-preset", "lex"));
+  await page.goto(await makeLink(EXAMPLE_SCRIPT.replace("Thanks for watching.", "Thanks a lot for watching this video today."), "default", base));
+  await page.locator(".section").first().waitFor();
+  await page.locator(".problems-btn").click();
+  assert.match(await page.locator(".problem-list").textContent(), /Default style/);
+  await page.locator('[data-action="close-problems"]').click();
+  ok("default links keep the default preset");
+
   await page.goto(`${base}/#s=@@@`);
   await page.locator(".home-error:not([hidden])").waitFor();
   ok("damaged link shows a plain error on home");

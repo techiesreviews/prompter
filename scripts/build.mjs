@@ -31,7 +31,7 @@ export function build(dir = join(root, "dist")) {
     `script-src 'sha256-${hash}'`,
     "style-src 'unsafe-inline'",
     "img-src data:",
-    "frame-src https://www.youtube.com https://www.youtube-nocookie.com",
+    "frame-src https://www.youtube.com",
     "base-uri 'none'",
     "form-action 'none'",
     "frame-ancestors 'none'",
