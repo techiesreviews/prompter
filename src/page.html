@@ -4,27 +4,37 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Prompter · a free teleprompter that keeps your script on your device</title>
-<meta name="description" content="A free teleprompter for talking to camera. Big text, auto-scroll, links on a second screen, and an MCP server so your AI can write the script. Your script stays on your device.">
+<meta name="description" content="A free teleprompter for talking to camera. Big text, auto-scroll, voice follow, links on a second screen, and an MCP server so your AI can write the script. Your script stays on your device.">
 <meta name="color-scheme" content="dark">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230d1020'/%3E%3Cpath d='M8 11h16M8 16h11M8 21h14' stroke='%23ff6a3d' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23000'/%3E%3Cpath d='M8 11h16M8 16h11M8 21h14' stroke='%23ff6a3d' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
-  /* Tokens */
+  /* Tokens. Every text colour meets WCAG AA (4.5:1) on the backgrounds it is
+     used on; test/contrast.test.mjs checks the pairs. */
   :root {
     --size: 52px;
-    --bg: #0d1020;
-    --panel: #161a30;
-    --panel-2: #1d2240;
-    --border: #2c3254;
+    --col: none;
+    --bg: #000000;
+    --panel: #141414;
+    --panel-2: #1f1f1f;
+    --ql-bg: #16120a;
+    --border: #5c5c5c;
     --text: #f4f1ea;
-    --muted: #9aa0bd;
+    --dim: #9a9a9a;
+    --muted: #b0b0b0;
     --accent: #ff6a3d;
+    --accent-dim: #d0603c;
+    --on-accent: #1a0d06;
     --ok: #39c27a;
     --ql: #ffd166;
+    --ql-dim: #bfa060;
     --next: #7fd1ff;
+    --next-dim: #6aa6c8;
     --line: 34vh;
     --radius: 8px;
     --ui: 500 15px/1.4 system-ui, -apple-system, "Segoe UI", Inter, sans-serif;
   }
+  :root[data-width="narrow"] { --col: 600px; }
+  :root[data-width="medium"] { --col: 960px; }
 
   /* Global helpers */
   * { box-sizing: border-box; }
@@ -39,217 +49,215 @@
     padding: 8px 12px; cursor: pointer; text-decoration: none; display: inline-block;
   }
   .btn:hover, .btn:focus-visible { border-color: var(--accent); }
-  .btn.primary { background: var(--accent); border-color: var(--accent); color: #1a0d06; font-weight: 700; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 700; }
+  .btn[aria-pressed="true"] { border-color: var(--ok); }
+  .btn[aria-pressed="true"]::before { content: "● "; color: var(--ok); }
   .muted { color: var(--muted); }
   .error-text { color: var(--accent); }
-  .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-
-  /* Home */
-  .home { max-width: 860px; margin: 0 auto; padding: 32px 20px 64px; font-size: 17px; line-height: 1.55; }
-  .home-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0 8px; }
-  .paste { width: 100%; min-height: 9em; margin-top: 8px; padding: 10px; font: 500 14px/1.45 ui-monospace, Menlo, monospace; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); }
-  .drop-hint { margin: 6px 0 0; }
-  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 4px 20px 14px; margin: 18px 0; }
-  .snippet { position: relative; }
-  .snippet pre { margin: 6px 0 12px; padding: 10px 12px; overflow-x: auto; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); font: 500 13.5px/1.5 ui-monospace, Menlo, monospace; }
-  .format-table { width: 100%; border-collapse: collapse; }
-  .format-table td { padding: 6px 8px; border-top: 1px solid var(--border); vertical-align: top; }
-  .format-table td:first-child { white-space: nowrap; }
-  .tabs { display: flex; gap: 6px; margin: 8px 0; }
-  .tabs .btn[aria-selected="true"] { border-color: var(--accent); background: var(--panel-2); }
+  .file-input { display: none; }
   .dropping { outline: 3px dashed var(--accent); outline-offset: -12px; }
 
-  @scope (.home) {
-    h1 { font-size: 2.1em; line-height: 1.15; margin: 0 0 6px; }
-    h2 { font-size: 1.3em; margin: 34px 0 8px; }
-    h3 { font-size: 1.05em; margin: 18px 0 4px; }
-    p { margin: 0 0 10px; }
-    li { margin: 0 0 4px; }
-    ol, ul { padding-left: 1.3em; }
-  }
-
-  /* Prompter toolbar */
+  /* Toolbar */
   .bar {
     position: fixed; inset: 0 0 auto 0; z-index: 10;
     display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
     padding: 8px 12px;
-    background: rgb(13 16 32 / 0.94);
-    border-bottom: 1px solid #262b4a;
+    background: rgb(0 0 0 / 0.94);
+    border-bottom: 1px solid var(--border);
   }
   .bar .btn { padding: 7px 10px; }
+  .more { display: contents; }
+  .more-btn { display: none; }
+  .slider {
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px;
+    color: var(--muted); font-size: 13px; border: 1px solid var(--border); border-radius: var(--radius);
+  }
+  .slider input { width: 76px; margin: 0; accent-color: var(--accent); }
+  .small-a { font-size: 11px; }
+  .big-a { font-size: 17px; font-weight: 700; }
+  .width { font: var(--ui); color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 8px; }
   .connect[data-on="true"] { border-color: var(--ok); }
   .connect[data-on="true"]::before { content: "● "; color: var(--ok); }
-  .problems-btn[data-count]:not([data-count="0"])::after { content: " " attr(data-count); color: var(--ql); }
   .clock { margin-left: auto; font-variant-numeric: tabular-nums; font-size: 22px; font-weight: 700; }
   .clock[data-late="true"] { color: var(--accent); }
-  .status { color: var(--muted); max-width: 40ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .file-input { display: none; }
+  .status { flex: 1 1 0; min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .status:empty { display: none; }
+  .note-row { flex-basis: 100%; margin: 2px 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--text); }
+  .note-row.alert { color: var(--accent); }
+
+  /* Open menu */
+  .open-menu { position: relative; }
+  .open-menu > summary { list-style: none; }
+  .open-menu > summary::-webkit-details-marker { display: none; }
+  .open-menu[open] > summary { border-color: var(--accent); }
+  .menu {
+    position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; width: max-content; max-width: 86vw;
+    display: grid; gap: 6px; padding: 10px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+  }
+  .menu .btn { text-align: left; }
+  .menu p { margin: 2px 2px 0; font-size: 13px; }
 
   /* Reading line */
   .reading-line {
     position: fixed; left: 0; right: 0; top: var(--line); z-index: 5; pointer-events: none;
-    border-top: 2px dashed rgb(255 106 61 / 0.35);
+    border-top: 2px dashed rgb(255 106 61 / 0.45);
   }
 
-  /* Script */
-  .script { padding: calc(var(--line) + 10px) 6vw 70vh; max-width: 1400px; margin: 0 auto; font: 600 var(--size)/1.3 system-ui, -apple-system, "Segoe UI", Inter, sans-serif; }
-  .section { margin: 0 0 1.4em; padding: 0.5em 0 0.2em; opacity: 0.38; transition: opacity 200ms ease-out; }
-  .section.active { opacity: 1; }
+  /* Script. Inactive sections use the dim colours (still AA on black); the
+     active one uses the full ones. */
+  .script {
+    box-sizing: content-box; max-width: var(--col); margin: 0 auto;
+    padding: calc(var(--line) + 10px) 4vw 70vh;
+    font: 600 var(--size)/1.3 system-ui, -apple-system, "Segoe UI", Inter, sans-serif;
+  }
+  .section {
+    --c-say: var(--dim); --c-ql: var(--ql-dim); --c-next: var(--next-dim); --c-now: var(--accent-dim);
+    margin: 0 0 1.4em; padding: 0.5em 0 0.2em; color: var(--c-say);
+  }
+  .section.active { --c-say: var(--text); --c-ql: var(--ql); --c-next: var(--next); --c-now: var(--accent); }
+  .section :is(p, .title, .link) { transition: color 200ms ease-out, border-color 200ms ease-out; }
   .title {
     display: flex; justify-content: space-between; align-items: baseline; gap: 1em;
     margin: 0 0 0.5em; padding: 0.35em 0.6em;
-    font-size: 0.5em; letter-spacing: 0.08em; text-transform: uppercase;
-    background: var(--panel); border-left: 0.35em solid var(--accent); border-radius: 0.3em;
+    font-size: 0.5em; letter-spacing: 0.08em; text-transform: uppercase; color: var(--c-say);
+    background: var(--panel); border-left: 0.35em solid var(--c-now); border-radius: 0.3em;
   }
   .time { color: var(--muted); font-variant-numeric: tabular-nums; }
   .script p { margin: 0 0 0.25em; }
-  .bullet::before { content: "• "; color: var(--accent); }
-  .next { color: var(--next); }
-  .now b { color: var(--accent); }
+  .bullet::before { content: "• "; color: var(--c-now); }
+  .next { color: var(--c-next); }
+  .now b { color: var(--c-now); }
   .next b, .now b { font-weight: 800; }
   .ql {
-    color: var(--ql); margin: 0 0 0.5em; padding: 0.3em 0.5em;
-    border: 2px solid rgb(255 209 102 / 0.55); border-radius: 0.25em; background: rgb(255 209 102 / 0.07);
+    color: var(--c-ql); margin: 0 0 0.5em; padding: 0.3em 0.5em;
+    border: 2px solid var(--c-ql); border-radius: 0.25em; background: var(--ql-bg);
   }
   .ql small { display: block; font-size: 0.4em; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
   .note { color: var(--muted); font-size: 0.5em; font-weight: 500; margin: 0.15em 0 0.35em; }
   .gap { height: 0.6em; }
+  /* The line Follow my voice heard last. */
+  .script p.cur { color: var(--text); background: var(--panel-2); border-radius: 0.15em; box-shadow: -0.3em 0 0 var(--panel-2), -0.42em 0 0 var(--accent); }
 
   .links { display: flex; flex-wrap: wrap; gap: 0.25em; margin: 0 0 0.6em; }
   .link {
-    font: 600 0.42em/1.2 system-ui, sans-serif; color: var(--text);
-    background: var(--panel-2); border: 1px solid #353c66; border-radius: 0.5em;
+    font: 600 0.42em/1.2 system-ui, sans-serif; color: var(--c-say);
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 0.5em;
     padding: 0.45em 0.8em; cursor: pointer; text-align: left;
   }
   .link small { display: block; color: var(--muted); font-weight: 500; }
-  .link[data-shown="true"] { border-color: var(--ok); box-shadow: 0 0 0 2px rgb(57 194 122 / 0.35); }
+  .link[data-shown="true"] { border-color: var(--ok); box-shadow: 0 0 0 2px var(--ok); }
   .link[data-shown="true"]::after { content: "on main screen"; display: block; color: var(--ok); font-size: 0.75em; margin-top: 0.2em; }
 
-  .help { color: var(--muted); padding: 0 6vw 40px; }
+  /* Demo PREP: the actions and the "Use your AI" panel */
+  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3em; margin: 0 0 0.5em; }
+  .actions .btn { font: 600 max(16px, 0.42em)/1.25 system-ui, sans-serif; padding: 0.5em 0.8em; }
+  .actions .drop-hint { font: 500 max(15px, 0.36em)/1.3 system-ui, sans-serif; color: var(--muted); }
+  .ai-panel {
+    max-width: 68ch; margin: 0 0 0.6em; padding: 14px 18px;
+    font: 500 17px/1.5 system-ui, -apple-system, "Segoe UI", Inter, sans-serif; color: var(--text);
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  }
+  .ai-panel p { margin: 0 0 10px; }
+  .ai-panel ul { margin: 0 0 10px; padding-left: 1.2em; }
+  .ai-panel li { margin: 0 0 6px; }
+  .ai-panel pre { margin: 4px 0 0; padding: 6px 10px; overflow-x: auto; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); }
+  .ai-panel pre code { border: 0; padding: 0; background: none; }
+  .mcp-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .mcp-url { font-size: 1em; padding: 4px 8px; overflow-wrap: anywhere; }
 
-  /* Problems dialog */
-  .problems { max-width: min(720px, 94vw); max-height: 80vh; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; }
-  .problems::backdrop { background: rgb(0 0 0 / 0.55); }
-  .problems ul { padding-left: 1.2em; }
-  .problems .sev-error { color: var(--accent); }
-  .problems .sev-warning { color: var(--ql); }
+  .help { color: var(--muted); padding: 0 4vw 40px; }
+
+  /* Paste dialog */
+  .paste-dialog { width: min(720px, 94vw); color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; }
+  .paste-dialog::backdrop { background: rgb(0 0 0 / 0.7); }
+  .paste-dialog h2 { margin: 0 0 8px; font-size: 1.2em; }
+  .paste { width: 100%; min-height: 12em; padding: 10px; font: 500 14px/1.45 ui-monospace, Menlo, monospace; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); }
 
   @media (max-width: 640px) {
-    .bar .optional { display: none; }
+    .bar { gap: 5px; padding: 6px 8px; }
+    .bar .btn { padding: 6px 8px; font-size: 14px; }
+    .more-btn { display: inline-block; }
+    .more { display: none; }
+    .bar[data-more="true"] .more { display: flex; flex-basis: 100%; flex-wrap: wrap; gap: 8px; align-items: center; padding: 4px 0 2px; }
     .clock { font-size: 18px; }
+    .clock[data-running="false"] { display: none; }
+    .status { flex-basis: 100%; }
     .script { padding-inline: 4vw; }
-    .format-table tr { display: block; padding: 6px 0; border-top: 1px solid var(--border); }
-    .format-table td { display: block; padding: 2px 0; border-top: 0; }
-    .format-table td:first-child { white-space: normal; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .section { transition: none; }
+    .section :is(p, .title, .link) { transition: none; }
   }
 </style>
 </head>
-<body data-view="home">
+<body>
 
-<!-- Home -->
-<main class="home" id="home">
-  <h1>Prompter</h1>
-  <p class="muted">A free teleprompter for talking to camera. Big text, auto-scroll, and a second window that shows your links. Your script never leaves your device.</p>
-
-  <div class="home-actions">
-    <label class="btn primary">Open a script file<input class="file-input" type="file" accept=".md,.markdown,.txt,text/markdown,text/plain"></label>
-    <button class="btn" type="button" data-action="paste">Paste a script</button>
-    <button class="btn" type="button" data-action="sample">Try the example</button>
-    <button class="btn" type="button" data-action="last" hidden>Continue last script</button>
-  </div>
-  <p class="muted drop-hint">Or drop a .md or .txt file anywhere on this page.</p>
-  <p class="error-text home-error" role="alert" hidden></p>
-
-  <div class="paste-box" hidden>
-    <label for="paste-text" class="visually-hidden">Script text</label>
-    <textarea id="paste-text" class="paste" placeholder="### **INTRO · 00:00**&#10;&#10;QL: Why should they stay?&#10;&#10;Hi, I'm Sam. Welcome."></textarea>
-    <p><button class="btn primary" type="button" data-action="open-paste">Open in the prompter</button></p>
-  </div>
-
-  <h2>How it works</h2>
-  <ol>
-    <li>Write your script as plain text in the simple format below, or let your AI write it for you.</li>
-    <li>Open it here. Put this window on the screen next to your camera.</li>
-    <li>Click <b>Connect main screen</b> and drag the new window to your main screen. When you reach a section, its first link opens there. Press <kbd>1</kbd>–<kbd>9</kbd> to show its other links.</li>
-    <li>Scroll with the mouse or arrow keys, or press <kbd>Space</kbd> to auto-scroll. Read the line at the dashed mark.</li>
-  </ol>
-
-  <h2>Your script stays with you</h2>
-  <p>There are no accounts and nothing is saved on our server. A shared prompter link carries the whole script inside the link itself, in the part after <code>#</code>, which your browser never sends to any server. This browser remembers your last script so you can continue later. You can also save this page and use it offline.</p>
-
-  <h2>Let your AI write the script</h2>
-  <p>Prompter has an open MCP server. Connect it to your AI assistant, then ask: <i>“Help me write a prompter script about …”</i>. It will interview you, write the script, check it and give you a link that opens here.</p>
-  <p>Server address: <code class="mcp-url">https://prompter.techies.tools/mcp</code> · no sign-in needed.</p>
-  <p class="muted">To stop heavy use, the server allows 60 requests a minute (10 per 10 seconds) per internet address. It keeps only a count, in memory, under a scrambled form of your IP address, and forgets it once you pause for a few seconds. Your script is not part of it, and nothing is written down.</p>
-
-  <div class="card">
-    <h3>Claude (claude.ai and Claude Desktop)</h3>
-    <p>Settings → Connectors → Add custom connector. Name: <code>Prompter</code>. URL: the server address above.</p>
-    <h3>Claude Code</h3>
-    <div class="snippet"><pre><code class="mcp-snippet">claude mcp add --transport http prompter https://prompter.techies.tools/mcp</code></pre></div>
-    <h3>ChatGPT</h3>
-    <p>Settings → Apps &amp; Connectors → Advanced settings → turn on Developer mode. Then create a connector: name <code>Prompter</code>, the server address above, authentication <b>No authentication</b>. Menu names can differ a little between versions.</p>
-    <h3>Codex and T3 Code</h3>
-    <p>Add to <code>~/.codex/config.toml</code>. T3 Code uses your Codex and Claude Code settings, so add it there.</p>
-    <div class="snippet"><pre><code class="mcp-snippet">[mcp_servers.prompter]
-url = "https://prompter.techies.tools/mcp"</code></pre></div>
-    <h3>Other MCP apps (JSON config)</h3>
-    <div class="snippet"><pre><code class="mcp-snippet">{
-  "mcpServers": {
-    "prompter": { "type": "http", "url": "https://prompter.techies.tools/mcp" }
-  }
-}</code></pre></div>
-    <p class="muted">Tools: <code>get_format</code>, <code>check_script</code>, <code>make_prompter_link</code>. Prompt: <code>write_prompter_script</code>.</p>
-  </div>
-
-  <h2>Script format</h2>
-  <table class="format-table"><tbody class="format-rows"></tbody></table>
-
-  <h2>Style presets</h2>
-  <p>The checker (and your AI) can follow one of two styles.</p>
-  <div class="tabs" role="tablist"></div>
-  <div class="preset-rules" role="tabpanel"></div>
-
-  <h2>Keys</h2>
-  <p>
-    <kbd>↑</kbd> <kbd>↓</kbd> scroll · <kbd>→</kbd> / <kbd>←</kbd> next or previous section · <kbd>1</kbd>–<kbd>9</kbd> show a link ·
-    <kbd>Space</kbd> auto-scroll, <kbd>[</kbd> <kbd>]</kbd> its speed · <kbd>+</kbd> <kbd>−</kbd> text size · <kbd>F</kbd> full screen.
-  </p>
-  <p class="muted">Made by <a href="https://techies.review/">Techies</a>.</p>
-</main>
-
-<!-- Prompter -->
-<div class="prompter" id="prompter" hidden>
-  <div class="bar">
-    <button class="btn" type="button" data-action="home" title="Back to the start page">Home</button>
+<header class="bar">
+  <details class="open-menu">
+    <summary class="btn" title="Open another script">Open</summary>
+    <div class="menu">
+      <label class="btn">Open a script file<input class="file-input" type="file" accept=".md,.markdown,.txt,text/markdown,text/plain"></label>
+      <button class="btn" type="button" data-action="paste">Paste a script</button>
+      <button class="btn" type="button" data-action="demo">Back to the demo</button>
+      <p class="muted">Or drop a .md or .txt file anywhere.</p>
+    </div>
+  </details>
+  <button class="btn auto" type="button" aria-pressed="false" title="Space. Scrolls at the speed set with the slider.">Auto-scroll</button>
+  <button class="btn voice" type="button" aria-pressed="false" title="Scrolls as you read out loud" hidden>Follow my voice</button>
+  <button class="btn more-btn" type="button" aria-expanded="false" aria-controls="more">More</button>
+  <div class="more" id="more">
     <button class="btn connect" type="button" data-on="false" title="Opens a window. Drag it to your main screen once.">Connect main screen</button>
-    <button class="btn start optional" type="button" title="Starts the show clock">Start clock</button>
-    <button class="btn auto" type="button" title="Space">Auto-scroll: off</button>
-    <button class="btn smaller" type="button" title="Minus key" aria-label="Smaller text">A−</button>
-    <button class="btn bigger" type="button" title="Plus key" aria-label="Bigger text">A+</button>
-    <button class="btn problems-btn optional" type="button" data-count="0" title="Check the script against a style">Check</button>
+    <button class="btn start" type="button" title="Starts the show clock">Start clock</button>
+    <label class="slider" title="Auto-scroll speed ([ and ] keys)">Slow<input class="speed" type="range" min="10" max="300" step="10" aria-label="Auto-scroll speed">Fast</label>
+    <label class="slider" title="Text size (− and + keys)"><span class="small-a">Small</span><input class="size" type="range" min="20" max="110" step="2" aria-label="Text size"><span class="big-a">Big</span></label>
+    <select class="width" aria-label="Column width" title="A narrow column keeps your eyes near the camera">
+      <option value="narrow">Narrow column</option>
+      <option value="medium">Medium column</option>
+      <option value="full">Full width</option>
+    </select>
     <button class="btn share" type="button" title="Copy a link that contains this script">Copy link</button>
-    <span class="status" role="status"></span>
-    <span class="clock">00:00</span>
   </div>
-  <div class="reading-line" aria-hidden="true"></div>
-  <main class="script"></main>
-  <p class="help">
-    Scroll with the mouse or <kbd>↑</kbd> <kbd>↓</kbd>. <kbd>→</kbd> / <kbd>←</kbd> next or previous section.
-    <kbd>1</kbd>–<kbd>9</kbd> show that link of the current section. <kbd>Space</kbd> auto-scroll, <kbd>[</kbd> <kbd>]</kbd> its speed.
-    <kbd>+</kbd> <kbd>−</kbd> text size. <kbd>F</kbd> full screen.
+  <span class="status" role="status"></span>
+  <span class="clock" data-running="false">00:00</span>
+  <p class="note-row alert" role="alert" hidden><span class="alert-text"></span><button class="btn" type="button" data-action="dismiss">OK</button></p>
+  <p class="note-row voice-notice" hidden>
+    <span>Follow my voice sends your voice to your browser's speech service (in Chrome, that is Google) to turn it into words. Your script stays on this device.</span>
+    <button class="btn primary" type="button" data-action="voice-ok">Turn on</button>
+    <button class="btn" type="button" data-action="voice-cancel">Not now</button>
   </p>
-</div>
+</header>
+<div class="reading-line" aria-hidden="true"></div>
+<main class="script"></main>
+<p class="help">
+  Scroll with the mouse or <kbd>↑</kbd> <kbd>↓</kbd>. <kbd>→</kbd> / <kbd>←</kbd> next or previous section.
+  <kbd>1</kbd>–<kbd>9</kbd> show that link of the current section. <kbd>Space</kbd> auto-scroll, <kbd>[</kbd> <kbd>]</kbd> its speed.
+  <kbd>+</kbd> <kbd>−</kbd> text size. <kbd>F</kbd> full screen. Made by <a href="https://techies.review/">Techies</a>.
+</p>
 
-<dialog class="problems" aria-labelledby="problems-title">
-  <h2 id="problems-title">Script check</h2>
-  <div class="tabs problem-tabs" role="tablist"></div>
-  <div class="problem-list"></div>
-  <p><button class="btn" type="button" data-action="close-problems">Close</button></p>
+<dialog class="paste-dialog" aria-labelledby="paste-title">
+  <h2 id="paste-title">Paste a script</h2>
+  <label for="paste-text" class="muted">Script text (Markdown, like the demo)</label>
+  <textarea id="paste-text" class="paste" placeholder="### **INTRO · 00:00**&#10;&#10;QL: Why should they stay?&#10;&#10;Hi, I'm Sam. Welcome."></textarea>
+  <p class="error-text paste-error" role="alert" hidden></p>
+  <p><button class="btn primary" type="button" data-action="open-paste">Open in the prompter</button> <button class="btn" type="button" data-action="close-paste">Cancel</button></p>
 </dialog>
+
+<!-- Shown under "Use your AI" in the demo's PREP section. -->
+<template id="ai-template">
+  <div class="ai-panel" id="ai-panel">
+    <p>Prompter has an open MCP server. Connect it to your AI assistant, then ask: <i>“Help me write a prompter script about …”</i>. It interviews you, writes and checks the script, and gives you a link that opens here.</p>
+    <p class="mcp-row"><code class="mcp-url">https://prompter.techies.tools/mcp</code> <button class="btn" type="button" data-action="copy-mcp">Copy address</button></p>
+    <ul>
+      <li><b>Claude</b> (claude.ai, Claude Desktop): Settings → Connectors → Add custom connector. Name it Prompter and paste the address.</li>
+      <li><b>ChatGPT:</b> Settings → Apps &amp; Connectors → Advanced settings → turn on Developer mode. Then create a connector with the address and <b>No authentication</b>. Menu names can differ a little.</li>
+      <li><b>Codex and T3 Code:</b> add this to <code>~/.codex/config.toml</code> (T3 Code uses your Codex and Claude Code settings):
+        <pre><code class="mcp-snippet">[mcp_servers.prompter]
+url = "https://prompter.techies.tools/mcp"</code></pre></li>
+      <li><b>Claude Code:</b> <code class="mcp-snippet">claude mcp add --transport http prompter https://prompter.techies.tools/mcp</code></li>
+    </ul>
+    <p class="muted">No sign-in. Your script travels only inside the link. To stop heavy use, the server allows 60 requests a minute per internet address. It counts them in memory only, under a hashed form of your address, never with your script, and forgets the count within a few minutes of your last request.</p>
+  </div>
+</template>
 
 <!-- An offline copy can carry a script here: scripts/embed.mjs replaces everything between the markers. -->
 <script type="text/markdown" id="script-md">

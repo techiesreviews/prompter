@@ -6,7 +6,9 @@ A free teleprompter for talking to camera, plus an MCP server so your AI assista
 
 - Big text, auto-scroll, a reading line and a show clock.
 - A second "main screen" window that opens each section's links as you reach them (YouTube links play full size).
-- A checker that points out long lines, a missing main question, links in the wrong place and similar problems.
+- Follow my voice (Chrome and Edge): the prompter listens and keeps the line you are reading at the reading mark. Your browser's speech service hears your voice; the script stays on your device.
+- Sliders for speed and text size, and a narrow column to keep your eyes near the camera.
+- A checker (through the MCP server) that points out long lines, a missing main question, links in the wrong place and similar problems.
 - Works offline: the page is one self-contained HTML file.
 
 ## Your script stays with you
@@ -27,7 +29,7 @@ Server address: `https://prompter.techies.tools/mcp` (Streamable HTTP, stateless
   { "mcpServers": { "prompter": { "type": "http", "url": "https://prompter.techies.tools/mcp" } } }
   ```
 
-The home page has steps for ChatGPT, Codex and more. Then ask: *"Help me write a prompter script about …"*. Your assistant interviews you, writes the script, checks it and gives you a link that opens it in the prompter.
+The prompter's demo script has steps for ChatGPT, Codex and more (PREP → "Use your AI"). Then ask: *"Help me write a prompter script about …"*. Your assistant interviews you, writes the script, checks it and gives you a link that opens it in the prompter.
 
 Tools: `get_format`, `check_script`, `make_prompter_link`. Prompt: `write_prompter_script`. Requests are limited to 200 KB.
 
@@ -53,7 +55,7 @@ Now: links on screen.
 - `QL: question` is the one main question: read it silently and answer it; it is not read aloud. Shown at the top of the section.
 - Plain lines are spoken. `Next: …` / `Now: …` are transitions. `[text]` is a private reminder. `- text` is a bullet.
 
-The full format, the two style presets (`lex`, strict, and `default`, softer) and the checker live in [`src/core.mjs`](src/core.mjs). The page, the checker and the MCP server all use that one file. The `get_format` tool and the home page show the same rules.
+The full format, the two style presets (`lex`, strict, and `default`, softer) and the checker live in [`src/core.mjs`](src/core.mjs). The page, the checker and the MCP server all use that one file. The `get_format` tool shows the same rules, and the demo script that opens on the page teaches them by example.
 
 ## Limits
 
@@ -82,7 +84,7 @@ It runs on the Cloudflare Workers **free plan**: one Worker serves the page as s
 2. In `wrangler.jsonc`, change `"name"` if you like, and replace the `routes` entry `prompter.techies.tools` with your own domain (it must be a zone in your Cloudflare account). No domain? Remove `routes` and set `"workers_dev": true` to get a `*.workers.dev` address.
 3. Deploy: `node scripts/build.mjs && npx wrangler deploy`. The first deploy creates the Durable Object class from the `migrations` entry.
 
-Links made by your copy, and the server address on its home page, follow your own address automatically. Three places still name `prompter.techies.tools`; change them to yours: `SITE` in `src/core.mjs` (used by offline copies opened from a file) and the `make_prompter_link` description and `instructions` text in `src/mcp.mjs`.
+Links made by your copy, and the server address in its demo script, follow your own address automatically. Three places still name `prompter.techies.tools`; change them to yours: `SITE` in `src/core.mjs` (used by offline copies opened from a file) and the `make_prompter_link` description and `instructions` text in `src/mcp.mjs`.
 
 ## Contributing
 

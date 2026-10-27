@@ -1,5 +1,6 @@
-// Page logic. scripts/build.mjs inlines src/core.mjs above this file inside one
-// function, so parse, check, PRESETS, encodeScript … are in scope here.
+// Page logic. scripts/build.mjs inlines src/core.mjs and src/follow.mjs above
+// this file inside one function, so parse, PRESETS, DEMO_SCRIPT, encodeScript,
+// followLine, speechWords … are in scope here.
 
 // ---------- Player view ----------
 // The main-screen window shows a YouTube video full size via this same page.
@@ -22,20 +23,28 @@ if (location.hash.startsWith("#player=")) {
 }
 
 const $ = (sel) => document.querySelector(sel);
-const homeEl = $("#home");
-const prompterEl = $("#prompter");
+const bar = $(".bar");
 const main = $(".script");
 const statusEl = $(".status");
 const clockEl = $(".clock");
 const connectBtn = $(".connect");
 const autoBtn = $(".auto");
-const problemsBtn = $(".problems-btn");
-const dialog = $("dialog.problems");
-const homeError = $(".home-error");
+const voiceBtn = $(".voice");
+const voiceNotice = $(".voice-notice");
+const alertEl = $(".note-row.alert");
+const openMenu = $(".open-menu");
+const pasteDialog = $(".paste-dialog");
+const speedInput = $(".speed");
+const sizeInput = $(".size");
+const widthSelect = $(".width");
 const WINDOW_NAME = "prompter-main-screen";
 const SETTLE_MS = 700; // wait this long on a section before changing the main screen
 const LAST_KEY = "prompter-last-script";
 const PRESET_KEY = "prompter-preset";
+const VOICE_OK_KEY = "prompter-voice-ok";
+const WIDTHS = ["narrow", "medium", "full"];
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
 // Some viewers (for example a sandboxed file preview) refuse storage; never let that stop the page.
 const store = {
@@ -54,47 +63,31 @@ let clockStart = 0;
 let autoOn = false;
 let speed = Number(store.get("prompter-speed")) || 40;
 let lastFrame = 0;
-let view = "home";
+let voiceLines = []; // speechWords of each spoken line, by data-k
+let voiceOn = false;
+let voiceAt = -1;
+let recognition = null;
+let voiceRestarts = 0;
+let resumeAuto = false;
 
-// ---------- Views ----------
-function showView(name) {
-  view = name;
-  document.body.dataset.view = name;
-  homeEl.hidden = name !== "home";
-  prompterEl.hidden = name !== "prompter";
-  if (name !== "prompter") setAuto(false);
-}
+const isDemo = () => scriptText === DEMO_SCRIPT;
+const mcpUrl = () => (/^https?:$/.test(location.protocol) ? `${location.origin}/mcp` : `${SITE}/mcp`);
 
-function showHome(error = "") {
-  showView("home");
-  homeError.hidden = !error;
-  homeError.textContent = error;
-  presetTabs($(".tabs[role=tablist]"), renderPresetDocs);
-  renderPresetDocs();
-  const last = store.get(LAST_KEY);
-  const lastBtn = $('[data-action="last"]');
-  lastBtn.hidden = !last;
-  if (last) {
-    const parsed = parse(last);
-    lastBtn.textContent = parsed.length ? `Continue: ${parsed[0].title}${parsed.length > 1 ? " …" : ""}` : "Continue last script";
-  }
-  window.scrollTo(0, 0);
-}
-
-/** Open a script in the prompter. `fromLink` keeps the current #s= fragment. */
-async function openScript(text, { fromLink = false, label = "" } = {}) {
+// ---------- Opening scripts ----------
+/**
+ * Show a script. `fromLink` keeps the current address (a #s= link, the demo or
+ * an embedded copy); otherwise the address gets the script's #s= link.
+ * `remember` keeps it as this browser's last script. Returns false if empty.
+ */
+async function openScript(text, { fromLink = false, remember = true, label = "" } = {}) {
   const parsed = parse(text);
-  if (!parsed.length) {
-    showHome("No sections found. Each section starts with a title line like: ### **INTRO · 00:00**");
-    return;
-  }
+  if (!parsed.length) return false;
+  if (voiceOn) stopVoice();
   scriptText = text;
   sections = parsed;
-  store.set(LAST_KEY, text);
-  showView("prompter");
+  if (remember) store.set(LAST_KEY, text);
   window.scrollTo(0, 0);
   render();
-  updateProblemCount();
   setStatus(label);
   if (!fromLink) {
     try {
@@ -102,34 +95,63 @@ async function openScript(text, { fromLink = false, label = "" } = {}) {
       history.replaceState(null, "", `#s=${data}${preset === "default" ? "" : `&p=${preset}`}`);
     } catch { /* the link is a convenience; the prompter works without it */ }
   }
+  return true;
+}
+
+function openDemo(label = "") {
+  if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+  return openScript(DEMO_SCRIPT, { fromLink: true, remember: false, label });
 }
 
 async function route() {
+  showAlert("");
   const hash = location.hash;
   if (hash.startsWith("#s=") || hash.includes("&s=")) {
     const { data, preset: p } = readHash(hash);
     preset = p || "default"; // a link without &p= was made for the default preset
     store.set(PRESET_KEY, preset);
-    try {
-      await openScript(await decodeScript(data || ""), { fromLink: true, label: "Opened from link" });
-    } catch (error) {
-      showHome(`This link could not be opened: ${error.message}`);
+    let text;
+    try { text = await decodeScript(data || ""); } catch (error) {
+      await openDemo("");
+      showAlert(`This link could not be opened: ${error.message}`);
+      return;
+    }
+    if (!(await openScript(text, { fromLink: true, label: "Opened from link" }))) {
+      await openDemo("");
+      showAlert("This link has no sections. Each section starts with a title line like: ### **INTRO · 00:00**");
     }
     return;
   }
-  const embedded = parse($("#script-md").textContent);
-  if (embedded.length) {
-    await openScript($("#script-md").textContent, { fromLink: true });
+  const embedded = $("#script-md").textContent;
+  if (parse(embedded).length) {
+    await openScript(embedded, { fromLink: true, remember: false });
     return;
   }
-  showHome();
+  const last = store.get(LAST_KEY);
+  if (last && last !== DEMO_SCRIPT && await openScript(last, { label: "Your last script · Open › Back to the demo" })) return;
+  await openDemo();
 }
 
 // ---------- Rendering ----------
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const lead = (s) => esc(s).replace(/^([^:]{1,12}:)/, "<b>$1</b>");
+const SPOKEN = new Set(["say", "bullet", "next", "now"]);
+const FILE_ACCEPT = ".md,.markdown,.txt,text/markdown,text/plain";
+
+function demoActions(items) {
+  const html = items.map((it) => {
+    const action = DEMO_ACTIONS[it.text];
+    if (action === "open-file") return `<label class="btn primary">${esc(it.text)}<input class="file-input" type="file" accept="${FILE_ACCEPT}"></label>`;
+    if (action === "drop-hint") return `<span class="drop-hint">or ${esc(it.text.toLowerCase())}</span>`;
+    if (action === "ai") return `<button class="btn" type="button" data-action="ai" aria-expanded="false" aria-controls="ai-panel">${esc(it.text)}</button>`;
+    return `<button class="btn" type="button" data-action="${action}">${esc(it.text)}</button>`;
+  }).join("");
+  return `<div class="actions">${html}</div><div class="ai-slot" hidden></div>`;
+}
 
 function render() {
+  voiceLines = [];
+  const demo = isDemo();
   main.innerHTML = sections.map((s, i) => {
     const links = s.links.length
       ? `<div class="links">${s.links.map((l, j) =>
@@ -138,25 +160,44 @@ function render() {
     // The QL main question is read silently: always show it at the top.
     const qls = s.items.filter((it) => it.type === "ql")
       .map((it) => `<p class="ql"><small>Main question · answer it, don't read it</small>${esc(it.text)}</p>`).join("");
-    const rest = s.items.filter((it) => it.type !== "ql");
+    let rest = s.items.filter((it) => it.type !== "ql");
+    let actions = "";
+    if (demo && i === 0) {
+      const isAction = (it) => it.type === "bullet" && DEMO_ACTIONS[it.text];
+      actions = demoActions(rest.filter(isAction));
+      rest = rest.filter((it) => !isAction(it));
+    }
     while (rest[0]?.type === "gap") rest.shift();
     const items = rest.map((it) => {
       if (it.type === "gap") return `<div class="gap"></div>`;
-      if (it.type === "next" || it.type === "now") return `<p class="${it.type}">${lead(it.text)}</p>`;
-      return `<p class="${it.type}">${esc(it.text)}</p>`;
+      const k = SPOKEN.has(it.type) ? ` data-k="${voiceLines.push(speechWords(it.text)) - 1}"` : "";
+      if (it.type === "next" || it.type === "now") return `<p class="${it.type}"${k}>${lead(it.text)}</p>`;
+      return `<p class="${it.type}"${k}>${esc(it.text)}</p>`;
     }).join("");
-    return `<section class="section" data-i="${i}"><h2 class="title"><span>${esc(s.title)}</span><span class="time">${esc(s.time)}</span></h2>${links}${qls}${items}</section>`;
+    return `<section class="section" data-i="${i}"><h2 class="title"><span>${esc(s.title)}</span><span class="time">${esc(s.time)}</span></h2>${links}${qls}${actions}${items}</section>`;
   }).join("");
   active = -1;
   shownUrl = "";
+  voiceAt = -1;
   updateActive();
+}
+
+function toggleAiPanel(button) {
+  const slot = main.querySelector(".ai-slot");
+  if (!slot) return;
+  if (!slot.firstElementChild) {
+    slot.append($("#ai-template").content.cloneNode(true));
+    slot.querySelector(".mcp-url").textContent = mcpUrl();
+    slot.querySelectorAll(".mcp-snippet").forEach((el) => { el.textContent = el.textContent.replaceAll(`${SITE}/mcp`, mcpUrl()); });
+  }
+  slot.hidden = !slot.hidden;
+  button.setAttribute("aria-expanded", String(!slot.hidden));
 }
 
 // ---------- Active section ----------
 function readingLineY() { return window.innerHeight * 0.34; }
 
 function updateActive() {
-  if (view !== "prompter") return;
   const els = main.querySelectorAll(".section");
   const y = readingLineY();
   let idx = 0;
@@ -183,7 +224,7 @@ function connect() {
   try {
     if (mainWin.location.href === "about:blank") {
       mainWin.document.title = "Main screen";
-      mainWin.document.body.style.cssText = "margin:0;display:grid;place-items:center;height:100vh;background:#0d1020;color:#f4f1ea;font:600 32px system-ui;text-align:center;padding:0 5vw";
+      mainWin.document.body.style.cssText = "margin:0;display:grid;place-items:center;height:100vh;background:#000;color:#f4f1ea;font:600 32px system-ui;text-align:center;padding:0 5vw";
       mainWin.document.body.textContent = "Drag this window to your main screen and make it full size. Pages will open here.";
     }
   } catch { /* already showing another site; fine */ }
@@ -232,21 +273,19 @@ function showLink(si, li, fromUser) {
   main.querySelectorAll(".link").forEach((b) => {
     b.dataset.shown = String(screenUrl(sections[b.dataset.s].links[b.dataset.l].url) === shownUrl);
   });
-  statusEl.style.color = "";
   setStatus(`On main screen: ${s.links[li].label}`);
 }
 
-function setStatus(t) { statusEl.textContent = t; }
+function setStatus(t) { statusEl.textContent = t; statusEl.title = t; }
 
-function lost() {
-  setStatus("Main screen window lost. Click “Connect main screen” or a link button.");
-  statusEl.style.color = "var(--accent)";
+/** A message that must not be missed (errors). Empty text hides it. */
+function showAlert(t) {
+  alertEl.hidden = !t;
+  $(".alert-text").textContent = t;
 }
 
-function blocked() {
-  setStatus("No window could open. Allow pop-ups for this page.");
-  statusEl.style.color = "var(--accent)";
-}
+function lost() { showAlert("Main screen window lost. Click “Connect main screen” or a link button."); }
+function blocked() { showAlert("No window could open. Allow pop-ups for this page."); }
 
 // ---------- Clock ----------
 const fmt = (sec) => `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`;
@@ -270,18 +309,35 @@ function tick(ts) {
 function setAuto(on) {
   autoOn = on;
   lastFrame = 0;
-  autoBtn.textContent = `Auto-scroll: ${on ? speed + " px/s" : "off"}`;
+  autoBtn.setAttribute("aria-pressed", String(on));
   if (on) requestAnimationFrame(tick);
 }
+function toggleAuto() {
+  if (voiceOn) { setStatus("Auto-scroll is paused while Follow my voice is on."); return; }
+  setAuto(!autoOn);
+}
 
-// ---------- Text size ----------
+function setSpeed(v) {
+  speed = Math.min(300, Math.max(10, Math.round(v / 10) * 10 || 40));
+  speedInput.value = speed;
+  store.set("prompter-speed", speed);
+}
+
+// ---------- Text size and column ----------
 function setSize(px) {
-  px = Math.min(110, Math.max(20, px));
+  px = Math.min(110, Math.max(20, Math.round(px) || 52));
   document.documentElement.style.setProperty("--size", px + "px");
+  sizeInput.value = px;
   store.set("prompter-size", px);
 }
-setSize(Number(store.get("prompter-size")) || (window.innerWidth < 640 ? 32 : 52));
 const curSize = () => parseInt(getComputedStyle(document.documentElement).getPropertyValue("--size"), 10);
+
+function setWidth(name) {
+  const w = WIDTHS.includes(name) ? name : "full";
+  document.documentElement.dataset.width = w;
+  widthSelect.value = w;
+  store.set("prompter-width", w);
+}
 
 function goSection(delta) {
   const els = main.querySelectorAll(".section");
@@ -289,108 +345,202 @@ function goSection(delta) {
   if (!target) return;
   window.scrollTo({ top: target.offsetTop - readingLineY() + 2 });
   updateActive(); // at once, so quick repeated presses keep moving
+  if (voiceOn) voiceAt = lineAtReadingLine();
 }
 
-// ---------- Presets: docs and checker ----------
-function presetTabs(container, onPick) {
-  container.innerHTML = Object.values(PRESETS).map((p) =>
-    `<button class="btn" type="button" role="tab" data-preset="${p.name}" aria-selected="${p.name === preset}">${esc(p.label)}</button>`).join("");
-  container.onclick = (e) => {
-    const b = e.target.closest("[data-preset]");
-    if (!b) return;
-    preset = b.dataset.preset;
-    store.set(PRESET_KEY, preset);
-    // Keep the link's &p= in step, so Back or reload restores this choice.
-    const { data } = readHash(location.hash);
-    if (data) history.replaceState(null, "", `#s=${data}${preset === "default" ? "" : `&p=${preset}`}`);
-    container.querySelectorAll("[data-preset]").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
-    onPick();
-  };
+// ---------- Follow my voice ----------
+// The browser's speech recognition turns the voice into words (Chrome sends
+// the audio to Google for that); the script itself never leaves the page.
+function lineAtReadingLine() {
+  const y = readingLineY();
+  let k = -1;
+  main.querySelectorAll("[data-k]").forEach((el) => { if (el.getBoundingClientRect().top <= y + 4) k = Number(el.dataset.k); });
+  return k;
 }
 
-function renderPresetDocs() {
-  const p = PRESETS[preset];
-  $(".preset-rules").innerHTML = `<p>${esc(p.summary)}</p><ul>${p.rules.map((r) =>
-    `<li>${esc(r).replace(/`([^`]+)`/g, "<code>$1</code>")}</li>`).join("")}</ul>`;
+function markLine(k) {
+  main.querySelector("p.cur")?.classList.remove("cur");
+  const el = main.querySelector(`[data-k="${k}"]`);
+  if (!el) return;
+  el.classList.add("cur");
+  const top = el.getBoundingClientRect().top + window.scrollY - readingLineY() + 2;
+  window.scrollTo({ top, behavior: reducedMotion.matches ? "auto" : "smooth" });
 }
 
-function renderProblems() {
-  const result = check(scriptText, preset);
-  $(".problem-list").innerHTML = result.problems.length
-    ? `<p>${result.errors} error(s), ${result.warnings} warning(s) with the ${esc(PRESETS[preset].label)} style.</p><ul>${result.problems.map((p) =>
-        `<li class="sev-${p.severity}">${p.line ? `Line ${p.line}: ` : ""}${esc(p.message)}</li>`).join("")}</ul>`
-    : `<p>No problems with the ${esc(PRESETS[preset].label)} style.</p>`;
-  updateProblemCount(result);
+function setVoiceButton() {
+  voiceBtn.setAttribute("aria-pressed", String(voiceOn));
 }
 
-function updateProblemCount(result = check(scriptText, preset)) {
-  problemsBtn.dataset.count = String(result.problems.length);
-  problemsBtn.title = `${result.errors} error(s), ${result.warnings} warning(s) with the ${PRESETS[preset].label} style`;
+function toggleVoice() {
+  if (voiceOn) { stopVoice(); setStatus("Follow my voice is off."); return; }
+  if (store.get(VOICE_OK_KEY) !== "yes") {
+    voiceNotice.hidden = false;
+    voiceNotice.querySelector('[data-action="voice-ok"]').focus();
+    return;
+  }
+  startVoice();
 }
 
+function startVoice() {
+  voiceNotice.hidden = true;
+  showAlert("");
+  try {
+    recognition = new Recognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = navigator.language || "en-US";
+    recognition.onresult = onVoiceResult;
+    recognition.onerror = onVoiceError;
+    recognition.onend = onVoiceEnd;
+    recognition.start();
+  } catch {
+    recognition = null;
+    showAlert("Follow my voice could not start in this browser.");
+    return;
+  }
+  voiceOn = true;
+  voiceRestarts = 0;
+  voiceAt = lineAtReadingLine();
+  resumeAuto = autoOn;
+  setAuto(false);
+  setVoiceButton();
+  setStatus("Listening. Read your script out loud.");
+}
+
+function stopVoice(message = "") {
+  const r = recognition;
+  recognition = null;
+  voiceOn = false;
+  if (r) {
+    r.onresult = r.onerror = r.onend = null;
+    try { r.abort(); } catch { /* already stopped */ }
+  }
+  setVoiceButton();
+  main.querySelector("p.cur")?.classList.remove("cur");
+  if (message) showAlert(message);
+  if (resumeAuto) { resumeAuto = false; setAuto(true); }
+}
+
+function onVoiceResult(e) {
+  voiceRestarts = 0;
+  let heard = "";
+  for (let i = Math.max(0, e.results.length - 3); i < e.results.length; i++) heard += ` ${e.results[i][0].transcript}`;
+  const k = followLine(voiceLines, voiceAt, heard);
+  if (k !== voiceAt && k >= 0) { voiceAt = k; markLine(k); }
+}
+
+const VOICE_ERRORS = {
+  "not-allowed": "The microphone is blocked. Allow it for this page to use Follow my voice.",
+  "service-not-allowed": "This browser does not allow speech recognition here. Follow my voice is off.",
+  "audio-capture": "No microphone found. Follow my voice is off.",
+  network: "The browser's speech service could not be reached. Follow my voice is off.",
+  "language-not-supported": "The browser's speech service does not support your language. Follow my voice is off.",
+};
+
+function onVoiceError(e) {
+  if (e.error === "no-speech" || e.error === "aborted") return; // onend restarts
+  stopVoice(VOICE_ERRORS[e.error] || "Follow my voice stopped. Turn it on again to retry.");
+}
+
+// Chrome ends a continuous session after a pause; start again while it is on.
+function onVoiceEnd() {
+  if (!voiceOn || !recognition) return;
+  if (++voiceRestarts > 5) { stopVoice("Follow my voice stopped hearing you. Turn it on again to retry."); return; }
+  try { recognition.start(); } catch { stopVoice("Follow my voice stopped. Turn it on again to retry."); }
+}
+
+// ---------- Link, paste and copy ----------
 function publicBase() {
   return /^https?:$/.test(location.protocol) ? location.origin + location.pathname : `${SITE}/`;
 }
 
-async function copyLink() {
-  const link = `${publicBase()}#s=${await encodeScript(scriptText)}${preset === "default" ? "" : `&p=${preset}`}`;
+async function copyText(text, done, ask) {
   try {
-    await navigator.clipboard.writeText(link);
-    setStatus("Link copied. The script is inside the link.");
+    await navigator.clipboard.writeText(text);
+    setStatus(done);
   } catch {
-    window.prompt("Copy this link. The script is inside it:", link);
+    window.prompt(ask, text);
   }
 }
 
-// ---------- Loading ----------
+async function copyLink() {
+  const link = `${publicBase()}#s=${await encodeScript(scriptText)}${preset === "default" ? "" : `&p=${preset}`}`;
+  await copyText(link, "Link copied. The script is inside the link.", "Copy this link. The script is inside it:");
+}
+
+function openPaste() {
+  openMenu.open = false;
+  $(".paste-error").hidden = true;
+  pasteDialog.showModal();
+  $("#paste-text").focus();
+}
+
+async function submitPaste() {
+  const ok = await openScript($("#paste-text").value, { label: "Opened pasted script" });
+  if (!ok) {
+    const err = $(".paste-error");
+    err.hidden = false;
+    err.textContent = "No sections found. Each section starts with a title line like: ### **INTRO · 00:00**";
+    return;
+  }
+  showAlert("");
+  pasteDialog.close();
+}
+
 async function loadFile(file) {
   if (!file) return;
-  if (file.size > MAX_DECODED_BYTES) { showHome("That file is too large for a script."); return; }
-  await openScript(await file.text(), { label: `Loaded ${file.name}` });
+  openMenu.open = false;
+  if (file.size > MAX_DECODED_BYTES) { showAlert("That file is too large for a script."); return; }
+  if (await openScript(await file.text(), { label: `Loaded ${file.name}` })) showAlert("");
+  else showAlert(`No sections found in ${file.name}. Each section starts with a title line like: ### **INTRO · 00:00**`);
 }
 
 // ---------- Events ----------
 window.addEventListener("scroll", () => requestAnimationFrame(updateActive), { passive: true });
 window.addEventListener("resize", updateActive);
+// Scrolling by hand while following the voice: continue from where the reader looks.
+for (const type of ["wheel", "touchmove"]) {
+  window.addEventListener(type, () => { if (voiceOn) requestAnimationFrame(() => { voiceAt = lineAtReadingLine(); }); }, { passive: true });
+}
 connectBtn.addEventListener("click", connect);
 $(".start").addEventListener("click", (e) => {
-  clockStart = Date.now(); e.target.textContent = "Restart clock"; updateClock();
+  clockStart = Date.now(); e.target.textContent = "Restart clock"; clockEl.dataset.running = "true"; updateClock();
 });
-autoBtn.addEventListener("click", () => setAuto(!autoOn));
-$(".smaller").addEventListener("click", () => setSize(curSize() - 4));
-$(".bigger").addEventListener("click", () => setSize(curSize() + 4));
+autoBtn.addEventListener("click", toggleAuto);
+voiceBtn.addEventListener("click", toggleVoice);
+speedInput.addEventListener("input", () => setSpeed(Number(speedInput.value)));
+sizeInput.addEventListener("input", () => setSize(Number(sizeInput.value)));
+widthSelect.addEventListener("change", () => setWidth(widthSelect.value));
 $(".share").addEventListener("click", copyLink);
-problemsBtn.addEventListener("click", () => {
-  presetTabs($(".problem-tabs"), renderProblems);
-  renderProblems();
-  dialog.showModal();
+$(".more-btn").addEventListener("click", (e) => {
+  const open = bar.dataset.more !== "true";
+  bar.dataset.more = String(open);
+  e.currentTarget.setAttribute("aria-expanded", String(open));
 });
 main.addEventListener("click", (e) => {
   const b = e.target.closest(".link");
   if (b) showLink(Number(b.dataset.s), Number(b.dataset.l), true);
 });
 document.addEventListener("click", (e) => {
-  const action = e.target.closest("[data-action]")?.dataset.action;
-  if (action === "home") {
-    history.pushState(null, "", location.pathname + location.search);
-    showHome();
-  } else if (action === "paste") {
-    $(".paste-box").hidden = false;
-    $("#paste-text").focus();
-  } else if (action === "open-paste") {
-    openScript($("#paste-text").value, { label: "Opened pasted script" });
-  } else if (action === "sample") {
-    openScript(EXAMPLE_SCRIPT, { label: "Example script" });
-  } else if (action === "last") {
-    openScript(store.get(LAST_KEY) || "", { label: "Last script" });
-  } else if (action === "close-problems") {
-    dialog.close();
-  }
+  if (openMenu.open && !e.target.closest(".open-menu")) openMenu.open = false;
+  const button = e.target.closest("[data-action]");
+  const action = button?.dataset.action;
+  if (action === "paste") openPaste();
+  else if (action === "open-paste") submitPaste();
+  else if (action === "close-paste") pasteDialog.close();
+  else if (action === "demo") { openMenu.open = false; showAlert(""); openDemo(); }
+  else if (action === "ai") toggleAiPanel(button);
+  else if (action === "copy-mcp") copyText(mcpUrl(), "Server address copied.", "Copy the server address:");
+  else if (action === "dismiss") showAlert("");
+  else if (action === "voice-ok") { store.set(VOICE_OK_KEY, "yes"); startVoice(); }
+  else if (action === "voice-cancel") { voiceNotice.hidden = true; }
 });
-document.querySelectorAll(".file-input").forEach((input) => input.addEventListener("change", (e) => {
+// File inputs live in the toolbar menu and in the demo, which is re-rendered.
+document.addEventListener("change", (e) => {
+  if (!e.target.matches(".file-input")) return;
   loadFile(e.target.files[0]);
   e.target.value = "";
-}));
+});
 document.addEventListener("dragover", (e) => {
   if (![...(e.dataTransfer?.types || [])].includes("Files")) return;
   e.preventDefault();
@@ -405,20 +555,22 @@ document.addEventListener("drop", (e) => {
   loadFile(file);
 });
 // Fires for Back/Forward and for a new #s= link pasted into the address bar.
-window.addEventListener("popstate", () => { if (!location.hash) showHome(); else route(); });
+window.addEventListener("popstate", route);
 document.addEventListener("keydown", (e) => {
-  if (view !== "prompter" || dialog.open || e.target.closest("input, textarea, select") || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (pasteDialog.open || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target.closest("textarea, select, input:not([type=range])")) return;
   const k = e.key;
-  if (k === " ") { e.preventDefault(); setAuto(!autoOn); }
+  // A focused slider keeps its arrow keys; every other shortcut still works.
+  if (e.target.matches?.("input[type=range]") && k.startsWith("Arrow")) return;
+  if (k === "Escape" && openMenu.open) { openMenu.open = false; return; }
+  // Space on these buttons presses them; on the toolbar toggles it still means auto-scroll.
+  if (k === " " && e.target.closest(".note-row, .menu, .actions, .ai-panel, summary")) return;
+  if (k === " ") { e.preventDefault(); toggleAuto(); }
   else if (k === "ArrowRight" || k === "PageDown") { e.preventDefault(); goSection(1); }
   else if (k === "ArrowLeft" || k === "PageUp") { e.preventDefault(); goSection(-1); }
   else if (k === "+" || k === "=") setSize(curSize() + 4);
   else if (k === "-" || k === "_") setSize(curSize() - 4);
-  else if (k === "]" || k === "[") {
-    speed = Math.min(300, Math.max(10, speed + (k === "]" ? 10 : -10)));
-    store.set("prompter-speed", speed);
-    setAuto(autoOn);
-  }
+  else if (k === "]" || k === "[") setSpeed(speed + (k === "]" ? 10 : -10));
   else if (k === "f" || k === "F") {
     if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen?.();
   }
@@ -426,10 +578,8 @@ document.addEventListener("keydown", (e) => {
 });
 
 // ---------- Start ----------
-$(".format-rows").innerHTML = FORMAT.map((f) => `<tr><td><code>${esc(f.syntax)}</code></td><td>${esc(f.meaning)}</td></tr>`).join("");
-if (/^https?:$/.test(location.protocol)) {
-  const mcp = `${location.origin}/mcp`;
-  $(".mcp-url").textContent = mcp;
-  document.querySelectorAll(".mcp-snippet").forEach((el) => { el.textContent = el.textContent.replaceAll(`${SITE}/mcp`, mcp); });
-}
+voiceBtn.hidden = !Recognition;
+setSpeed(speed);
+setSize(Number(store.get("prompter-size")) || (window.innerWidth < 640 ? 32 : 52));
+setWidth(store.get("prompter-width") || "full");
 route();

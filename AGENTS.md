@@ -8,7 +8,9 @@ Public teleprompter at https://prompter.techies.tools plus an open, stateless MC
 - Scripts stay on the user's device. Never add server-side storage (KV, D1, R2, Durable Object storage, Cache API for scripts) or logging of request bodies. Keep `observability` off. Scripts travel only in the URL fragment `#s=`.
 - The one exception is the `/mcp` rate limiter in `src/limiter.mjs`: a Durable Object per hashed client (salted SHA-256 of the IP, never the raw IP) that counts requests in memory only. It must never use `ctx.storage`, receive a request body, or log. Only `/mcp` may call it.
 - Cloudflare free plan only. No paid features.
-- `src/core.mjs` is the single source of truth for the format, presets ("lex" and "default"), checker and link encoding. The page inlines it at build time, so it must stay import-free and use only `export function`/`export const` forms.
+- `src/core.mjs` is the single source of truth for the format, presets ("lex" and "default"), checker, link encoding and the demo script. The page inlines it (and `src/follow.mjs`, the voice-follow line matching) at build time, so both must stay import-free and use only `export function`/`export const` forms.
+- Follow my voice uses the browser's own speech recognition (Web Speech API) and is opt-in after a notice that the browser sends audio to its speech service. The page itself never sends audio or the script anywhere. The page's `Permissions-Policy` allows the microphone for this origin only.
+- Text colours must meet WCAG AA (4.5:1) on black; `test/contrast.test.mjs` checks the tokens in `src/page.html`.
 - The built page must stay one self-contained HTML file that works offline (no external scripts, styles, fonts or fetches).
 - CSS: simple, low-specificity, shared helpers first; bounded component overrides with `@scope` only where losing them is harmless. Respect `prefers-reduced-motion`. Keep mobile usable.
 - Review with `kit review` (Claude only). Do not run GPT/Codex reviews.
