@@ -57,6 +57,7 @@ test("client keys: IPv4 as is, IPv6 grouped by /64; the hash is salted SHA-256",
   assert.equal(clientKey("::1"), "0:0:0:0::/64");
   // IPv4 inside IPv6 counts as that IPv4 address, not as one shared ::/64.
   assert.equal(clientKey("::ffff:203.0.113.9"), "203.0.113.9");
+  assert.equal(clientKey("::ffff:cb00:7109"), "203.0.113.9");
   assert.equal(clientKey("::203.0.113.9"), "203.0.113.9");
   assert.notEqual(clientKey("::ffff:203.0.113.9"), clientKey("::ffff:198.51.100.7"));
   assert.notEqual(await hashClient("::ffff:203.0.113.9"), await hashClient("::ffff:198.51.100.7"));

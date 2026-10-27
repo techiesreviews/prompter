@@ -98,7 +98,8 @@ async function openScript(text, { fromLink = false, remember = true, label = "" 
   return true;
 }
 
-function openDemo(label = "") {
+function openDemo(label = "", { forget = false } = {}) {
+  if (forget) store.set(LAST_KEY, "");
   if (location.hash) history.replaceState(null, "", location.pathname + location.search);
   return openScript(DEMO_SCRIPT, { fromLink: true, remember: false, label });
 }
@@ -143,10 +144,10 @@ function demoActions(items) {
     const action = DEMO_ACTIONS[it.text];
     if (action === "open-file") return `<label class="btn primary">${esc(it.text)}<input class="file-input" type="file" accept="${FILE_ACCEPT}"></label>`;
     if (action === "drop-hint") return `<span class="drop-hint">or ${esc(it.text.toLowerCase())}</span>`;
-    if (action === "ai") return `<button class="btn" type="button" data-action="ai" aria-expanded="false" aria-controls="ai-panel">${esc(it.text)}</button>`;
+    if (action === "ai") return `<button class="btn" type="button" data-action="ai" aria-expanded="false" aria-controls="ai-slot">${esc(it.text)}</button>`;
     return `<button class="btn" type="button" data-action="${action}">${esc(it.text)}</button>`;
   }).join("");
-  return `<div class="actions">${html}</div><div class="ai-slot" hidden></div>`;
+  return `<div class="actions">${html}</div><div class="ai-slot" id="ai-slot" hidden></div>`;
 }
 
 function render() {
@@ -358,13 +359,16 @@ function lineAtReadingLine() {
   return k;
 }
 
+let voiceScrolling = false;
 function markLine(k) {
   main.querySelector("p.cur")?.classList.remove("cur");
   const el = main.querySelector(`[data-k="${k}"]`);
   if (!el) return;
   el.classList.add("cur");
   const top = el.getBoundingClientRect().top + window.scrollY - readingLineY() + 2;
+  voiceScrolling = true;
   window.scrollTo({ top, behavior: reducedMotion.matches ? "auto" : "smooth" });
+  setTimeout(() => { voiceScrolling = false; }, 800);
 }
 
 function setVoiceButton() {
@@ -499,8 +503,12 @@ async function loadFile(file) {
 window.addEventListener("scroll", () => requestAnimationFrame(updateActive), { passive: true });
 window.addEventListener("resize", updateActive);
 // Scrolling by hand while following the voice: continue from where the reader looks.
-for (const type of ["wheel", "touchmove"]) {
-  window.addEventListener(type, () => { if (voiceOn) requestAnimationFrame(() => { voiceAt = lineAtReadingLine(); }); }, { passive: true });
+// Keyboard and scrollbar scrolling end in "scrollend"; the prompter's own voice
+// scrolling is ignored.
+for (const type of ["wheel", "touchmove", "scrollend"]) {
+  window.addEventListener(type, () => {
+    if (voiceOn && !voiceScrolling) requestAnimationFrame(() => { voiceAt = lineAtReadingLine(); });
+  }, { passive: true });
 }
 connectBtn.addEventListener("click", connect);
 $(".start").addEventListener("click", (e) => {
@@ -528,7 +536,7 @@ document.addEventListener("click", (e) => {
   if (action === "paste") openPaste();
   else if (action === "open-paste") submitPaste();
   else if (action === "close-paste") pasteDialog.close();
-  else if (action === "demo") { openMenu.open = false; showAlert(""); openDemo(); }
+  else if (action === "demo") { openMenu.open = false; showAlert(""); openDemo("", { forget: true }); }
   else if (action === "ai") toggleAiPanel(button);
   else if (action === "copy-mcp") copyText(mcpUrl(), "Server address copied.", "Copy the server address:");
   else if (action === "dismiss") showAlert("");
@@ -555,7 +563,9 @@ document.addEventListener("drop", (e) => {
   loadFile(file);
 });
 // Fires for Back/Forward and for a new #s= link pasted into the address bar.
-window.addEventListener("popstate", route);
+// Back to an entry without a script link shows the demo; the remembered script
+// is only for the first page load.
+window.addEventListener("popstate", () => { if (location.hash) route(); else { showAlert(""); openDemo(); } });
 document.addEventListener("keydown", (e) => {
   if (pasteDialog.open || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.target.closest("textarea, select, input:not([type=range])")) return;

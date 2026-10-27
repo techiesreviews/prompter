@@ -70,12 +70,18 @@ export class McpLimiter {
 /**
  * IPv6 clients usually own a whole /64, so they share one counter. An IPv6
  * address that carries an IPv4 one in dotted form (IPv4-mapped "::ffff:a.b.c.d"
- * or the old compatible "::a.b.c.d") counts as that IPv4 address.
+ * or the old compatible "::a.b.c.d", and mapped in hex "::ffff:cb00:7109")
+ * counts as that IPv4 address.
  */
 export function clientKey(ip) {
   if (!ip.includes(":")) return ip;
   const last = ip.slice(ip.lastIndexOf(":") + 1);
   if (last.includes(".")) return last;
+  const mapped = ip.toLowerCase().match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (mapped) {
+    const [hi, lo] = [parseInt(mapped[1], 16), parseInt(mapped[2], 16)];
+    return [hi >> 8, hi & 255, lo >> 8, lo & 255].join(".");
+  }
   const [head, tail = ""] = ip.toLowerCase().split("::");
   const left = head ? head.split(":") : [];
   const right = tail ? tail.split(":") : [];

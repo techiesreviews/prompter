@@ -205,9 +205,10 @@ export function memoryLimiter(limit = RATE_LIMIT, windowMs = 60_000, now = () =>
 const instanceGuard = memoryLimiter();
 
 /** "60 per minute" or "10 per 10 seconds": the limit that refused, else the minute limit. */
-function describeLimit({ max = RATE_LIMIT, ms = 60_000 }) {
+function describeLimit({ max, ms }) {
+  if (!max || !ms) return "";
   const seconds = Math.round(ms / 1000);
-  return `${max} per ${seconds === 60 ? "minute" : `${seconds} seconds`}`;
+  return ` Limit: ${max} per ${seconds === 60 ? "minute" : `${seconds} seconds`}.`;
 }
 
 /**
@@ -228,7 +229,7 @@ export async function handleMcp(request, { limiter, guard = instanceGuard } = {}
   if (verdict.success && limiter) verdict = await limiter.limit({ key });
   if (!verdict.success) {
     const wait = verdict.retryAfter || 60;
-    return json(rpcError(null, -32000, `Too many requests. Limit: ${describeLimit(verdict)}. Try again in ${wait} seconds.`), 429, { "Retry-After": String(wait) });
+    return json(rpcError(null, -32000, `Too many requests.${describeLimit(verdict)} Try again in ${wait} seconds.`), 429, { "Retry-After": String(wait) });
   }
 
   const raw = await readCapped(request);

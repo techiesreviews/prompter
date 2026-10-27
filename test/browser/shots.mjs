@@ -207,6 +207,16 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await page.evaluate(() => localStorage.getItem("prompter-preset")), "default");
   ok("default links keep the default preset");
 
+  await page.evaluate(() => localStorage.clear());
+  await page.goto(`${base}/`);
+  await page.waitForFunction((n) => document.querySelectorAll(".section").length === n, DEMO_SECTIONS);
+  await page.goto(`${base}/${new URL(link).hash}`);
+  await page.waitForFunction(() => document.querySelectorAll(".section").length === 5);
+  await page.goBack();
+  await page.waitForFunction((n) => document.querySelectorAll(".section").length === n, DEMO_SECTIONS);
+  assert.equal(await page.evaluate(() => location.hash), "");
+  ok("Back from a link to the plain address returns to the demo");
+
   await page.goto(`${base}/#s=@@@`);
   await page.locator(".note-row.alert:not([hidden])").waitFor();
   assert.match(await page.locator(".alert-text").textContent(), /could not be opened: Link data is damaged/);

@@ -54,7 +54,8 @@
   .btn[aria-pressed="true"]::before { content: "● "; color: var(--ok); }
   .muted { color: var(--muted); }
   .error-text { color: var(--accent); }
-  .file-input { display: none; }
+  .file-input { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  label.btn:has(.file-input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
   .dropping { outline: 3px dashed var(--accent); outline-offset: -12px; }
 
   /* Toolbar */
@@ -255,7 +256,7 @@
 url = "https://prompter.techies.tools/mcp"</code></pre></li>
       <li><b>Claude Code:</b> <code class="mcp-snippet">claude mcp add --transport http prompter https://prompter.techies.tools/mcp</code></li>
     </ul>
-    <p class="muted">No sign-in. Your script travels only inside the link. To stop heavy use, the server allows 60 requests a minute per internet address. It counts them in memory only, under a hashed form of your address, never with your script, and forgets the count within a few minutes of your last request.</p>
+    <p class="muted">No sign-in. Your script travels only inside the link. To stop heavy use, the server allows 60 requests a minute (10 per 10 seconds) per internet address. It counts them in memory only, under a hashed form of your address, never with your script, and forgets the count within a few minutes of your last request.</p>
   </div>
 </template>
 
