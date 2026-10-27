@@ -2,7 +2,7 @@
 
 Agent Kit is required for all coding in this repo, for every model and provider, including delegated workers. Run `scripts/agents/kit --help`, then each relevant command's `--help`, and `kit doctor` before implementing. After changes run `kit specs`, and `kit shots` and `kit size` when the page changes. Every command ends with one `RESULT: ok|fail …` line naming its evidence folder.
 
-The dispatcher, shared helpers (`kit-lib.sh`, `kit-lib.mjs`), `wait`, `version`, the review runner (`agent-run.mjs`, `review-brief.mjs`) and `ci-summary.mjs` are copied from the static-site kit in `/home/ubulex/Projects/techies-reviews/scripts/agents` (itself from native-site-editor `origin/dev`). The main root is adapted to this repo, and review is pinned to Claude. `doctor`, `specs`, `shots` and `size` are this project's adapters in `scripts/agents/prompter-kit.mjs`.
+The dispatcher, shared helpers (`kit-lib.sh`, `kit-lib.mjs`), `wait`, `version`, the review runner (`agent-run.mjs`, `review-brief.mjs`, and its process supervisor `sol-run.mjs`, a generic job runner despite the name) and `ci-summary.mjs` are copied from the static-site kit in `/home/ubulex/Projects/techies-reviews/scripts/agents` (itself from native-site-editor `origin/dev`). The main root is adapted to this repo, and review is pinned to Claude. `doctor`, `specs`, `shots` and `size` are this project's adapters in `scripts/agents/prompter-kit.mjs`.
 
 | Command | What it does | Evidence |
 | --- | --- | --- |
