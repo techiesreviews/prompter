@@ -177,8 +177,8 @@ async function readCapped(request) {
 
 /**
  * Per-isolate fixed-window counter. Runs on every request next to the Workers
- * binding. When full, it drops expired entries, then the oldest ones, so that
- * rotating many IPs cannot reset everyone's count.
+ * binding. When full it drops expired entries, then the oldest window starts,
+ * so rotating IPs cannot reset every count at once.
  */
 export function memoryLimiter(limit = RATE_LIMIT, windowMs = 60_000, now = () => Date.now(), maxKeys = 10_000) {
   const hits = new Map();
@@ -188,7 +188,8 @@ export function memoryLimiter(limit = RATE_LIMIT, windowMs = 60_000, now = () =>
       const entry = hits.get(key);
       if (!entry || t - entry.start >= windowMs) {
         if (hits.size >= maxKeys) {
-          for (const [k, v] of hits) if (t - v.start >= windowMs) hits.delete(k);
+          // Map order is insertion order (oldest first): only scan when the oldest has expired.
+          if (t - hits.values().next().value.start >= windowMs) for (const [k, v] of hits) if (t - v.start >= windowMs) hits.delete(k);
           for (const k of hits.keys()) { if (hits.size < maxKeys) break; hits.delete(k); }
         }
         hits.delete(key);

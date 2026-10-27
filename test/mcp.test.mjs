@@ -157,12 +157,16 @@ test("rate limit: 429 with Retry-After once the per-IP limit is spent", async ()
   assert.equal((await post({ jsonrpc: "2.0", id: 0, method: "ping" }, { guard, headers: { "cf-connecting-ip": "203.0.113.10" } })).status, 200);
   t = 60_000;
   assert.equal((await post({ jsonrpc: "2.0", id: 0, method: "ping" }, { guard, headers })).status, 200);
-  // A full guard evicts old keys instead of resetting everyone.
-  const small = memoryLimiter(2, 60_000, () => t, 3);
-  await small.limit({ key: "a" }); await small.limit({ key: "a" });
-  assert.equal((await small.limit({ key: "a" })).success, false);
-  for (const k of ["b", "c"]) await small.limit({ key: k });
-  assert.equal((await small.limit({ key: "a" })).success, false, "a keeps its count while b and c arrive");
+  // A full guard drops expired keys, then the oldest, never everyone at once.
+  let s = 0;
+  const small = memoryLimiter(1, 60_000, () => s, 2);
+  await small.limit({ key: "a" });
+  s = 30_000; await small.limit({ key: "b" });
+  s = 60_000; await small.limit({ key: "c" }); // map full: "a" has expired and is dropped
+  assert.equal((await small.limit({ key: "b" })).success, false, "b keeps its count");
+  await small.limit({ key: "d" }); // map full, nothing expired: oldest ("b") is dropped
+  assert.equal((await small.limit({ key: "c" })).success, false, "c keeps its count");
+  assert.equal((await small.limit({ key: "b" })).success, true, "b was the one evicted");
   // The binding can refuse on its own, even when the in-isolate guard allows.
   const refuse = { async limit() { return { success: false }; } };
   assert.equal((await post({ jsonrpc: "2.0", id: 0, method: "ping" }, { limiter: refuse })).status, 429);

@@ -24,7 +24,8 @@ test("the CSP pins the hash of the inline script", () => {
   const hash = createHash("sha256").update(script).digest("base64");
   assert.ok(headers.includes(`script-src 'sha256-${hash}'`));
   assert.match(headers, /default-src 'none'/);
-  assert.match(headers, /frame-src https:\/\/www\.youtube\.com/);
+  assert.match(headers, /frame-src https:\/\/www\.youtube\.com;/);
+  assert.doesNotMatch(headers, /nocookie/);
 });
 
 test("the inlined script parses as JavaScript", () => {

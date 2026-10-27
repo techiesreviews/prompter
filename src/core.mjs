@@ -231,6 +231,12 @@ export function countWords(text) {
     .filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
 }
 
+/** YouTube start times: "90", "90s" or "1h2m30s"; anything else is 0. */
+export function youtubeSeconds(t) {
+  const parts = /^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s?)?$/.exec(String(t));
+  return parts ? (Number(parts[1] || 0) * 3600) + (Number(parts[2] || 0) * 60) + Number(parts[3] || 0) : 0;
+}
+
 /** "mm:ss" (minutes may exceed 59) to seconds. */
 export function toSeconds(t) { const [m, s] = t.split(":").map(Number); return m * 60 + s; }
 const isPrep = (title) => /^PREP\b/i.test(title);

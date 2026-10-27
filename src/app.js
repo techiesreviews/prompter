@@ -210,12 +210,6 @@ function screenUrl(url) {
   } catch { return url; }
 }
 
-/** YouTube start times: "90", "90s" or "1h2m30s". */
-function youtubeSeconds(t) {
-  const parts = /^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s?)?$/.exec(t);
-  return parts ? (Number(parts[1] || 0) * 3600) + (Number(parts[2] || 0) * 60) + Number(parts[3] || 0) : 0;
-}
-
 function showLink(si, li, fromUser) {
   const s = sections[si];
   if (!s || !s.links[li]) return;
@@ -306,6 +300,9 @@ function presetTabs(container, onPick) {
     if (!b) return;
     preset = b.dataset.preset;
     store.set(PRESET_KEY, preset);
+    // Keep the link's &p= in step, so Back or reload restores this choice.
+    const { data } = readHash(location.hash);
+    if (data) history.replaceState(null, "", `#s=${data}${preset === "default" ? "" : `&p=${preset}`}`);
     container.querySelectorAll("[data-preset]").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
     onPick();
   };

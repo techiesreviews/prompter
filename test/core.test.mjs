@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { check, countWords, EXAMPLE_SCRIPT, formatGuide, parse, PRESETS } from "../src/core.mjs";
+import { check, countWords, EXAMPLE_SCRIPT, formatGuide, parse, PRESETS, toSeconds, youtubeSeconds } from "../src/core.mjs";
 
 // The parser from the original single-file prompter, kept to prove compatibility.
 function legacyParse(md) {
@@ -107,6 +107,11 @@ test("countWords ignores URLs, transition labels and punctuation", () => {
   assert.equal(countWords("Open https://example.com/a/very/long/path now"), 2);
   assert.equal(countWords("A-cut, B-roll · music — done"), 4);
   assert.equal(countWords("Hi, I'm Sam. Welcome."), 4);
+});
+
+test("time helpers: section times and YouTube start times", () => {
+  assert.equal(toSeconds("125:30"), 7530);
+  for (const [t, s] of [["90", 90], ["90s", 90], ["1m30s", 90], ["1h2m30s", 3750], ["abc", 0], ["", 0]]) assert.equal(youtubeSeconds(t), s, t);
 });
 
 test("the built-in example passes both presets with no problems", () => {
