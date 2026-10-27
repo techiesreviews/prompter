@@ -150,8 +150,9 @@ async function startWrangler(wrangler, dist) {
 async function startStatic(dist) {
   const server = createServer((req, res) => {
     const path = decodeURIComponent(new URL(req.url, "http://x").pathname);
-    const csp = readFileSync(join(dist, "_headers"), "utf8").match(/Content-Security-Policy: (.*)/)[1];
-    res.setHeader("Content-Security-Policy", csp);
+    // The page's own headers (the "/*" block of _headers), as Cloudflare sends them.
+    const block = readFileSync(join(dist, "_headers"), "utf8").split(/^\/\S*\n/m)[1];
+    for (const [, name, value] of block.matchAll(/^ {2}([\w-]+): (.*)$/gm)) res.setHeader(name, value);
     const font = path.match(/^\/fonts\/([\w-]+\.woff2)$/);
     if (font && existsSync(join(dist, "fonts", font[1]))) {
       res.setHeader("Content-Type", "font/woff2");
