@@ -195,16 +195,20 @@ export function memoryLimiter(limit = RATE_LIMIT, windowMs = 60_000, now = () =>
 
 const fallbackLimiter = memoryLimiter();
 
-/** Handle one HTTP request to /mcp. `limiter` follows the Workers rate-limit binding API. */
-export async function handleMcp(request, { limiter = fallbackLimiter } = {}) {
+/**
+ * Handle one HTTP request to /mcp. `limiter` follows the Workers rate-limit
+ * binding API. The binding is approximate and per location, so the per-isolate
+ * guard always runs too; a request must pass both.
+ */
+export async function handleMcp(request, { limiter, guard = fallbackLimiter } = {}) {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
   if (request.method !== "POST") {
     return json(rpcError(null, -32000, "Method not allowed. This MCP server only accepts POST (no SSE stream)."), 405, { Allow: "POST, OPTIONS" });
   }
 
   const key = request.headers.get("cf-connecting-ip") || "local";
-  const { success } = await limiter.limit({ key });
-  if (!success) return json(rpcError(null, -32000, `Too many requests. Limit: ${RATE_LIMIT} per minute.`), 429, { "Retry-After": "60" });
+  const allowed = (await guard.limit({ key })).success && (!limiter || (await limiter.limit({ key })).success);
+  if (!allowed) return json(rpcError(null, -32000, `Too many requests. Limit: ${RATE_LIMIT} per minute.`), 429, { "Retry-After": "60" });
 
   const raw = await readCapped(request);
   if (raw === null) return json(rpcError(null, -32000, `Request too large. Limit: ${MAX_BODY_BYTES / 1024} KB.`), 413);

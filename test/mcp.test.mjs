@@ -8,12 +8,12 @@ const URL_ = "https://prompter.techies.tools/mcp";
 const open = { async limit() { return { success: true }; } };
 let nextId = 1;
 
-function post(body, { limiter = open, headers = {} } = {}) {
+function post(body, { limiter = open, guard = open, headers = {} } = {}) {
   return handleMcp(new Request(URL_, {
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...headers },
     body: typeof body === "string" ? body : JSON.stringify(body),
-  }), { limiter });
+  }), { limiter, guard });
 }
 
 async function rpc(method, params, opts) {
@@ -125,10 +125,10 @@ test("batches answer each request and skip notifications", async () => {
 });
 
 test("GET is 405, OPTIONS is a CORS preflight", async () => {
-  const get = await handleMcp(new Request(URL_, { headers: { accept: "text/event-stream" } }), { limiter: open });
+  const get = await handleMcp(new Request(URL_, { headers: { accept: "text/event-stream" } }), { limiter: open, guard: open });
   assert.equal(get.status, 405);
   assert.match(get.headers.get("allow"), /POST/);
-  const pre = await handleMcp(new Request(URL_, { method: "OPTIONS" }), { limiter: open });
+  const pre = await handleMcp(new Request(URL_, { method: "OPTIONS" }), { limiter: open, guard: open });
   assert.equal(pre.status, 204);
   assert.equal(pre.headers.get("access-control-allow-origin"), "*");
   assert.match(pre.headers.get("access-control-allow-headers"), /Mcp-Protocol-Version/);
@@ -140,7 +140,7 @@ test("size cap: bodies above 200 KB get 413, by header or by streamed length", a
   assert.equal(res.status, 413);
   assert.match((await res.json()).error.message, /200 KB/);
   const stream = new ReadableStream({ start(c) { for (let i = 0; i < 30; i++) c.enqueue(new Uint8Array(10_000).fill(32)); c.close(); } });
-  const chunked = await handleMcp(new Request(URL_, { method: "POST", body: stream, duplex: "half" }), { limiter: open });
+  const chunked = await handleMcp(new Request(URL_, { method: "POST", body: stream, duplex: "half" }), { limiter: open, guard: open });
   assert.equal(chunked.status, 413);
   const justUnder = await post(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }).padEnd(MAX_BODY_BYTES - 1, " "));
   assert.equal(justUnder.status, 200);
@@ -148,15 +148,18 @@ test("size cap: bodies above 200 KB get 413, by header or by streamed length", a
 
 test("rate limit: 429 with Retry-After once the per-IP limit is spent", async () => {
   let t = 0;
-  const limiter = memoryLimiter(RATE_LIMIT, 60_000, () => t);
+  const guard = memoryLimiter(RATE_LIMIT, 60_000, () => t);
   const headers = { "cf-connecting-ip": "203.0.113.9" };
-  for (let i = 0; i < RATE_LIMIT; i++) assert.equal((await post({ jsonrpc: "2.0", id: i, method: "ping" }, { limiter, headers })).status, 200);
-  const limited = await post({ jsonrpc: "2.0", id: 0, method: "ping" }, { limiter, headers });
+  for (let i = 0; i < RATE_LIMIT; i++) assert.equal((await post({ jsonrpc: "2.0", id: i, method: "ping" }, { guard, headers })).status, 200);
+  const limited = await post({ jsonrpc: "2.0", id: 0, method: "ping" }, { guard, headers });
   assert.equal(limited.status, 429);
   assert.equal(limited.headers.get("retry-after"), "60");
-  assert.equal((await post({ jsonrpc: "2.0", id: 0, method: "ping" }, { limiter, headers: { "cf-connecting-ip": "203.0.113.10" } })).status, 200);
+  assert.equal((await post({ jsonrpc: "2.0", id: 0, method: "ping" }, { guard, headers: { "cf-connecting-ip": "203.0.113.10" } })).status, 200);
   t = 60_000;
-  assert.equal((await post({ jsonrpc: "2.0", id: 0, method: "ping" }, { limiter, headers })).status, 200);
+  assert.equal((await post({ jsonrpc: "2.0", id: 0, method: "ping" }, { guard, headers })).status, 200);
+  // The binding can refuse on its own, even when the in-isolate guard allows.
+  const refuse = { async limit() { return { success: false }; } };
+  assert.equal((await post({ jsonrpc: "2.0", id: 0, method: "ping" }, { limiter: refuse })).status, 429);
 });
 
 test("the Worker sends /mcp to the handler (with its binding) and everything else to assets", async () => {
