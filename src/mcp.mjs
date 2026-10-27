@@ -2,10 +2,9 @@
 // Nothing is stored: scripts arrive in the request body, are checked or
 // encoded in memory, and leave only in the response.
 import { check, describeProblems, formatGuide, makeLink, MAX_SCRIPT_CHARS, PRESETS } from "./core.mjs";
+import { RATE_LIMIT } from "./limiter.mjs";
 
 export const MAX_BODY_BYTES = 200 * 1024;
-export const RATE_LIMIT = 60; // requests per client per minute
-export const BURST_LIMIT = 10; // requests per client per 10 seconds (Durable Object only)
 const PROTOCOLS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 const SERVER = { name: "techies-prompter", title: "Prompter", version: "1.0.0" };
 const LONG_LINK = 16_000;
@@ -198,12 +197,18 @@ export function memoryLimiter(limit = RATE_LIMIT, windowMs = 60_000, now = () =>
         return { success: true };
       }
       entry.count += 1;
-      return { success: entry.count <= limit };
+      return entry.count <= limit ? { success: true } : { success: false, max: limit, ms: windowMs };
     },
   };
 }
 
 const instanceGuard = memoryLimiter();
+
+/** "60 per minute" or "10 per 10 seconds": the limit that refused, else the minute limit. */
+function describeLimit({ max = RATE_LIMIT, ms = 60_000 }) {
+  const seconds = Math.round(ms / 1000);
+  return `${max} per ${seconds === 60 ? "minute" : `${seconds} seconds`}`;
+}
 
 /**
  * Handle one HTTP request to /mcp. The per-isolate guard runs first and stops
@@ -223,7 +228,7 @@ export async function handleMcp(request, { limiter, guard = instanceGuard } = {}
   if (verdict.success && limiter) verdict = await limiter.limit({ key });
   if (!verdict.success) {
     const wait = verdict.retryAfter || 60;
-    return json(rpcError(null, -32000, `Too many requests. Limit: ${RATE_LIMIT} per minute and ${BURST_LIMIT} per 10 seconds. Try again in ${wait} seconds.`), 429, { "Retry-After": String(wait) });
+    return json(rpcError(null, -32000, `Too many requests. Limit: ${describeLimit(verdict)}. Try again in ${wait} seconds.`), 429, { "Retry-After": String(wait) });
   }
 
   const raw = await readCapped(request);

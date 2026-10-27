@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { decodeScript, EXAMPLE_SCRIPT, readHash } from "../src/core.mjs";
-import { handleMcp, MAX_BODY_BYTES, memoryLimiter, RATE_LIMIT } from "../src/mcp.mjs";
+import { RATE_LIMIT } from "../src/limiter.mjs";
+import { handleMcp, MAX_BODY_BYTES, memoryLimiter } from "../src/mcp.mjs";
 import worker from "../src/worker.mjs";
 
 const URL_ = "https://prompter.techies.tools/mcp";
@@ -154,6 +155,9 @@ test("rate limit: 429 with Retry-After once the per-IP limit is spent", async ()
   const limited = await post({ jsonrpc: "2.0", id: 0, method: "ping" }, { guard, headers });
   assert.equal(limited.status, 429);
   assert.equal(limited.headers.get("retry-after"), "60");
+  const guardMessage = (await limited.json()).error.message;
+  assert.match(guardMessage, /Limit: 60 per minute\. Try again in 60 seconds/);
+  assert.doesNotMatch(guardMessage, /10 seconds/, "names only the limit that refused");
   assert.equal((await post({ jsonrpc: "2.0", id: 0, method: "ping" }, { guard, headers: { "cf-connecting-ip": "203.0.113.10" } })).status, 200);
   t = 60_000;
   assert.equal((await post({ jsonrpc: "2.0", id: 0, method: "ping" }, { guard, headers })).status, 200);
@@ -168,20 +172,23 @@ test("rate limit: 429 with Retry-After once the per-IP limit is spent", async ()
   assert.equal((await small.limit({ key: "c" })).success, false, "c keeps its count");
   assert.equal((await small.limit({ key: "b" })).success, true, "b was the one evicted");
   // The Durable Object limiter can refuse on its own, with its own Retry-After.
-  const refuse = { async limit() { return { success: false, retryAfter: 7 }; } };
+  const refuse = { async limit() { return { success: false, retryAfter: 7, max: 10, ms: 10_000 }; } };
   const byObject = await post({ jsonrpc: "2.0", id: 0, method: "ping" }, { limiter: refuse });
   assert.equal(byObject.status, 429);
   assert.equal(byObject.headers.get("retry-after"), "7");
   const body = await byObject.json();
   assert.equal(body.error.code, -32000);
-  assert.match(body.error.message, /Try again in 7 seconds/);
+  assert.match(body.error.message, /Limit: 10 per 10 seconds\. Try again in 7 seconds/);
 });
 
 test("the in-isolate guard refuses before the Durable Object is asked", async () => {
   let asked = 0;
   const limiter = { async limit() { asked++; return { success: true }; } };
   const refuse = { async limit() { return { success: false }; } };
-  assert.equal((await post({ jsonrpc: "2.0", id: 0, method: "ping" }, { guard: refuse, limiter })).status, 429);
+  const refused = await post({ jsonrpc: "2.0", id: 0, method: "ping" }, { guard: refuse, limiter });
+  assert.equal(refused.status, 429);
+  assert.equal(refused.headers.get("retry-after"), "60");
+  assert.match((await refused.json()).error.message, /Try again in 60 seconds/);
   assert.equal(asked, 0);
   assert.equal((await post({ jsonrpc: "2.0", id: 0, method: "ping" }, { limiter })).status, 200);
   assert.equal(asked, 1);
