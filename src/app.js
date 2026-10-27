@@ -69,12 +69,14 @@ function showHome(error = "") {
   showView("home");
   homeError.hidden = !error;
   homeError.textContent = error;
+  presetTabs($(".tabs[role=tablist]"), renderPresetDocs);
+  renderPresetDocs();
   const last = store.get(LAST_KEY);
   const lastBtn = $('[data-action="last"]');
   lastBtn.hidden = !last;
   if (last) {
-    const first = parse(last)[0];
-    lastBtn.textContent = first ? `Continue: ${first.title}${parse(last).length > 1 ? " …" : ""}` : "Continue last script";
+    const parsed = parse(last);
+    lastBtn.textContent = parsed.length ? `Continue: ${parsed[0].title}${parsed.length > 1 ? " …" : ""}` : "Continue last script";
   }
   window.scrollTo(0, 0);
 }
@@ -284,7 +286,9 @@ const curSize = () => parseInt(getComputedStyle(document.documentElement).getPro
 function goSection(delta) {
   const els = main.querySelectorAll(".section");
   const target = els[Math.min(els.length - 1, Math.max(0, active + delta))];
-  if (target) window.scrollTo({ top: target.offsetTop - readingLineY() + 2 });
+  if (!target) return;
+  window.scrollTo({ top: target.offsetTop - readingLineY() + 2 });
+  updateActive(); // at once, so quick repeated presses keep moving
 }
 
 // ---------- Presets: docs and checker ----------
@@ -422,8 +426,6 @@ document.addEventListener("keydown", (e) => {
 
 // ---------- Start ----------
 $(".format-rows").innerHTML = FORMAT.map((f) => `<tr><td><code>${esc(f.syntax)}</code></td><td>${esc(f.meaning)}</td></tr>`).join("");
-presetTabs($(".tabs[role=tablist]"), renderPresetDocs);
-renderPresetDocs();
 if (/^https?:$/.test(location.protocol)) {
   const mcp = `${location.origin}/mcp`;
   $(".mcp-url").textContent = mcp;

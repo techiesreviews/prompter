@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Makes an offline copy of the prompter with one script built in, for use
-// without a network. Run `node scripts/build.mjs` first.
+// without a network. Run `node scripts/build.mjs` first (or set PROMPTER_DIST).
 // Usage: node scripts/embed.mjs <script.md> <out.html>
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -10,7 +10,8 @@ if (!md || !out) {
   console.error("Usage: node scripts/embed.mjs <script.md> <out.html>");
   process.exit(1);
 }
-const template = readFileSync(join(resolve(import.meta.dirname, ".."), "dist/index.html"), "utf8");
+const dist = process.env.PROMPTER_DIST || join(resolve(import.meta.dirname, ".."), "dist");
+const template = readFileSync(join(dist, "index.html"), "utf8");
 const script = readFileSync(md, "utf8");
 if (/<\/script/i.test(script)) throw new Error("Script text must not contain </script");
 const start = "<!--SCRIPT-START-->";
