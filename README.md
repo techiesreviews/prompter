@@ -7,6 +7,7 @@ A free teleprompter for talking to camera, plus an MCP server so your AI assista
 - Big text, auto-scroll, a reading line and a show clock.
 - A second "main screen" window that opens links as you reach them: the first link under the title opens when the section starts; the others are on number keys. A link placed on the line where you talk about it opens when you reach that line (YouTube links play full size). With Follow my voice, saying a link's name opens it.
 - Follow my voice (Chrome and Edge): the prompter listens and keeps the line you are reading at the reading mark. Your browser's speech service hears your voice; the script stays on your device.
+- Settings in a sidebar (a bottom sheet on phones) and a floating control bar: previous and next section, auto-scroll, Follow my voice and the clock. Hide the settings and only the script and the bar stay.
 - Sliders for speed and text size, and a narrow column to keep your eyes near the camera.
 - A checker (through the MCP server) that points out long lines, a missing main question, a link without its full address and similar problems.
 - Works offline: the page is one self-contained HTML file.
@@ -77,7 +78,7 @@ node --test test/*.test.mjs      # runs the tests
 npx wrangler dev                 # page and /mcp at http://localhost:8787
 ```
 
-Opening `dist/index.html` directly also works (everything except `/mcp`). To make an offline copy with a script built in: `node scripts/embed.mjs script.md out.html`.
+Opening `dist/index.html` directly also works (everything except `/mcp`; it uses your system fonts). To make an offline copy with a script built in: `node scripts/embed.mjs script.md out.html`.
 
 ## Deploy your own copy
 
@@ -100,3 +101,5 @@ Issues and pull requests are welcome. Please keep the promises above: scripts ne
 ## License
 
 [MIT](LICENSE) © 2026 Lex (Techies Reviews)
+
+The fonts in `fonts/`, Inter (© The Inter Project Authors) and Roboto Mono (© The Roboto Mono Project Authors), are under the [SIL Open Font License 1.1](fonts/OFL.txt).

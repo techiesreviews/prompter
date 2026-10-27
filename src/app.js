@@ -22,27 +22,46 @@ if (location.hash.startsWith("#player=")) {
   return;
 }
 
+// ---------- Fonts ----------
+// Inter and Roboto Mono (SIL Open Font License 1.1, fonts/OFL.txt) come from
+// /fonts/ when the page is served. An offline copy opened from a file uses the
+// system fonts, so it never asks for a file that is not there.
+if (/^https?:$/.test(location.protocol)) {
+  const LATIN = "U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD";
+  const face = (family, file, weight) =>
+    `@font-face{font-family:"${family}";font-style:normal;font-weight:${weight};font-display:swap;src:url("/fonts/${file}") format("woff2");unicode-range:${LATIN}}`;
+  const fonts = document.createElement("style");
+  fonts.textContent = face("Inter", "inter-latin.woff2", "400 800") + face("Roboto Mono", "roboto-mono-latin.woff2", "400 500");
+  document.head.append(fonts);
+}
+
 const $ = (sel) => document.querySelector(sel);
-const bar = $(".bar");
+const root = document.documentElement;
 const main = $(".script");
 const statusEl = $(".status");
-const clockEl = $(".clock");
+const clockBtn = $(".clock");
+const clockTime = $(".clock-time");
 const connectBtn = $(".connect");
+const screenState = $(".screen-state");
 const autoBtn = $(".auto");
 const voiceBtn = $(".voice");
+const voiceSwitch = $(".voice-switch");
 const voiceNotice = $(".voice-notice");
 const alertEl = $(".note-row.alert");
 const hintEl = $(".screen-hint");
-const openMenu = $(".open-menu");
+const sideAi = $(".side-ai");
+const sideToggle = $(".side-toggle");
 const pasteDialog = $(".paste-dialog");
 const speedInput = $(".speed");
 const sizeInput = $(".size");
 const widthSelect = $(".width");
+const narrow = window.matchMedia("(max-width: 760px)");
 const WINDOW_NAME = "prompter-main-screen";
 const SETTLE_MS = 700; // wait this long on a section before changing the main screen
 const LAST_KEY = "prompter-last-script";
 const PRESET_KEY = "prompter-preset";
 const VOICE_OK_KEY = "prompter-voice-ok";
+const SIDE_KEY = "prompter-sidebar";
 const WIDTHS = ["narrow", "medium", "full"];
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -92,6 +111,7 @@ async function openScript(text, { fromLink = false, remember = true, label = "" 
   scriptText = text;
   sections = parsed;
   if (remember) store.set(LAST_KEY, text);
+  if (narrow.matches) setSide(false);
   window.scrollTo(0, 0);
   render();
   setStatus(label);
@@ -135,7 +155,7 @@ async function route() {
     return;
   }
   const last = store.get(LAST_KEY);
-  if (last && last !== DEMO_SCRIPT && await openScript(last, { label: "Your last script · Open › Back to the demo" })) return;
+  if (last && last !== DEMO_SCRIPT && await openScript(last, { label: "Your last script · Settings › Back to demo" })) return;
   await openDemo();
 }
 
@@ -150,15 +170,16 @@ function demoActions(items) {
     const action = DEMO_ACTIONS[it.text];
     if (action === "open-file") return `<label class="btn primary">${esc(it.text)}<input class="file-input" type="file" accept="${FILE_ACCEPT}"></label>`;
     if (action === "drop-hint") return `<span class="drop-hint">or ${esc(it.text.toLowerCase())}</span>`;
-    if (action === "ai") return `<button class="btn" type="button" data-action="ai" aria-expanded="false" aria-controls="ai-slot">${esc(it.text)}</button>`;
+    if (action === "ai") return `<button class="btn" type="button" data-action="ai" aria-expanded="false" aria-controls="demo-ai">${esc(it.text)}</button>`;
     return `<button class="btn" type="button" data-action="${action}">${esc(it.text)}</button>`;
   }).join("");
-  return `<div class="actions">${html}</div><div class="ai-slot" id="ai-slot" hidden></div>`;
+  return `<div class="actions">${html}</div><div class="ai-slot" id="demo-ai" hidden></div>`;
 }
 
 // A link placed mid-section: a small marker at its line, not a spoken line.
+const ARROW = `<span class="arrow" aria-hidden="true">↗</span>`;
 const mark = (l, i, j) =>
-  `<button class="mark" type="button" data-s="${i}" data-l="${j}" title="Opens on the main screen when it reaches the reading line">↗ ${esc(l.label)}<span class="mark-note"> · opens here</span></button>`;
+  `<button class="mark" type="button" data-s="${i}" data-l="${j}" title="Opens on the main screen when it reaches the reading line">${ARROW} ${esc(l.label)}<span class="mark-note"> · opens here</span></button>`;
 
 function render() {
   voiceLines = [];
@@ -166,7 +187,7 @@ function render() {
   main.innerHTML = sections.map((s, i) => {
     const links = s.links.length
       ? `<div class="links">${s.links.map((l, j) =>
-          `<button class="link" type="button" data-s="${i}" data-l="${j}">${j < 9 ? `${j + 1} · ` : ""}${esc(l.label)}<small>${esc(hostOf(l.url) || l.url)}</small></button>`).join("")}</div>`
+          `<button class="link" type="button" data-s="${i}" data-l="${j}">${ARROW}<span>${j < 9 ? `${j + 1} · ` : ""}${esc(l.label)}</span><small>${esc(hostOf(l.url) || l.url)}</small></button>`).join("")}</div>`
       : "";
     // The QL main question is read silently: always show it at the top.
     const qls = s.items.filter((it) => it.type === "ql")
@@ -182,6 +203,7 @@ function render() {
       rest = rest.filter((it) => !isAction(it));
     }
     while (rest[0]?.type === "gap") rest.shift();
+    while (rest.at(-1)?.type === "gap") rest.pop();
     const items = rest.map((it) => {
       if (it.type === "gap") return `<div class="gap"></div>`;
       if (it.type === "mark") return mark(it.l, i, it.j);
@@ -201,17 +223,32 @@ function render() {
   updateActive();
 }
 
+/** Fills an "Use your AI" slot once, with this server's own /mcp address. */
+function fillAiSlot(slot) {
+  if (slot.firstElementChild) return;
+  slot.append($("#ai-template").content.cloneNode(true));
+  slot.querySelector(".mcp-url").textContent = mcpUrl();
+  slot.querySelectorAll(".mcp-snippet").forEach((el) => { el.textContent = el.textContent.replaceAll(`${SITE}/mcp`, mcpUrl()); });
+}
+
 function toggleAiPanel(button) {
   const slot = main.querySelector(".ai-slot");
   if (!slot) return;
-  if (!slot.firstElementChild) {
-    slot.append($("#ai-template").content.cloneNode(true));
-    slot.querySelector(".mcp-url").textContent = mcpUrl();
-    slot.querySelectorAll(".mcp-snippet").forEach((el) => { el.textContent = el.textContent.replaceAll(`${SITE}/mcp`, mcpUrl()); });
-  }
+  fillAiSlot(slot);
   slot.hidden = !slot.hidden;
   button.setAttribute("aria-expanded", String(!slot.hidden));
 }
+
+// ---------- Settings sidebar ----------
+// Wide screens: a column on the left, open unless closed before (remembered).
+// Phones: a bottom sheet, closed on every visit.
+function setSide(open, { remember = false, focus = false } = {}) {
+  root.dataset.side = open ? "open" : "closed";
+  document.querySelectorAll('[data-action="sidebar"][aria-expanded]').forEach((b) => b.setAttribute("aria-expanded", String(open)));
+  if (remember && !narrow.matches) store.set(SIDE_KEY, open ? "open" : "closed");
+  if (focus) (open ? $(".side-close") : sideToggle).focus();
+}
+const sideOpen = () => root.dataset.side === "open";
 
 // ---------- Active section ----------
 function readingLineY() { return window.innerHeight * 0.34; }
@@ -245,7 +282,9 @@ function connected() { return mainWin && !mainWin.closed; }
 
 function setConnected(on) {
   connectBtn.dataset.on = String(on);
-  connectBtn.textContent = on ? "Main screen connected" : "Connect main screen";
+  connectBtn.textContent = on ? "Reconnect main screen" : "Connect main screen";
+  screenState.dataset.on = String(on);
+  screenState.textContent = on ? "Connected" : "Not connected";
 }
 
 function connect() {
@@ -340,9 +379,16 @@ const fmt = (sec) => `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(
 function updateClock() {
   if (!clockStart) return;
   const el = Math.floor((Date.now() - clockStart) / 1000);
-  clockEl.textContent = fmt(el);
+  clockTime.textContent = fmt(el);
   const next = sections.slice(active + 1).find((s) => s.time);
-  clockEl.dataset.late = String(Boolean(next && el > toSeconds(next.time)));
+  clockBtn.dataset.late = String(Boolean(next && el > toSeconds(next.time)));
+}
+function startClock() {
+  clockStart = Date.now();
+  $(".start").textContent = "Restart clock";
+  clockBtn.dataset.running = "true";
+  clockBtn.dataset.tip = "Show clock · restart it in Settings";
+  updateClock();
 }
 setInterval(updateClock, 1000);
 
@@ -357,6 +403,7 @@ function setAuto(on) {
   autoOn = on;
   lastFrame = 0;
   autoBtn.setAttribute("aria-pressed", String(on));
+  autoBtn.dataset.tip = on ? "Pause · Space" : "Auto-scroll · Space";
   if (on) requestAnimationFrame(tick);
 }
 function toggleAuto() {
@@ -367,21 +414,23 @@ function toggleAuto() {
 function setSpeed(v) {
   speed = Math.min(300, Math.max(10, Math.round(v / 10) * 10 || 40));
   speedInput.value = speed;
+  $(".speed-val").textContent = speed;
   store.set("prompter-speed", speed);
 }
 
 // ---------- Text size and column ----------
 function setSize(px) {
   px = Math.min(110, Math.max(20, Math.round(px) || 52));
-  document.documentElement.style.setProperty("--size", px + "px");
+  root.style.setProperty("--size", px + "px");
   sizeInput.value = px;
+  $(".size-val").textContent = `${px} px`;
   store.set("prompter-size", px);
 }
-const curSize = () => parseInt(getComputedStyle(document.documentElement).getPropertyValue("--size"), 10);
+const curSize = () => parseInt(getComputedStyle(root).getPropertyValue("--size"), 10);
 
 function setWidth(name) {
   const w = WIDTHS.includes(name) ? name : "full";
-  document.documentElement.dataset.width = w;
+  root.dataset.width = w;
   widthSelect.value = w;
   store.set("prompter-width", w);
 }
@@ -419,11 +468,13 @@ function markLine(k) {
 
 function setVoiceButton() {
   voiceBtn.setAttribute("aria-pressed", String(voiceOn));
+  voiceSwitch.setAttribute("aria-checked", String(voiceOn));
 }
 
 function toggleVoice() {
   if (voiceOn) { stopVoice(); setStatus("Follow my voice is off."); return; }
   if (store.get(VOICE_OK_KEY) !== "yes") {
+    if (narrow.matches) setSide(false); // the notice sits where the sheet is
     voiceNotice.hidden = false;
     voiceNotice.querySelector('[data-action="voice-ok"]').focus();
     return;
@@ -532,7 +583,6 @@ async function copyLink() {
 }
 
 function openPaste() {
-  openMenu.open = false;
   $(".paste-error").hidden = true;
   pasteDialog.showModal();
   $("#paste-text").focus();
@@ -552,7 +602,6 @@ async function submitPaste() {
 
 async function loadFile(file) {
   if (!file) return;
-  openMenu.open = false;
   if (file.size > MAX_DECODED_BYTES) { showAlert("That file is too large for a script."); return; }
   if (await openScript(await file.text(), { label: `Loaded ${file.name}` })) showAlert("");
   else showAlert(`No sections found in ${file.name}. Each section starts with a title line like: ### **INTRO · 00:00**`);
@@ -570,32 +619,31 @@ for (const type of ["wheel", "touchmove", "scrollend"]) {
   }, { passive: true });
 }
 connectBtn.addEventListener("click", connect);
-$(".start").addEventListener("click", (e) => {
-  clockStart = Date.now(); e.target.textContent = "Restart clock"; clockEl.dataset.running = "true"; updateClock();
-});
+$(".start").addEventListener("click", startClock);
+clockBtn.addEventListener("click", () => { if (!clockStart) startClock(); });
 autoBtn.addEventListener("click", toggleAuto);
 voiceBtn.addEventListener("click", toggleVoice);
+voiceSwitch.addEventListener("click", toggleVoice);
+$(".prev").addEventListener("click", () => goSection(-1));
+$(".next").addEventListener("click", () => goSection(1));
+sideAi.addEventListener("toggle", () => { if (sideAi.open) fillAiSlot(sideAi.querySelector(".ai-slot")); });
 speedInput.addEventListener("input", () => setSpeed(Number(speedInput.value)));
 sizeInput.addEventListener("input", () => setSize(Number(sizeInput.value)));
 widthSelect.addEventListener("change", () => setWidth(widthSelect.value));
 $(".share").addEventListener("click", copyLink);
-$(".more-btn").addEventListener("click", (e) => {
-  const open = bar.dataset.more !== "true";
-  bar.dataset.more = String(open);
-  e.currentTarget.setAttribute("aria-expanded", String(open));
-});
 main.addEventListener("click", (e) => {
   const b = e.target.closest(".link, .mark");
   if (b) showLink(Number(b.dataset.s), Number(b.dataset.l), true);
 });
 document.addEventListener("click", (e) => {
-  if (openMenu.open && !e.target.closest(".open-menu")) openMenu.open = false;
   const button = e.target.closest("[data-action]");
   const action = button?.dataset.action;
   if (action === "paste") openPaste();
   else if (action === "open-paste") submitPaste();
   else if (action === "close-paste") pasteDialog.close();
-  else if (action === "demo") { openMenu.open = false; showAlert(""); openDemo("", { forget: true }); }
+  else if (action === "demo") { showAlert(""); openDemo("", { forget: true }); }
+  else if (action === "sidebar") setSide(!sideOpen(), { remember: true, focus: e.detail === 0 });
+  else if (action === "sidebar-close") setSide(false);
   else if (action === "ai") toggleAiPanel(button);
   else if (action === "copy-mcp") copyText(mcpUrl(), "Server address copied.", "Copy the server address:");
   else if (action === "dismiss") showAlert("");
@@ -604,7 +652,7 @@ document.addEventListener("click", (e) => {
   else if (action === "voice-ok") { store.set(VOICE_OK_KEY, "yes"); startVoice(); }
   else if (action === "voice-cancel") { voiceNotice.hidden = true; }
 });
-// File inputs live in the toolbar menu and in the demo, which is re-rendered.
+// File inputs live in the settings and in the demo, which is re-rendered.
 document.addEventListener("change", (e) => {
   if (!e.target.matches(".file-input")) return;
   loadFile(e.target.files[0]);
@@ -633,9 +681,9 @@ document.addEventListener("keydown", (e) => {
   const k = e.key;
   // A focused slider keeps its arrow keys; every other shortcut still works.
   if (e.target.matches?.("input[type=range]") && k.startsWith("Arrow")) return;
-  if (k === "Escape" && openMenu.open) { openMenu.open = false; return; }
-  // Space on these buttons presses them; on the toolbar toggles it still means auto-scroll.
-  if (k === " " && e.target.closest(".note-row, .menu, .actions, .ai-panel, summary")) return;
+  if (k === "Escape" && narrow.matches && sideOpen()) { setSide(false, { focus: true }); return; }
+  // Space on these buttons presses them; on the control bar and the link chips it still means auto-scroll.
+  if (k === " " && e.target.closest(".note-row, .actions, .ai-panel, summary, .sidebar :is(button, label, a)")) return;
   if (k === " ") { e.preventDefault(); toggleAuto(); }
   else if (k === "ArrowRight" || k === "PageDown") { e.preventDefault(); goSection(1); }
   else if (k === "ArrowLeft" || k === "PageUp") { e.preventDefault(); goSection(-1); }
@@ -650,6 +698,9 @@ document.addEventListener("keydown", (e) => {
 
 // ---------- Start ----------
 voiceBtn.hidden = !Recognition;
+$(".voice-row").hidden = $(".voice-help").hidden = !Recognition;
+$(".no-voice").hidden = Boolean(Recognition);
+setSide(!narrow.matches && store.get(SIDE_KEY) !== "closed");
 setSpeed(speed);
 setSize(Number(store.get("prompter-size")) || (window.innerWidth < 640 ? 32 : 52));
 setWidth(store.get("prompter-width") || "full");

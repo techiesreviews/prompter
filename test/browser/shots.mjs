@@ -73,10 +73,17 @@ Firewalls block bad traffic.
 Here is one example.
 - Wordfence: https://www.wordfence.com
 It watches every request.
-Thanks for watching.
+
+### **2 · THE DOCS · 05:00**
+
+QL: Where to read more?
+
+The docs explain it all.
+- Handbook: https://docs.example.com
 `;
 
 const NO_SPEECH = () => { delete window.SpeechRecognition; delete window.webkitSpeechRecognition; };
+const NIGHT = "oklch(0.16 0.06 282)"; // --bg, #0b0826
 
 export async function run({ browser, base, mode, dist, out }) {
   const checks = [];
@@ -94,8 +101,14 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(home.status, 200);
   const csp = home.headers.get("content-security-policy") || "";
   assert.match(csp, /script-src 'sha256-/);
+  assert.match(csp, /font-src 'self'/);
   assert.match(home.headers.get("permissions-policy") || "", /microphone=\(self\)/);
-  ok("page served with hash-pinned CSP; microphone allowed for this page only", mode);
+  for (const font of ["inter-latin.woff2", "roboto-mono-latin.woff2"]) {
+    const res = await fetch(`${base}/fonts/${font}`);
+    assert.equal(res.status, 200, font);
+    assert.equal(res.headers.get("content-type"), "font/woff2");
+  }
+  ok("page served with hash-pinned CSP (fonts from this site only); microphone allowed for this page only; both fonts served", mode);
 
   let link;
   if (mode === "wrangler") {
@@ -149,8 +162,25 @@ export async function run({ browser, base, mode, dist, out }) {
   await page.locator(".section").first().waitFor();
   assert.equal(await page.locator(".section").count(), DEMO_SECTIONS);
   assert.equal(await page.evaluate(() => location.hash), "", "the demo keeps a clean address");
-  assert.equal(await page.locator('.bar [data-action="home"], .problems-btn, #home').count(), 0, "no Home, no Check, no start page");
-  assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), "rgb(0, 0, 0)");
+  assert.equal(await page.locator('[data-action="home"], .problems-btn, #home, .bar').count(), 0, "no Home, no Check, no start page, no top toolbar");
+  assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), NIGHT);
+  await page.evaluate(() => document.fonts.ready);
+  assert.deepEqual(await page.evaluate(() => [document.fonts.check("600 52px Inter"), document.fonts.check("500 12px 'Roboto Mono'"), [...document.fonts].map((f) => f.status)]),
+    [true, true, ["loaded", "loaded"]], "Inter and Roboto Mono load under the CSP");
+  // The settings sidebar is open on a wide screen, the control bar floats at the bottom centre.
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.side), "open");
+  assert.equal(await page.locator(".side-toggle").getAttribute("aria-expanded"), "true");
+  assert.deepEqual(await page.locator(".group-label").allTextContents(), ["01Script", "02Reading", "03Voice", "04Main screen", "05Clock", "06Keys"]);
+  assert.match(await page.locator(".side-head").textContent(), /Prompter\s*v0\.2[\s\S]*by Techies/);
+  const dockBox = await page.locator(".dock").boundingBox();
+  const scriptBox = await page.locator(".script").boundingBox();
+  assert.ok(Math.abs(dockBox.x + dockBox.width / 2 - (scriptBox.x + scriptBox.width / 2)) < 2, "the control bar is centred under the script");
+  assert.ok(dockBox.y + dockBox.height <= 900 && dockBox.y > 900 - 100, `control bar at ${Math.round(dockBox.y)}px`);
+  assert.deepEqual(await page.evaluate(() => {
+    const p = document.querySelector(".section p.say");
+    const t = document.querySelector(".section .title");
+    return [getComputedStyle(p).textAlign, getComputedStyle(t).justifyContent];
+  }), ["center", "center"], "script text and section titles are centred");
   const prep = page.locator(".section").first();
   assert.equal(await prep.locator(".actions label.btn input[type=file]").count(), 1);
   assert.equal(await prep.locator('.actions [data-action="paste"]').count(), 1);
@@ -159,16 +189,24 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.match(await prep.locator(".note").textContent(), /Scripts stay on your device/);
   assert.equal(await page.locator(".voice").isHidden(), true, "Follow my voice is hidden without the speech API");
   await shot(page, "demo-prep-desktop");
-  ok("landing opens the demo: PREP buttons, drop hint, privacy note; no Home/Check; black background; no voice button without the API");
+  assert.equal(await page.locator(".voice-row").isHidden(), true);
+  assert.equal(await page.locator(".no-voice").isVisible(), true, "the sidebar says where Follow my voice works");
+  assert.equal(await prep.locator(".actions .btn.primary").count(), 1, "one orange primary action");
+  ok("landing opens the demo: centred PREP buttons, drop hint, privacy note; settings sidebar 01–06 and the floating control bar; indigo page; Inter and Roboto Mono; no top toolbar; no voice button without the API");
 
   await prep.locator('[data-action="ai"]').click();
-  await page.locator("#ai-panel").waitFor();
-  assert.match(await page.locator("#ai-panel .mcp-url").textContent(), new RegExp(`^${base.replace(/[.:/]/g, "\\$&")}/mcp$`));
-  assert.match(await page.locator("#ai-panel").textContent(), /Claude[\s\S]*ChatGPT[\s\S]*Codex and T3 Code[\s\S]*within a few minutes of your last request/);
+  await page.locator("#demo-ai .ai-panel").waitFor();
+  const mcpRe = new RegExp(`^${base.replace(/[.:/]/g, "\\$&")}/mcp$`);
+  assert.match(await page.locator("#demo-ai .mcp-url").textContent(), mcpRe);
+  assert.match(await page.locator("#demo-ai .ai-panel").textContent(), /Claude[\s\S]*ChatGPT[\s\S]*Codex and T3 Code[\s\S]*within a few minutes of your last request/);
   assert.equal(await prep.locator('[data-action="ai"]').getAttribute("aria-expanded"), "true");
-  await page.locator('[data-action="copy-mcp"]').waitFor();
+  await page.locator('#demo-ai [data-action="copy-mcp"]').waitFor();
   await shot(page, "demo-ai-desktop");
-  ok("Use your AI shows this server's /mcp address, a copy button and Claude, ChatGPT and Codex/T3 steps");
+  await page.locator(".side-ai > summary").click();
+  await page.locator(".side-ai .ai-panel").waitFor();
+  assert.match(await page.locator(".side-ai .mcp-url").textContent(), mcpRe);
+  await page.locator(".side-ai > summary").click();
+  ok("Use your AI (demo and sidebar) shows this server's /mcp address, a copy button and Claude, ChatGPT and Codex/T3 steps");
 
   // Inactive lines stay readable: their colour is the AA dim token, not faded with opacity.
   const looks = await page.evaluate(() => {
@@ -176,8 +214,8 @@ export async function run({ browser, base, mode, dist, out }) {
     const cs = getComputedStyle(other);
     return { color: cs.color, opacity: getComputedStyle(other.closest(".section")).opacity };
   });
-  assert.deepEqual(looks, { color: "rgb(154, 154, 154)", opacity: "1" });
-  ok("other sections use the dim AA colour #9a9a9a at full opacity");
+  assert.deepEqual(looks, { color: "oklch(0.64 0.04 282)", opacity: "1" });
+  ok("other sections use the dim AA colour (--dim, oklch 64% 0.04 282) at full opacity");
 
   // Paste from the demo.
   await prep.locator('[data-action="paste"]').click();
@@ -196,14 +234,9 @@ export async function run({ browser, base, mode, dist, out }) {
   await page.locator(".section").first().waitFor();
   assert.equal(await page.locator(".section").count(), 1);
   assert.match(await page.locator(".status").textContent(), /last script/i);
-  await page.locator(".open-menu > summary").click();
-  await page.locator('.menu [data-action="demo"]').click();
+  await page.locator('.sidebar [data-action="demo"]').click();
   await page.waitForFunction((n) => document.querySelectorAll(".section").length === n, DEMO_SECTIONS);
-  assert.equal(await page.locator(".open-menu").getAttribute("open"), null);
-  await page.locator(".open-menu > summary").click();
-  await shot(page, "open-menu-desktop");
-  await page.keyboard.press("Escape");
-  ok("a remembered script opens without a link; Open › Back to the demo returns to the demo");
+  ok("a remembered script opens without a link; Settings › Back to demo returns to the demo");
 
   // ---- Desktop: a #s= link from /mcp ----
   await page.goto(link);
@@ -218,8 +251,48 @@ export async function run({ browser, base, mode, dist, out }) {
   await page.keyboard.press("ArrowRight");
   await page.waitForTimeout(250);
   assert.equal(await page.locator(".section.active").getAttribute("data-i"), "2");
+  await page.locator(".dock .next").click();
+  await page.waitForTimeout(150);
+  assert.equal(await page.locator(".section.active").getAttribute("data-i"), "3");
+  await page.locator(".dock .prev").click();
+  await page.waitForTimeout(150);
+  assert.equal(await page.locator(".section.active").getAttribute("data-i"), "2");
   await shot(page, "ql-section-desktop");
-  ok("link opens the example: 5 sections, QL first, 4 link buttons, &p=lex kept; arrow keys move sections");
+  ok("link opens the example: 5 sections, QL first, 4 link chips, &p=lex kept; arrow keys and the bar's previous/next move sections");
+
+  // Play is the orange primary button; it toggles auto-scroll like Space.
+  await page.locator(".dock .auto").click();
+  assert.equal(await page.locator(".dock .auto").getAttribute("aria-pressed"), "true");
+  assert.equal(await page.locator(".dock .auto").getAttribute("data-tip"), "Pause · Space");
+  await page.keyboard.press(" ");
+  assert.equal(await page.locator(".dock .auto").getAttribute("aria-pressed"), "false", "Space on the focused play button toggles once");
+  await page.locator(".dock .clock").click();
+  assert.equal(await page.locator(".dock .clock").getAttribute("data-running"), "true");
+  assert.equal(await page.locator(".sidebar .start").textContent(), "Restart clock");
+  await scrollToSection(page, 2);
+  await page.locator(".dock .next").hover();
+  await page.waitForTimeout(600);
+  assert.equal(await page.locator(".dock .next").evaluate((el) => getComputedStyle(el, "::after").opacity), "1", "tooltip on hover");
+  const dockClip = await page.locator(".dock").boundingBox();
+  await page.screenshot({ path: join(out, "dock-desktop.png"), clip: { x: dockClip.x - 40, y: dockClip.y - 60, width: dockClip.width + 80, height: dockClip.height + 70 } });
+  screenshots.push(join(out, "dock-desktop.png"));
+  await page.mouse.move(700, 300);
+  ok("play (orange) toggles auto-scroll, Space on it toggles once; the clock starts from the bar; tooltips on hover");
+
+  // Reading mode: hiding the sidebar leaves the script and the bar; remembered.
+  await page.locator(".side-close").click();
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.side), "closed");
+  await page.waitForTimeout(400); // the sidebar slides out
+  assert.equal(await page.locator(".sidebar").isVisible(), false);
+  const fullBox = await page.locator(".script").boundingBox();
+  assert.ok(Math.abs(fullBox.x + fullBox.width / 2 - 683) < 2, "the script is centred on the whole window");
+  await shot(page, "reading-mode-desktop");
+  await page.reload();
+  await page.locator(".section").first().waitFor();
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.side), "closed", "a closed sidebar stays closed");
+  await page.locator(".dock .side-toggle").click();
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.side), "open");
+  ok("hiding the sidebar leaves only the script and the floating bar (reading mode), centred; the choice is remembered");
 
   // Sliders and column width, remembered after a reload.
   await page.locator(".size").fill("70");
@@ -240,11 +313,10 @@ export async function run({ browser, base, mode, dist, out }) {
   await scrollToSection(page, 2);
   await page.waitForTimeout(250);
   await shot(page, "narrow-column-desktop");
-  await page.locator(".bar").screenshot({ path: join(out, "toolbar-desktop.png") });
-  screenshots.push(join(out, "toolbar-desktop.png"));
-  const barHeight = await page.locator(".bar").evaluate((el) => el.getBoundingClientRect().height);
-  assert.ok(barHeight < 60, `desktop toolbar is ${barHeight}px high (one row)`);
-  ok("speed and size sliders and the column width are remembered; keys move the sliders", `toolbar ${Math.round(barHeight)}px`);
+  assert.deepEqual(await page.locator(".sidebar .val").allTextContents(), ["130", "70 px", "Not connected"]);
+  await page.locator(".sidebar").screenshot({ path: join(out, "sidebar-desktop.png") });
+  screenshots.push(join(out, "sidebar-desktop.png"));
+  ok("speed and size sliders and the column width are remembered, with their values on the right; keys move the sliders");
   await page.locator(".width").selectOption("full");
 
   // A link made for the default preset keeps it, even after Lex was chosen.
@@ -289,8 +361,6 @@ export async function run({ browser, base, mode, dist, out }) {
   await v.goto(link);
   await v.locator(".section").first().waitFor();
   await v.locator(".voice").waitFor();
-  const voiceBar = await v.locator(".bar").evaluate((el) => el.getBoundingClientRect().height);
-  assert.ok(voiceBar < 60, `desktop toolbar with Follow my voice is ${voiceBar}px high (one row)`);
   await v.locator(".auto").click();
   assert.equal(await v.locator(".auto").getAttribute("aria-pressed"), "true");
   await v.locator(".voice").click();
@@ -301,6 +371,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await v.locator('[data-action="voice-ok"]').click();
   assert.equal(await v.evaluate(() => window.__speech.started), 1);
   assert.equal(await v.locator(".voice").getAttribute("aria-pressed"), "true");
+  assert.equal(await v.locator(".voice-switch").getAttribute("aria-checked"), "true", "the sidebar switch follows");
   assert.equal(await v.locator(".auto").getAttribute("aria-pressed"), "false", "auto-scroll pauses");
   await v.evaluate(() => window.__speech.say("writing scripts takes too long"));
   await v.waitForFunction(() => document.querySelector("p.cur")?.textContent === "Writing scripts takes too long.");
@@ -343,7 +414,8 @@ export async function run({ browser, base, mode, dist, out }) {
   await L.goto(inlineLink);
   await L.locator(".section").first().waitFor();
   const intro = L.locator(".section").nth(1);
-  assert.deepEqual(await intro.locator(".links .link").allTextContents(), ["1 · Introexample.com", "2 · Patchstackpatchstack.com"], "every link still gets a numbered button at the top");
+  assert.deepEqual(await intro.locator(".links .link").allTextContents(), ["↗1 · Introexample.com", "↗2 · Patchstackpatchstack.com"], "every link still gets a numbered chip at the top");
+  assert.equal(await intro.locator(".links .link .arrow").first().evaluate((el) => getComputedStyle(el).color), "oklch(0.65 0.227 32.3)", "orange arrow");
   const markEl = intro.locator(".mark");
   assert.equal(await markEl.textContent(), "↗ Patchstack · opens here");
   assert.equal(await markEl.getAttribute("data-k"), null, "the marker is not a spoken line");
@@ -385,12 +457,24 @@ export async function run({ browser, base, mode, dist, out }) {
   await L.locator(".voice").click();
   assert.equal(await L.locator(".voice").getAttribute("aria-pressed"), "true");
   await L.evaluate(() => window.__speech.say("and then wordfence"));
-  await L.waitForFunction(() => window.__screen.visits.at(-1) === "https://www.wordfence.com", null, { timeout: 300 });
+  await L.waitForFunction(() => window.__screen.visits.at(-1) === "https://www.wordfence.com", null, { timeout: 2000 });
   await L.evaluate(() => window.__speech.say("and then wordfence blocks it"));
   await L.waitForTimeout(100);
   assert.equal((await visits()).filter((u) => u === "https://www.wordfence.com").length, 1, "the same label heard again does not reopen it");
+  // The main screen moves on (a link chip); saying the label again reopens it.
+  await L.keyboard.press("1");
+  assert.equal(await lastVisit(), "https://example.com/intro");
+  await L.evaluate(() => window.__speech.say("back to wordfence"));
+  await L.waitForFunction(() => window.__screen.visits.at(-1) === "https://www.wordfence.com", null, { timeout: 2000 });
+  assert.equal((await visits()).filter((u) => u === "https://www.wordfence.com").length, 2, "reopened after the screen moved");
   await L.locator(".voice").click();
-  ok("Follow my voice: saying a link's label (next section) opens it at once, before the reading line gets there");
+  ok("Follow my voice: saying a link's label (next section) opens it at once; heard again it reopens only after the main screen moved");
+  // A link on the last line of a section: its marker is the last thing there and opens once passed.
+  const lastMark = ".section:nth-child(4) .mark";
+  assert.equal(await L.evaluate((q) => document.querySelector(q) === document.querySelector(q).parentElement.lastElementChild, lastMark), true);
+  await passMark(L, lastMark, 2);
+  await L.waitForFunction(() => window.__screen.visits.at(-1) === "https://docs.example.com", null, { timeout: 2000 });
+  ok("a link on a section's last line opens once the reading line passes it");
   await linked.close();
 
   // The demo's inline video link: YouTube plays in the page's own #player view.
@@ -410,18 +494,18 @@ export async function run({ browser, base, mode, dist, out }) {
   ok("the demo's inline YouTube link opens the full-window #player view");
   await demoLinked.close();
 
-  // No main screen: one gentle hint, once, that does not change the toolbar.
+  // No main screen: one gentle hint, once, above the control bar.
   const hinted = await browser.newContext(DESKTOP);
   const H = await hinted.newPage();
   watch(H, "screen hint");
   await H.goto(inlineLink);
   await H.locator(".section").first().waitFor();
-  const barBefore = await H.locator(".bar").evaluate((el) => el.getBoundingClientRect().height);
   await scrollToSection(H, 1);
   await H.locator(".screen-hint:not([hidden])").waitFor({ timeout: 2000 });
   assert.match(await H.locator(".hint-text").textContent(), /“Intro” would open on your main screen now/);
   assert.equal(await H.locator(".connect").getAttribute("data-hint"), "true");
-  assert.equal(await H.locator(".bar").evaluate((el) => el.getBoundingClientRect().height), barBefore, "the hint floats below the toolbar");
+  const deskHint = await H.locator(".screen-hint").boundingBox();
+  assert.ok(deskHint.y > 900 * 0.34 + 40 && deskHint.y + deskHint.height < (await H.locator(".dock").boundingBox()).y, "the hint floats above the control bar, clear of the reading line");
   assert.equal(await H.locator(".note-row.alert").isHidden(), true, "no alert, just the hint");
   await shot(H, "screen-hint-desktop");
   await H.locator('.screen-hint [data-action="hint-ok"]').click();
@@ -430,20 +514,41 @@ export async function run({ browser, base, mode, dist, out }) {
   await H.waitForTimeout(1000);
   assert.equal(await H.locator(".screen-hint").isHidden(), true, "shown once per page");
   await hinted.close();
-  ok("without a main screen nothing opens; a one-time hint near Connect main screen, toolbar height unchanged");
+  // The hint's own Connect button connects and shows the link at the reading line.
+  const hintConnect = await browser.newContext(DESKTOP);
+  await hintConnect.addInitScript(SCREEN_STUB);
+  const HC = await hintConnect.newPage();
+  watch(HC, "hint connect");
+  await HC.goto(inlineLink);
+  await HC.locator(".section").first().waitFor();
+  await scrollToSection(HC, 1);
+  await HC.locator(".screen-hint:not([hidden])").waitFor({ timeout: 2000 });
+  assert.deepEqual(await HC.evaluate(() => window.__screen.visits), [], "nothing opens before Connect");
+  await HC.locator('.screen-hint [data-action="connect"]').click();
+  assert.equal(await HC.locator(".screen-hint").isHidden(), true);
+  assert.equal(await HC.locator(".connect").getAttribute("data-hint"), null);
+  assert.equal(await HC.evaluate(() => window.__screen.visits.at(-1)), "https://example.com/intro");
+  assert.equal(await HC.locator(".screen-state").textContent(), "Connected");
+  await hintConnect.close();
+  ok("without a main screen nothing opens; a one-time hint above the control bar; its Connect button hides it, clears the highlight and shows the current link");
 
   // ---- Mobile ----
   const mobile = await browser.newContext(MOBILE);
   await mobile.addInitScript(SPEECH_STUB);
+  await mobile.addInitScript(() => localStorage.setItem("prompter-sidebar", "open"));
   const m = await mobile.newPage();
   watch(m, "mobile");
   await m.goto(`${base}/`);
   await m.locator(".section").first().waitFor();
   await noOverflow(m, "mobile demo");
-  const mobileBar = await m.locator(".bar").evaluate((el) => el.getBoundingClientRect().height);
-  const rowTops = await m.locator(".open-menu, .auto, .voice, .more-btn").evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().top)));
-  assert.equal(new Set(rowTops).size, 1, `main controls wrap: ${rowTops}`);
-  assert.ok(mobileBar < 60, `mobile toolbar is ${Math.round(mobileBar)}px high (one row)`);
+  assert.equal(await m.evaluate(() => document.documentElement.dataset.side), "closed", "phones start with the settings closed");
+  assert.equal(await m.locator(".sidebar").isVisible(), false);
+  const mobileDock = await m.locator(".dock").boundingBox();
+  assert.ok(mobileDock.x >= 0 && mobileDock.x + mobileDock.width <= 390, `control bar ${Math.round(mobileDock.width)}px fits`);
+  assert.ok(Math.abs(mobileDock.x + mobileDock.width / 2 - 195) < 2, "control bar centred");
+  const tops = await m.locator(".dock > button:not([hidden])").evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().top)));
+  assert.equal(new Set(tops).size, 1, `control bar is one row: ${tops}`);
+  assert.ok(await m.locator(".dock .auto").evaluate((el) => el.getBoundingClientRect().height >= 44), "44px touch targets");
   await shot(m, "demo-prep-mobile");
   await m.locator('.actions [data-action="ai"]').click();
   await noOverflow(m, "mobile AI panel");
@@ -454,19 +559,28 @@ export async function run({ browser, base, mode, dist, out }) {
   await scrollToSection(m, 2);
   await m.waitForTimeout(250);
   await shot(m, "ql-section-mobile");
-  await m.locator(".more-btn").click();
-  await m.locator(".more .size").waitFor();
-  await noOverflow(m, "mobile toolbar open");
-  const openBar = await m.locator(".bar").evaluate((el) => el.getBoundingClientRect().height);
-  assert.ok(openBar < 844 * 0.34, `open toolbar ${openBar}px covers the reading line`);
-  await m.locator(".width").selectOption("narrow");
-  await shot(m, "toolbar-mobile");
-  await m.locator(".voice").click();
+  // The settings open as a bottom sheet over a dimmed page.
+  await m.locator(".dock .side-toggle").click();
+  await m.locator(".sidebar .size").waitFor();
+  await m.waitForTimeout(350);
+  await noOverflow(m, "mobile settings open");
+  const sheet = await m.locator(".sidebar").boundingBox();
+  assert.ok(Math.round(sheet.x) === 0 && Math.round(sheet.width) === 390 && sheet.y + sheet.height <= 845 && sheet.y > 100, `sheet at ${JSON.stringify(sheet)}`);
+  assert.equal(await m.locator(".scrim").isVisible(), true);
+  await m.locator(".sidebar .width").selectOption("narrow");
+  await shot(m, "sidebar-mobile");
+  await m.locator(".side-close").click();
+  assert.equal(await m.evaluate(() => document.documentElement.dataset.side), "closed");
+  await m.locator(".dock .side-toggle").click();
+  await m.waitForTimeout(350);
+  await m.locator(".scrim").click({ position: { x: 195, y: 40 } });
+  assert.equal(await m.evaluate(() => document.documentElement.dataset.side), "closed", "tapping the dimmed page closes the sheet");
+  assert.equal(await m.evaluate(() => localStorage.getItem("prompter-sidebar")), "open", "phones do not change the remembered desktop choice");
+  await m.locator(".dock .voice").click();
   await m.locator(".voice-notice:not([hidden])").waitFor();
   await noOverflow(m, "mobile voice notice");
   await shot(m, "voice-notice-mobile");
   await m.locator('[data-action="voice-cancel"]').click();
-  await m.locator(".more-btn").click();
   await m.goto(inlineLink);
   await m.reload(); // only the #s= part changed: load the page again so the hint is fresh
   await m.locator(".section").first().waitFor();
@@ -478,9 +592,9 @@ export async function run({ browser, base, mode, dist, out }) {
   await noOverflow(m, "mobile inline link and hint");
   const hintBox = await m.locator(".screen-hint").boundingBox();
   assert.ok(hintBox.y > 844 * 0.34 + 40, `mobile hint at ${Math.round(hintBox.y)}px stays clear of the reading line`);
-  assert.ok(hintBox.y + hintBox.height <= 844, "mobile hint fits on screen");
+  assert.ok(hintBox.y + hintBox.height <= (await m.locator(".dock").boundingBox()).y, "mobile hint fits above the control bar");
   await shot(m, "inline-link-mobile");
-  ok("mobile 390px: one-row toolbar, More reveals sliders and column without sideways scroll, voice notice fits", `${Math.round(mobileBar)}px / ${Math.round(openBar)}px`);
+  ok("mobile 390px: settings closed by default, a bottom sheet with sliders and column (closes by ×, by tapping the page), a one-row centred control bar with 44px targets, no sideways scroll, voice notice and hint fit", `bar ${Math.round(mobileDock.width)}px`);
   await mobile.close();
 
   // ---- Offline (file://) ----
@@ -491,8 +605,9 @@ export async function run({ browser, base, mode, dist, out }) {
   await o.goto(fileUrl);
   await o.locator(".section").first().waitFor();
   assert.equal(await o.locator(".section").count(), DEMO_SECTIONS);
+  assert.equal(await o.evaluate(() => document.fonts.size), 0, "offline copies use system fonts and request no font file");
   await o.locator('.actions [data-action="ai"]').click();
-  assert.equal(await o.locator("#ai-panel .mcp-url").textContent(), "https://prompter.techies.tools/mcp");
+  assert.equal(await o.locator("#demo-ai .mcp-url").textContent(), "https://prompter.techies.tools/mcp");
   await o.goto(fileUrl + new URL(link).hash);
   await o.locator(".section").first().waitFor();
   await o.waitForFunction(() => document.querySelectorAll(".section").length === 5);

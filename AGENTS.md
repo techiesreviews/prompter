@@ -10,8 +10,8 @@ Public teleprompter at https://prompter.techies.tools plus an open, stateless MC
 - Cloudflare free plan only. No paid features.
 - `src/core.mjs` is the single source of truth for the format, presets ("lex" and "default"), checker, link encoding and the demo script. The page inlines it (and `src/follow.mjs`, the voice-follow line matching) at build time, so both must stay import-free and use only `export function`/`export const` forms.
 - Follow my voice uses the browser's own speech recognition (Web Speech API) and is opt-in after a notice that the browser sends audio to its speech service. The page itself never sends audio or the script anywhere. The page's `Permissions-Policy` allows the microphone for this origin only.
-- Text colours must meet WCAG AA (4.5:1) on black; `test/contrast.test.mjs` checks the tokens in `src/page.html`.
-- The built page must stay one self-contained HTML file that works offline (no external scripts, styles, fonts or fetches).
+- Design: the Techies Reviews dark palette (indigo night page, bright orange actions), Inter and Roboto Mono, centred script, settings sidebar (bottom sheet on phones) and a floating control bar. Text colours must meet WCAG AA (4.5:1) on their backgrounds; white on orange only at 19px bold (large text). `test/contrast.test.mjs` checks the `oklch()` tokens in `src/page.html`.
+- The built page must stay one self-contained HTML file that works offline (no external scripts, styles or fetches). The only extra files are the two fonts in `fonts/` (SIL OFL 1.1, licence in `fonts/OFL.txt`), served from `/fonts/` (CSP `font-src 'self'`); the page adds their `@font-face` only when served over http(s), so a file:// copy uses system fonts.
 - CSS: simple, low-specificity, shared helpers first; bounded component overrides with `@scope` only where losing them is harmless. Respect `prefers-reduced-motion`. Keep mobile usable.
 - Review with `kit review` (Claude only). Do not run GPT/Codex reviews.
 - Do not deploy, push or change Cloudflare resources unless the lead says so.
