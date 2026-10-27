@@ -15,7 +15,7 @@ const modulePath = process.env.KIT_PLAYWRIGHT_MODULE || "/home/ubulex/Projects/n
 const usage = {
   doctor: "Usage: kit doctor\nChecks Node >=24, git, the build, every kit command's help, Playwright + Chromium launch, cached Wrangler and conflict markers.",
   specs: "Usage: kit specs [name-pattern]\nBuilds dist/ into scratch, then runs node:test files in test/ (parser, presets/checker, #s= round trip, MCP JSON-RPC, size cap, rate limits (in-isolate guard and Durable Object limiter, stubbed), build, review-runner model check, demo script (lex), voice-follow matching, colour contrast).\nOptional pattern is passed to --test-name-pattern.",
-  shots: "Usage: kit shots [--static]\nServes the build through local `wrangler dev` (cached Wrangler only) or, with --static or without Wrangler, a local static server.\nCaptures desktop and mobile screenshots of the demo (PREP buttons, Use your AI), a QL section of the example script opened from a #s= link (made by the local /mcp when Wrangler runs), the toolbar sliders, the narrow column and Follow my voice (stubbed speech API); checks the remembered last script, paste, the Open menu, offline file:// use and MCP basics, including a 429 from the local Durable Object limiter.\nBrowser tooling: KIT_PLAYWRIGHT_MODULE or " + modulePath + ".",
+  shots: "Usage: kit shots [--static]\nServes the build through local `wrangler dev` (cached Wrangler only) or, with --static or without Wrangler, a local static server.\nCaptures desktop and mobile screenshots of the demo (PREP buttons, Use your AI), a QL section of the example script opened from a #s= link (made by the local /mcp when Wrangler runs), the settings sidebar (open and closed) and the floating control bar, the narrow column, Follow my voice (stubbed speech API) and inline links; checks the fonts load under the CSP, the remembered last script, paste, Back to demo, offline file:// use and MCP basics, including a 429 from the local Durable Object limiter.\nBrowser tooling: KIT_PLAYWRIGHT_MODULE or " + modulePath + ".",
   size: "Usage: kit size\nReports raw and gzip bytes of the built page and the Worker sources. Report only; no budget.",
 };
 if (args.includes("--help") || args.includes("-h")) { console.log(usage[command] || "Unknown command"); process.exit(0); }
@@ -150,10 +150,16 @@ async function startWrangler(wrangler, dist) {
 async function startStatic(dist) {
   const server = createServer((req, res) => {
     const path = decodeURIComponent(new URL(req.url, "http://x").pathname);
-    if (path !== "/" && path !== "/index.html") { res.statusCode = path === "/mcp" ? 405 : 404; res.end("Not found"); return; }
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
     const csp = readFileSync(join(dist, "_headers"), "utf8").match(/Content-Security-Policy: (.*)/)[1];
     res.setHeader("Content-Security-Policy", csp);
+    const font = path.match(/^\/fonts\/([\w-]+\.woff2)$/);
+    if (font && existsSync(join(dist, "fonts", font[1]))) {
+      res.setHeader("Content-Type", "font/woff2");
+      res.end(readFileSync(join(dist, "fonts", font[1])));
+      return;
+    }
+    if (path !== "/" && path !== "/index.html") { res.statusCode = path === "/mcp" ? 405 : 404; res.end("Not found"); return; }
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.end(readFileSync(join(dist, "index.html")));
   });
   await new Promise((ok) => server.listen(0, "127.0.0.1", ok));

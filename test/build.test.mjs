@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { build, pageScript } from "../scripts/build.mjs";
+import { build, FONTS, pageScript } from "../scripts/build.mjs";
 
 const dist = process.env.PROMPTER_DIST || build(resolve(import.meta.dirname, "../.scratch/test-dist")).dir;
 const html = readFileSync(join(dist, "index.html"), "utf8");
@@ -26,6 +26,14 @@ test("the CSP pins the hash of the inline script", () => {
   assert.match(headers, /default-src 'none'/);
   assert.match(headers, /frame-src https:\/\/www\.youtube\.com;/);
   assert.doesNotMatch(headers, /nocookie/);
+  assert.match(headers, /font-src 'self';/);
+});
+
+test("the fonts and their licence ship in dist/fonts", () => {
+  for (const file of FONTS) assert.ok(existsSync(join(dist, "fonts", file)), file);
+  const licence = readFileSync(join(dist, "fonts", "OFL.txt"), "utf8");
+  assert.match(licence, /The Inter Project Authors[\s\S]*The Roboto Mono Project Authors[\s\S]*SIL OPEN FONT LICENSE[\s\S]*Version 1\.1/);
+  assert.match(headers, /\/fonts\/\*\n {2}Cache-Control: public, max-age=31536000, immutable/);
 });
 
 test("the inlined script parses as JavaScript", () => {

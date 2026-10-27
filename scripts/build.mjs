@@ -1,13 +1,17 @@
 #!/usr/bin/env node
-// Builds dist/: one self-contained index.html (core, follow + app inlined) and the
-// _headers file whose Content-Security-Policy pins that inline script's hash.
+// Builds dist/: one self-contained index.html (core, follow + app inlined), the
+// _headers file whose Content-Security-Policy pins that inline script's hash,
+// and the two font files (the page falls back to system fonts without them).
 // Usage: node scripts/build.mjs [outDir=dist]
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const read = (file) => readFileSync(join(root, file), "utf8");
+
+/** Font files served from /fonts/ (SIL OFL 1.1; the licence travels with them). */
+export const FONTS = ["inter-latin.woff2", "roboto-mono-latin.woff2", "OFL.txt"];
 
 /** Shared modules inlined into the page, in this order, without `export`. */
 export const INLINED = ["src/core.mjs", "src/follow.mjs"];
@@ -37,6 +41,7 @@ export function build(dir = join(root, "dist")) {
     `script-src 'sha256-${hash}'`,
     "style-src 'unsafe-inline'",
     "img-src data:",
+    "font-src 'self'",
     "frame-src https://www.youtube.com",
     "base-uri 'none'",
     "form-action 'none'",
@@ -47,15 +52,19 @@ export function build(dir = join(root, "dist")) {
   Referrer-Policy: strict-origin-when-cross-origin
   X-Content-Type-Options: nosniff
   Permissions-Policy: camera=(), microphone=(self), geolocation=()
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
 `;
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "index.html"), html);
   writeFileSync(join(dir, "_headers"), headers);
   writeFileSync(join(dir, "robots.txt"), "User-agent: *\nAllow: /\nDisallow: /mcp\n");
+  mkdirSync(join(dir, "fonts"), { recursive: true });
+  for (const file of FONTS) copyFileSync(join(root, "fonts", file), join(dir, "fonts", file));
   return { html, headers, hash, dir };
 }
 
 if (import.meta.main) {
   const { dir, html } = build(resolve(root, process.argv[2] || "dist"));
-  console.log(`Wrote ${dir}/index.html (${html.length} bytes), _headers, robots.txt`);
+  console.log(`Wrote ${dir}/index.html (${html.length} bytes), _headers, robots.txt, fonts/`);
 }
