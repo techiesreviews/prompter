@@ -4,7 +4,8 @@
 import { check, describeProblems, formatGuide, makeLink, MAX_SCRIPT_CHARS, PRESETS } from "./core.mjs";
 
 export const MAX_BODY_BYTES = 200 * 1024;
-export const RATE_LIMIT = 60; // requests per IP per minute
+export const RATE_LIMIT = 60; // requests per client per minute
+export const BURST_LIMIT = 10; // requests per client per 10 seconds (Durable Object only)
 const PROTOCOLS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 const SERVER = { name: "techies-prompter", title: "Prompter", version: "1.0.0" };
 const LONG_LINK = 16_000;
@@ -176,8 +177,8 @@ async function readCapped(request) {
 }
 
 /**
- * Per-isolate fixed-window counter. Runs on every request next to the Workers
- * binding. When full it drops expired entries, then the oldest window starts,
+ * Per-isolate fixed-window counter. Runs on every request before the Durable
+ * Object limiter. When full it drops expired entries, then the oldest window starts,
  * so rotating IPs cannot reset every count at once.
  */
 export function memoryLimiter(limit = RATE_LIMIT, windowMs = 60_000, now = () => Date.now(), maxKeys = 10_000) {
@@ -205,9 +206,11 @@ export function memoryLimiter(limit = RATE_LIMIT, windowMs = 60_000, now = () =>
 const instanceGuard = memoryLimiter();
 
 /**
- * Handle one HTTP request to /mcp. `limiter` follows the Workers rate-limit
- * binding API. The binding is approximate and per location, so the per-isolate
- * guard always runs too; a request must pass both.
+ * Handle one HTTP request to /mcp. The per-isolate guard runs first and stops
+ * bursts that land on one instance without any extra call. `limiter` is the
+ * per-client Durable Object limiter (see limiter.mjs), the one that holds
+ * across instances; both use the `limit({ key })` shape and a request must
+ * pass both.
  */
 export async function handleMcp(request, { limiter, guard = instanceGuard } = {}) {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
@@ -216,8 +219,12 @@ export async function handleMcp(request, { limiter, guard = instanceGuard } = {}
   }
 
   const key = request.headers.get("cf-connecting-ip") || "local";
-  const allowed = (await guard.limit({ key })).success && (!limiter || (await limiter.limit({ key })).success);
-  if (!allowed) return json(rpcError(null, -32000, `Too many requests. Limit: ${RATE_LIMIT} per minute.`), 429, { "Retry-After": "60" });
+  let verdict = await guard.limit({ key });
+  if (verdict.success && limiter) verdict = await limiter.limit({ key });
+  if (!verdict.success) {
+    const wait = verdict.retryAfter || 60;
+    return json(rpcError(null, -32000, `Too many requests. Limit: ${RATE_LIMIT} per minute and ${BURST_LIMIT} per 10 seconds. Try again in ${wait} seconds.`), 429, { "Retry-After": String(wait) });
+  }
 
   const raw = await readCapped(request);
   if (raw === null) return json(rpcError(null, -32000, `Request too large. Limit: ${MAX_BODY_BYTES / 1024} KB.`), 413);

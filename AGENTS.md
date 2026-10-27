@@ -5,7 +5,8 @@ Public teleprompter at https://prompter.techies.tools plus an open, stateless MC
 ## Rules
 
 - Agent Kit is required for all coding: read `docs/agents/agent-scripts.md`, run `scripts/agents/kit --help` and `kit doctor` first, then `kit specs` (and `kit shots`, `kit size` for page changes). Delegated work must carry this requirement.
-- Scripts stay on the user's device. Never add server-side storage (KV, D1, R2, Durable Objects, Cache API for scripts) or logging of request bodies. Keep `observability` off. Scripts travel only in the URL fragment `#s=`.
+- Scripts stay on the user's device. Never add server-side storage (KV, D1, R2, Durable Object storage, Cache API for scripts) or logging of request bodies. Keep `observability` off. Scripts travel only in the URL fragment `#s=`.
+- The one exception is the `/mcp` rate limiter in `src/limiter.mjs`: a Durable Object per hashed client (salted SHA-256 of the IP, never the raw IP) that counts requests in memory only. It must never use `ctx.storage`, receive a request body, or log. Only `/mcp` may call it.
 - Cloudflare free plan only. No paid features.
 - `src/core.mjs` is the single source of truth for the format, presets ("lex" and "default"), checker and link encoding. The page inlines it at build time, so it must stay import-free and use only `export function`/`export const` forms.
 - The built page must stay one self-contained HTML file that works offline (no external scripts, styles, fonts or fetches).

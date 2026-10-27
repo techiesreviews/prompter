@@ -41,6 +41,14 @@ export async function run({ browser, base, mode, dist, out }) {
     const big = await fetch(`${base}/mcp`, { method: "POST", headers: { "content-type": "application/json" }, body: "x".repeat(210 * 1024) });
     assert.equal(big.status, 413);
     ok("local /mcp: initialize, tools/list, make_prompter_link, GET 405, 413 above 200 KB");
+    // Four requests above counted; the burst cap (10 per 10 s) refuses within the next 10.
+    const codes = [];
+    for (let i = 0; i < 10; i++) codes.push((await mcp({ jsonrpc: "2.0", id: 10 + i, method: "ping" })).status);
+    const refused = await mcp({ jsonrpc: "2.0", id: 99, method: "ping" });
+    assert.equal(refused.status, 429, `burst statuses: ${codes.join(",")}`);
+    assert.ok(Number(refused.headers.get("retry-after")) >= 1);
+    assert.equal((await refused.json()).error.code, -32000);
+    ok("local Durable Object limiter: 429 with Retry-After after the burst cap", codes.join(","));
   } else {
     link = await makeLink(EXAMPLE_SCRIPT, "lex", base);
     ok("static mode: link made with core.makeLink");

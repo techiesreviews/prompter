@@ -167,19 +167,42 @@ test("rate limit: 429 with Retry-After once the per-IP limit is spent", async ()
   await small.limit({ key: "d" }); // map full, nothing expired: oldest ("b") is dropped
   assert.equal((await small.limit({ key: "c" })).success, false, "c keeps its count");
   assert.equal((await small.limit({ key: "b" })).success, true, "b was the one evicted");
-  // The binding can refuse on its own, even when the in-isolate guard allows.
-  const refuse = { async limit() { return { success: false }; } };
-  assert.equal((await post({ jsonrpc: "2.0", id: 0, method: "ping" }, { limiter: refuse })).status, 429);
+  // The Durable Object limiter can refuse on its own, with its own Retry-After.
+  const refuse = { async limit() { return { success: false, retryAfter: 7 }; } };
+  const byObject = await post({ jsonrpc: "2.0", id: 0, method: "ping" }, { limiter: refuse });
+  assert.equal(byObject.status, 429);
+  assert.equal(byObject.headers.get("retry-after"), "7");
+  const body = await byObject.json();
+  assert.equal(body.error.code, -32000);
+  assert.match(body.error.message, /Try again in 7 seconds/);
 });
 
-test("the Worker sends /mcp to the handler (with its binding) and everything else to assets", async () => {
+test("the in-isolate guard refuses before the Durable Object is asked", async () => {
+  let asked = 0;
+  const limiter = { async limit() { asked++; return { success: true }; } };
+  const refuse = { async limit() { return { success: false }; } };
+  assert.equal((await post({ jsonrpc: "2.0", id: 0, method: "ping" }, { guard: refuse, limiter })).status, 429);
+  assert.equal(asked, 0);
+  assert.equal((await post({ jsonrpc: "2.0", id: 0, method: "ping" }, { limiter })).status, 200);
+  assert.equal(asked, 1);
+});
+
+test("the Worker sends /mcp to the handler (with the Durable Object) and everything else to assets", async () => {
   const seen = [];
   const env = {
     ASSETS: { fetch: (req) => { seen.push(new URL(req.url).pathname); return new Response("asset"); } },
-    MCP_RATE_LIMITER: { async limit({ key }) { seen.push(`limit:${key}`); return { success: false }; } },
+    MCP_LIMITER: {
+      idFromName(name) { seen.push(`id:${name}`); return name; },
+      get(id) { return { fetch: async (url, init) => { seen.push(`do:${init.method}:${init.body ?? ""}`); return new Response(null, { status: 429, headers: { "Retry-After": "9" } }); } }; },
+    },
   };
   assert.equal(await (await worker.fetch(new Request("https://prompter.techies.tools/"), env)).text(), "asset");
+  assert.deepEqual(seen, ["/"], "the static page never touches the Durable Object");
   const limited = await worker.fetch(new Request(URL_, { method: "POST", body: "{}", headers: { "cf-connecting-ip": "198.51.100.1" } }), env);
   assert.equal(limited.status, 429);
-  assert.deepEqual(seen, ["/", "limit:198.51.100.1"]);
+  assert.equal(limited.headers.get("retry-after"), "9");
+  assert.equal(seen.length, 3);
+  assert.match(seen[1], /^id:[0-9a-f]{64}$/, "the object is named by a hash");
+  assert.ok(!seen.join(" ").includes("198.51.100.1"), "the raw IP never reaches the Durable Object");
+  assert.equal(seen[2], "do:POST:", "the object gets no body, so never a script");
 });

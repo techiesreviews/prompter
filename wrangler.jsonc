@@ -1,6 +1,8 @@
 {
   // One Worker: static page from ./dist plus the stateless MCP endpoint at /mcp.
-  // Free plan only. No KV, D1, R2 or Durable Objects: nothing is stored.
+  // Free plan only. No KV, D1 or R2: nothing is stored. The one Durable Object
+  // is the /mcp rate limiter: it counts requests in memory per hashed client
+  // and never writes to its storage (see src/limiter.mjs).
   "name": "techies-prompter",
   "main": "src/worker.mjs",
   "compatibility_date": "2026-09-17",
@@ -16,10 +18,13 @@
     "not_found_handling": "none",
     "html_handling": "auto-trailing-slash"
   },
-  // Free Workers rate-limiting binding: 60 /mcp requests per IP per minute.
-  "ratelimits": [
-    { "name": "MCP_RATE_LIMITER", "namespace_id": "4207", "simple": { "limit": 60, "period": 60 } }
-  ],
+  // Per-client /mcp limit. The free plan only offers SQLite-backed Durable
+  // Objects; the class still never reads or writes storage. (The Workers
+  // rate-limiting binding was dropped: live tests showed it did not enforce.)
+  "durable_objects": {
+    "bindings": [{ "name": "MCP_LIMITER", "class_name": "McpLimiter" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["McpLimiter"] }],
   // No request logs: scripts must never be recorded.
   "observability": { "enabled": false },
   "build": { "command": "node scripts/build.mjs" }

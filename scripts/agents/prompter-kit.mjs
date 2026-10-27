@@ -14,8 +14,8 @@ const root = process.env.KIT_ROOT || resolve(import.meta.dirname, "../..");
 const modulePath = process.env.KIT_PLAYWRIGHT_MODULE || "/home/ubulex/Projects/native-site-editor-dev/node_modules/playwright/index.mjs";
 const usage = {
   doctor: "Usage: kit doctor\nChecks Node >=24, git, the build, every kit command's help, Playwright + Chromium launch, cached Wrangler and conflict markers.",
-  specs: "Usage: kit specs [name-pattern]\nBuilds dist/ into scratch, then runs node:test files in test/ (parser, presets/checker, #s= round trip, MCP JSON-RPC, size cap, rate limit, build, review-runner model check).\nOptional pattern is passed to --test-name-pattern.",
-  shots: "Usage: kit shots [--static]\nServes the build through local `wrangler dev` (cached Wrangler only) or, with --static or without Wrangler, a local static server.\nCaptures desktop and mobile screenshots of home and the example script opened from a #s= link (made by the local /mcp when Wrangler runs), checks the problems dialog, offline file:// use and MCP basics.\nBrowser tooling: KIT_PLAYWRIGHT_MODULE or " + modulePath + ".",
+  specs: "Usage: kit specs [name-pattern]\nBuilds dist/ into scratch, then runs node:test files in test/ (parser, presets/checker, #s= round trip, MCP JSON-RPC, size cap, rate limits (in-isolate guard and Durable Object limiter, stubbed), build, review-runner model check).\nOptional pattern is passed to --test-name-pattern.",
+  shots: "Usage: kit shots [--static]\nServes the build through local `wrangler dev` (cached Wrangler only) or, with --static or without Wrangler, a local static server.\nCaptures desktop and mobile screenshots of home and the example script opened from a #s= link (made by the local /mcp when Wrangler runs), checks the problems dialog, offline file:// use and MCP basics, including a 429 from the local Durable Object limiter.\nBrowser tooling: KIT_PLAYWRIGHT_MODULE or " + modulePath + ".",
   size: "Usage: kit size\nReports raw and gzip bytes of the built page and the Worker sources. Report only; no budget.",
 };
 if (args.includes("--help") || args.includes("-h")) { console.log(usage[command] || "Unknown command"); process.exit(0); }
@@ -40,7 +40,7 @@ try {
   if (command === "doctor") {
     if (Number(process.versions.node.split(".")[0]) < 24) throw Error("Node >=24 required");
     run("git", ["rev-parse", "--verify", "HEAD"]);
-    for (const file of ["src/core.mjs", "src/mcp.mjs", "src/worker.mjs", "src/app.js", "src/page.html", "scripts/build.mjs", "wrangler.jsonc", "docs/agents/agent-scripts.md"]) {
+    for (const file of ["src/core.mjs", "src/mcp.mjs", "src/limiter.mjs", "src/worker.mjs", "src/app.js", "src/page.html", "scripts/build.mjs", "wrangler.jsonc", "docs/agents/agent-scripts.md"]) {
       if (!existsSync(join(root, file))) throw Error(`Missing ${file}`);
     }
     for (const name of ["specs", "shots", "size", "review", "wait", "version"]) run(join(root, "scripts/agents/kit"), [name, "--help"]);
@@ -90,7 +90,7 @@ try {
   } else if (command === "size") {
     const dist = join(out, "dist");
     await buildInto(dist);
-    const files = [["dist/index.html", join(dist, "index.html")], ...["src/core.mjs", "src/mcp.mjs", "src/worker.mjs"].map((f) => [f, join(root, f)])];
+    const files = [["dist/index.html", join(dist, "index.html")], ...["src/core.mjs", "src/mcp.mjs", "src/limiter.mjs", "src/worker.mjs"].map((f) => [f, join(root, f)])];
     const report = files.map(([file, path]) => { const data = readFileSync(path); return { file, bytes: data.length, gzipBytes: gzipSync(data).length }; });
     const worker = report.filter((r) => r.file.startsWith("src/")).reduce((sum, r) => ({ bytes: sum.bytes + r.bytes, gzipBytes: sum.gzipBytes + r.gzipBytes }), { bytes: 0, gzipBytes: 0 });
     const summary = { files: report, workerSourceTotal: worker, note: "Report only. Free plan Worker limit is 3 MB compressed; the page is one self-contained file." };
