@@ -1,0 +1,26 @@
+{
+  // One Worker: static page from ./dist plus the stateless MCP endpoint at /mcp.
+  // Free plan only. No KV, D1, R2 or Durable Objects: nothing is stored.
+  "name": "techies-prompter",
+  "main": "src/worker.mjs",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    { "pattern": "prompter.techies.tools", "custom_domain": true }
+  ],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/mcp", "/mcp/"],
+    "not_found_handling": "none",
+    "html_handling": "auto-trailing-slash"
+  },
+  // Free Workers rate-limiting binding: 60 /mcp requests per IP per minute.
+  "ratelimits": [
+    { "name": "MCP_RATE_LIMITER", "namespace_id": "4207", "simple": { "limit": 60, "period": 60 } }
+  ],
+  // No request logs: scripts must never be recorded.
+  "observability": { "enabled": false },
+  "build": { "command": "node scripts/build.mjs" }
+}
