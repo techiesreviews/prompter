@@ -386,6 +386,7 @@ function endLineDrag(e) {
 }
 handle.addEventListener("pointerup", endLineDrag);
 handle.addEventListener("pointercancel", endLineDrag);
+handle.addEventListener("lostpointercapture", endLineDrag); // e.g. the start screen hid it mid-drag
 handle.addEventListener("keydown", (e) => {
   if (!LINE_KEYS.includes(e.key) || e.metaKey || e.ctrlKey || e.altKey) return;
   e.preventDefault();
