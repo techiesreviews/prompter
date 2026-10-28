@@ -310,11 +310,11 @@ function openAi() {
 // :root as --line in px; the page's CSS and every check here use that one value.
 const handle = $(".line-handle");
 const LINE_STEPS = { ArrowUp: -1, ArrowDown: 1, PageUp: -10, PageDown: 10 }; // percent
-const TAP_SLOP = 8; // px a tap may drift and still be a tap
+const TAP_SLOP = 8; // px a finger may drift and still tap (a mouse or pen: 2px)
 const LINE_KEYS = [...Object.keys(LINE_STEPS), "Home", "End"];
 let lineFrac = LINE_DEFAULT;
 let lineY = 0;
-let lineDrag = null; // { id, offset, from } while a pointer drags the handle
+let lineDrag = null; // { id, offset, from, start, slop, moved } while a pointer drags the handle
 let dragFrame = 0;
 let dragY = 0;
 let lastTap = -Infinity; // two taps (or clicks) on the handle without a move reset the line
@@ -358,11 +358,14 @@ handle.addEventListener("pointerdown", (e) => {
   if (e.button !== 0) return;
   e.preventDefault();
   handle.setPointerCapture(e.pointerId);
-  lineDrag = { id: e.pointerId, offset: e.clientY - lineY, from: e.clientY, start: lineFrac };
+  lineDrag = { id: e.pointerId, offset: e.clientY - lineY, from: e.clientY, start: lineFrac, slop: e.pointerType === "touch" ? TAP_SLOP : 2, moved: false };
   handle.dataset.dragging = "true";
 });
 handle.addEventListener("pointermove", (e) => {
   if (lineDrag?.id !== e.pointerId) return;
+  // The line stays put until the pointer has really moved, so a tap never nudges it.
+  if (!lineDrag.moved && Math.abs(e.clientY - lineDrag.from) < lineDrag.slop) return;
+  lineDrag.moved = true;
   dragY = e.clientY - lineDrag.offset;
   if (!dragFrame) dragFrame = requestAnimationFrame(() => { dragFrame = 0; moveLine(dragY / viewHeight()); });
 });
@@ -370,12 +373,12 @@ function endLineDrag(e) {
   if (lineDrag?.id !== e.pointerId) return;
   cancelAnimationFrame(dragFrame);
   dragFrame = 0;
-  const { offset, from, start } = lineDrag;
+  const { offset, start, moved } = lineDrag;
   lineDrag = null;
   delete handle.dataset.dragging;
-  if (e.type === "pointerup" && Math.abs(e.clientY - from) >= TAP_SLOP) { lastTap = -Infinity; moveLine((e.clientY - offset) / viewHeight(), true); return; }
-  // A tap or click (a finger may drift a little) keeps the line where it was,
-  // unless it is the second one in a row.
+  if (e.type === "pointerup" && moved) { lastTap = -Infinity; moveLine((e.clientY - offset) / viewHeight(), true); return; }
+  // A tap or click keeps the line where it was, unless it is the second one in
+  // a row. A cancelled touch (the system took it over) puts it back too.
   const reset = e.type === "pointerup" && e.timeStamp - lastTap < 400;
   lastTap = reset || e.type !== "pointerup" ? -Infinity : e.timeStamp;
   moveLine(reset ? LINE_DEFAULT : start, true);

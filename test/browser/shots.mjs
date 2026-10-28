@@ -927,6 +927,16 @@ export async function run({ browser, base, mode, dist, out }) {
   await shot(R, "fade-read-text-desktop");
   ok("reading line: a 44px slider handle (small orange grip) on the right edge; a mouse drag moves only the line (the script stays put), updates --line and aria-valuenow, is remembered and restored after a reload; tooltip on hover; the veil fades the text above the line and ends at it, the text below is unchanged (pixel compare)");
 
+  // A small, deliberate mouse drag (4px) is kept, not taken for a click.
+  const fb = await handle.boundingBox();
+  const fine = (await lineOf(R)).top;
+  await R.mouse.move(fb.x + fb.width / 2, fb.y + fb.height / 2);
+  await R.mouse.down();
+  await R.mouse.move(fb.x + fb.width / 2, fb.y + fb.height / 2 - 4);
+  await R.mouse.up();
+  await settle(R);
+  assert.equal((await lineOf(R)).top, fine - 4, "a 4px mouse drag moves the line 4px");
+
   // Keyboard on the handle; the page's own keys still work elsewhere.
   await handle.dblclick();
   assert.deepEqual(await lineOf(R), { top: 306, css: "306px", now: "34", text: "34% from the top", stored: "0.3400" }, "double-click resets to 34%");
@@ -1184,20 +1194,21 @@ export async function run({ browser, base, mode, dist, out }) {
     await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
   };
   const th3 = await TL.locator(".line-handle").boundingBox();
-  const hx = th3.x + 22;
-  const hy = th3.y + 22;
+  const hx = th3.x + th3.width / 2;
+  const hy = th3.y + th3.height / 2;
   await touch([[hx, hy], [hx, hy - 60]]);
   await settle(TL);
   const dragged = (await lineOf(TL)).stored;
   assert.notEqual(dragged, "0.3400", "dragged up");
-  const hy2 = (await TL.locator(".line-handle").boundingBox()).y + 22;
+  const hy2 = (await TL.locator(".line-handle").boundingBox()).y + th3.height / 2;
   await touch([[hx, hy2]]);
   await settle(TL);
   assert.equal((await lineOf(TL)).stored, dragged, "a drag then a quick tap does not reset");
   await TL.waitForTimeout(450);
-  await touch([[hx, hy2], [hx, hy2 + 3]]);
+  const beforeTap = await lineOf(TL);
+  await touch([[hx, hy2], [hx, hy2 + 7]]);
   await settle(TL);
-  assert.equal((await lineOf(TL)).stored, dragged, "a single tap (3px drift) keeps the line");
+  assert.deepEqual(await lineOf(TL), beforeTap, "a single tap (7px drift) keeps the line, on screen too");
   await TL.waitForTimeout(450);
   await touch([[hx, hy2], [hx, hy2 + 2]]);
   await touch([[hx, hy2 - 2], [hx, hy2]]);
@@ -1207,7 +1218,7 @@ export async function run({ browser, base, mode, dist, out }) {
   const barBefore = await TL.evaluate(() => [window.scrollY, getComputedStyle(document.documentElement).getPropertyValue("--line")]);
   await TL.evaluate(() => { Object.defineProperty(window, "innerHeight", { value: window.innerHeight + 56, configurable: true }); window.dispatchEvent(new Event("resize")); });
   await settle(TL);
-  assert.deepEqual(await TL.evaluate(() => [window.scrollY, getComputedStyle(document.documentElement).getPropertyValue("--line")]), barBefore, "an address-bar height change moves neither the line nor the script");
+  assert.deepEqual(await TL.evaluate(() => [window.scrollY, getComputedStyle(document.documentElement).getPropertyValue("--line")]), barBefore, "an address-bar height change does not move the line");
   await touchCtx.close();
   ok("phone: a finger drags the reading line (touch pointer, 44px target) to 15%; the script does not move under it and nothing scrolls sideways; a resize keeps its share of the window; a single tap keeps it, a double tap (also with drift) resets it to 34%; an address-bar height change moves nothing");
 
