@@ -5,7 +5,7 @@ A free teleprompter for talking to camera, plus an MCP server so your AI assista
 **Live:** https://prompter.techies.tools
 
 - Big text, auto-scroll, a reading line and a show clock.
-- Drag the reading line (by its small orange tab on the right) up or down to sit right under your camera; the prompter remembers it on this device. Double-click (or double-tap) the tab to put it back. Text you have already read, above the line, fades almost away, so your eyes stay on the line.
+- Drag the reading line (grab it anywhere along it) up or down to sit right under your camera; the prompter remembers it on this device. Double-click (or double-tap) the line to put it back. Text you have already read, above the line, fades almost away, so your eyes stay on the line.
 - A second "main screen" window that opens links as you reach them: the first link under the title opens when the section starts; the others are on number keys. A link placed on the line where you talk about it, or inside the sentence itself, opens when you reach that line (YouTube links play full size). With Follow my voice, saying a link's name opens it.
 - Follow my voice (Chrome and Edge): the prompter listens and keeps the line you are reading at the reading mark. Your browser's speech service hears your voice; the script stays on your device.
 - A start screen to open a file, paste a script, connect your AI or try the demo. It offers your last script ("Continue") but never opens it by itself.
@@ -14,7 +14,7 @@ A free teleprompter for talking to camera, plus an MCP server so your AI assista
 - A checker (through the MCP server) that points out long lines, a missing main question, a link without its full address and similar problems.
 - Works offline: the page is one self-contained HTML file.
 
-Keys: Space play/pause · ← → previous/next section · [ ] scroll speed · − + text size · 1–9 open a section's links · F full screen. They are also listed in the Open menu. With the reading line's tab focused (Tab key), ↑ ↓ move it a little, Page Up/Down a lot, Home/End to the top or bottom.
+Keys: Space play/pause · ← → previous/next section · [ ] scroll speed · − + text size · 1–9 open a section's links · F full screen. With the reading line focused (Tab key), ↑ ↓ move it a little, Page Up/Down a lot, Home/End to the top or bottom.
 
 ## Your script stays with you
 

@@ -307,7 +307,7 @@ function openAi() {
 }
 
 // ---------- Reading line ----------
-// Dragged by its handle (or moved with the keys on it) to camera height and
+// Dragged anywhere along it (or moved with the keys when focused) to camera height and
 // remembered on this device as a share of the window height. It is set on
 // :root as --line in px; the page's CSS and every check here use that one value.
 const handle = $(".line-handle");
@@ -868,7 +868,7 @@ document.addEventListener("keydown", (e) => {
   const k = e.key;
   // A focused slider keeps its arrow keys; every other shortcut still works.
   if (e.target.matches?.("input[type=range]") && k.startsWith("Arrow")) return;
-  // The focused reading line handle keeps its keys (arrows, Page Up/Down, Home, End).
+  // The focused reading line keeps its keys (arrows, Page Up/Down, Home, End).
   if (e.target.closest(".line-handle") && LINE_KEYS.includes(k)) return;
   // Space on these buttons presses them; on the control bar and the links it still means auto-scroll.
   if (k === " " && e.target.closest(".note-row, .pop")) return;

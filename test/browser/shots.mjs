@@ -874,22 +874,22 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.deepEqual(await lineOf(R), { top: 306, css: "306px", now: "34", text: "34% from the top", stored: null }, "a new visitor gets the line at 34%");
   const handle = R.locator(".line-handle");
   assert.deepEqual(await handle.evaluate((el) => [el.getAttribute("role"), el.getAttribute("aria-orientation"), el.getAttribute("aria-label"), el.getAttribute("aria-valuemin"), el.getAttribute("aria-valuemax"), el.tabIndex, getComputedStyle(el).touchAction, getComputedStyle(el).pointerEvents, getComputedStyle(el.parentElement).pointerEvents]),
-    ["slider", "vertical", "Reading line", "8", "75", 0, "none", "auto", "none"], "a focusable vertical slider; only the handle takes the pointer");
+    ["slider", "vertical", "Reading line", "8", "75", 0, "none", "auto", "none"], "a focusable vertical slider; only its band takes the pointer");
   let hb = await handle.boundingBox();
   const clientW = await R.evaluate(() => document.documentElement.clientWidth);
-  assert.ok(hb.width >= 44 && hb.height >= 44, `44px target: ${hb.width}×${hb.height}`);
-  assert.ok(Math.abs(hb.x + hb.width - clientW) <= 1 && Math.abs(hb.y + hb.height / 2 - 306) <= 2, `on the right edge, centred on the line: ${JSON.stringify(hb)}`);
-  const grip = await R.locator(".grip").boundingBox();
-  assert.ok(grip.width <= 20 && grip.height <= 32, `the visible grip stays small: ${grip.width}×${grip.height}`);
-  assert.equal(await R.locator(".grip").evaluate((el) => getComputedStyle(el).boxShadow), "oklch(0.65 0.227 32.3) 0px 0px 0px 1.5px inset", "an orange ring (3:1 on the page)");
+  assert.ok(hb.x <= 0 && hb.width >= clientW && hb.height === 20, `a 20px band along the whole line: ${JSON.stringify(hb)}`);
+  assert.ok(Math.abs(hb.y + hb.height / 2 - 307) <= 1, `centred on the 2px line: ${JSON.stringify(hb)}`);
+  assert.equal(await handle.getAttribute("data-tip"), null, "no tooltip on the line");
+  assert.equal(await R.locator(".grip").count(), 0, "no separate tab");
   // Mid-script, drag it up with the mouse: only the line moves, the script stays put.
   await R.evaluate(() => window.scrollTo(0, 1500));
   await settle(R);
   const refTop = () => R.evaluate(() => document.querySelectorAll(".section p")[12].getBoundingClientRect().top);
   const textBefore = await refTop();
-  await R.mouse.move(hb.x + 22, hb.y + 22);
+  // Grab it anywhere along the line, here at the left edge of the text column.
+  await R.mouse.move(300, hb.y + hb.height / 2);
   await R.mouse.down();
-  await R.mouse.move(hb.x + 22, hb.y + 22 - 171, { steps: 8 });
+  await R.mouse.move(300, hb.y + hb.height / 2 - 171, { steps: 8 });
   assert.equal(await handle.getAttribute("data-dragging"), "true");
   await R.mouse.up();
   await settle(R);
@@ -900,11 +900,13 @@ export async function run({ browser, base, mode, dist, out }) {
   await R.waitForTimeout(300);
   await shot(R, "line-moved-desktop");
   hb = await handle.boundingBox();
+  const lineColour = () => R.locator(".reading-line").evaluate((el) => [getComputedStyle(el).borderTopColor, getComputedStyle(el).borderTopStyle, getComputedStyle(el).cursor]);
+  assert.equal((await lineColour())[0], "oklch(0.65 0.227 32.3 / 0.5)", "a quiet dashed line at rest");
   await handle.hover();
-  await R.waitForTimeout(600);
-  assert.equal(await handle.evaluate((el) => [getComputedStyle(el, "::after").opacity, getComputedStyle(el, "::after").content].join(" ")), '1 "Drag to your camera · double-click to reset"', "tooltip on hover");
-  await R.screenshot({ path: join(out, "line-drag-handle-hover-desktop.png"), clip: { x: clientW - 420, y: hb.y - 50, width: 420, height: hb.height + 100 } });
-  screenshots.push(join(out, "line-drag-handle-hover-desktop.png"));
+  await R.waitForTimeout(300);
+  assert.deepEqual([...(await lineColour()).slice(0, 2), await handle.evaluate((el) => getComputedStyle(el).cursor)], ["oklch(0.65 0.227 32.3)", "dashed", "ns-resize"], "on hover the whole line turns full orange, with an up-down cursor");
+  await R.screenshot({ path: join(out, "line-hover-desktop.png"), clip: { x: 0, y: hb.y - 50, width: clientW, height: hb.height + 100 } });
+  screenshots.push(join(out, "line-hover-desktop.png"));
   await R.mouse.move(683, 500);
   // The veil: from the top of the window to the line, ending exactly there; text below is untouched.
   const veilBox = await R.locator(".read-veil").evaluate((el) => { const r = el.getBoundingClientRect(); const cs = getComputedStyle(el); return [r.top, r.bottom, cs.pointerEvents, cs.zIndex, cs.backgroundImage]; });
@@ -925,7 +927,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await scrollToSection(R, 3);
   await R.evaluate(() => window.scrollBy(0, 300));
   await shot(R, "fade-read-text-desktop");
-  ok("reading line: a 44px slider handle (small orange grip) on the right edge; a mouse drag moves only the line (the script stays put), updates --line and aria-valuenow, is remembered and restored after a reload; tooltip on hover; the veil fades the text above the line and ends at it, the text below is unchanged (pixel compare)");
+  ok("reading line: the whole line is the handle (a 20px slider band, no tab or tooltip, full orange on hover); a mouse drag from anywhere along it moves only the line (the script stays put), updates --line and aria-valuenow, is remembered and restored after a reload; tooltip on hover; the veil fades the text above the line and ends at it, the text below is unchanged (pixel compare)");
 
   // A small, deliberate mouse drag (4px) is kept, not taken for a click.
   const fb = await handle.boundingBox();
@@ -947,6 +949,7 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await nowAfter("ArrowDown"), "35");
   assert.equal(await nowAfter("ArrowUp"), "34");
   assert.equal(await nowAfter("ArrowUp"), "33");
+  assert.deepEqual(await R.locator(".reading-line").evaluate((el) => [getComputedStyle(el).borderTopStyle, getComputedStyle(el).borderTopWidth]), ["solid", "3px"], "focused from the keyboard the line turns solid orange");
   const scrolledBefore = await R.evaluate(() => window.scrollY);
   assert.equal(await nowAfter("PageDown"), "43");
   await settle(R);
@@ -1148,7 +1151,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await settle(TL);
   assert.equal((await lineOf(TL)).top, 287, "34% of 844px");
   const th = await TL.locator(".line-handle").boundingBox();
-  assert.ok(th.width >= 44 && th.height >= 44 && th.x + th.width <= 390, `44px touch target inside the window: ${JSON.stringify(th)}`);
+  assert.ok(th.x <= 0 && th.width >= 390 && th.height === 32, `a 32px band along the whole line for fingers: ${JSON.stringify(th)}`);
   await TL.evaluate(() => { window.__pointers = []; document.querySelector(".line-handle").addEventListener("pointerdown", (e) => window.__pointers.push(e.pointerType)); });
   const mText = () => TL.evaluate(() => [window.scrollY, document.querySelectorAll(".section p")[12].getBoundingClientRect().top]);
   const [, textAt] = await mText();
@@ -1224,7 +1227,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await settle(TL);
   assert.deepEqual(await TL.evaluate(() => [window.scrollY, getComputedStyle(document.documentElement).getPropertyValue("--line")]), barBefore, "an address-bar height change moves neither the line nor the script");
   await touchCtx.close();
-  ok("phone: a finger drags the reading line (touch pointer, 44px target) to 15%; the script does not move under it and nothing scrolls sideways; a resize keeps its share of the window; a single tap keeps it, a double tap (also with drift) resets it to 34%; an address-bar height change moves nothing");
+  ok("phone: a finger drags the reading line (touch pointer, a 32px band along it) to 15%; the script does not move under it and nothing scrolls sideways; a resize keeps its share of the window; a single tap keeps it, a double tap (also with drift) resets it to 34%; an address-bar height change moves nothing");
 
   // ---- Offline (file://) ----
   const offline = await browser.newContext(DESKTOP);

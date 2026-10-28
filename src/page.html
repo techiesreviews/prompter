@@ -99,35 +99,30 @@
   .card-foot { margin: 16px 0 0; font-size: 13px; color: var(--muted); }
   .card-foot p { margin: 0 0 4px; }
 
-  /* Reading line: dragged by its handle to camera height (remembered per
+  /* Reading line: dragged anywhere along it to camera height (remembered per
      device). Everything above it has been read and fades almost into the
      page behind a veil, with a short soft edge that ends at the line. */
   .reading-line {
     position: fixed; inset-inline: 0; inset-block-start: var(--line); z-index: 5; pointer-events: none;
     border-block-start: 2px dashed oklch(65% 0.227 32.3 / 0.5);
   }
+  .reading-line:has(.line-handle[data-dragging="true"]) { border-block-start-color: var(--accent); }
+  .reading-line:has(.line-handle:focus-visible) { border-block-start: 3px solid var(--accent); }
+  @media (hover: hover) and (pointer: fine) { .reading-line:has(.line-handle:hover) { border-block-start-color: var(--accent); } }
   .read-veil {
     position: fixed; inset-inline: 0; inset-block-start: 0; block-size: var(--line); z-index: 4; pointer-events: none;
     background: linear-gradient(var(--read-veil) calc(100% - 12px), transparent);
   }
-  /* A 44px target on the right edge; the visible grip is a small orange tab. */
+  /* The whole line takes the pointer: a band centred on it, taller for fingers. */
   .line-handle {
-    position: absolute; inset-block-start: -23px; inset-inline-end: env(safe-area-inset-right, 0px);
-    display: grid; place-items: center; inline-size: 44px; block-size: 44px;
+    --band: 20px;
+    position: absolute; inset-inline: 0; inset-block-start: calc(-1px - var(--band) / 2); block-size: var(--band);
     pointer-events: auto; touch-action: none; cursor: ns-resize; user-select: none; -webkit-user-select: none;
   }
+  @media (pointer: coarse) { .line-handle { --band: 32px; } }
   .line-handle:focus-visible { outline: 0; }
-  .grip {
-    display: grid; place-items: center; justify-self: end; inline-size: 16px; block-size: 28px; margin-inline-end: 4px;
-    border-radius: 6px; background: var(--panel); box-shadow: inset 0 0 0 1.5px var(--accent);
-  }
-  .grip::before { content: ""; inline-size: 10px; block-size: 15px; background: radial-gradient(circle, var(--accent) 1.3px, transparent 1.8px) 0 0 / 5px 5px; }
-  .line-handle:focus-visible .grip { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .line-handle[data-dragging="true"] .grip { background-color: var(--chip); }
-  @media (hover: hover) and (pointer: fine) { .line-handle:hover .grip { background-color: var(--chip); } }
   @media (prefers-reduced-motion: no-preference) {
-    .grip { transition: background-color 160ms var(--ease-out), scale 160ms var(--ease-out); }
-    .line-handle[data-dragging="true"] .grip { scale: 1.1; }
+    .reading-line { transition: border-color 160ms var(--ease-out); }
   }
 
   /* Script: a centred column with a maximum width; the text in it starts on
@@ -214,7 +209,6 @@
   :root[data-view="empty"] :is(.dock, .reading-line, .read-veil, .script) { display: none; }
   /* Scrolling down tucks the bar away; scrolling up or the bottom edge brings it back. */
   .dock[data-tucked="true"] { opacity: 0; }
-  .open-pop .keys { margin: 4px 10px 2px; font: 500 12px/1.5 var(--font-mono); color: var(--muted); max-inline-size: 30ch; }
   /* On touch screens a hidden bar must not take taps; a mouse reveals it on approach. */
   @media (hover: none) { .dock[data-tucked="true"] { pointer-events: none; } }
   @media (prefers-reduced-motion: no-preference) {
@@ -247,17 +241,15 @@
     .dock-btn.auto:hover { background: var(--accent-hover); }
   }
   /* Tooltips: on hover with a mouse, and on keyboard focus; never over an open popover. */
-  :is(.dock-btn, .line-handle)::after {
+  .dock-btn::after {
     content: attr(data-tip); position: absolute; inset-block-end: calc(100% + 12px); inset-inline-start: 50%; translate: -50% 0;
     padding: 6px 10px; border-radius: 8px; white-space: nowrap; pointer-events: none;
     font: 500 13px/1.2 var(--font-body); color: var(--text); background: var(--chip); box-shadow: var(--shadow);
     opacity: 0; visibility: hidden;
   }
-  :is(.dock-btn, .line-handle):focus-visible::after { opacity: 1; visibility: visible; }
-  @media (hover: hover) and (pointer: fine) { :is(.dock-btn, .line-handle):hover::after { opacity: 1; visibility: visible; transition-delay: 300ms; } }
-  .dock-btn[aria-expanded="true"]::after, .line-handle[data-dragging="true"]::after { display: none; }
-  /* The reading line's tooltip sits to the left of its handle. */
-  .line-handle::after { inset-block-end: auto; inset-block-start: 50%; inset-inline-start: auto; inset-inline-end: calc(100% + 2px); translate: 0 -50%; }
+  .dock-btn:focus-visible::after { opacity: 1; visibility: visible; }
+  @media (hover: hover) and (pointer: fine) { .dock-btn:hover::after { opacity: 1; visibility: visible; transition-delay: 300ms; } }
+  .dock-btn[aria-expanded="true"]::after { display: none; }
   .status {
     max-inline-size: min(560px, 100%); padding: 6px 14px; border-radius: 999px;
     font-size: 13px; color: var(--muted); background: var(--panel);
@@ -362,7 +354,7 @@
 <div class="stage">
   <div class="read-veil" aria-hidden="true"></div>
   <div class="reading-line">
-    <div class="line-handle" role="slider" tabindex="0" aria-orientation="vertical" aria-label="Reading line" aria-valuemin="8" aria-valuemax="75" aria-valuenow="34" aria-valuetext="34% from the top" data-tip="Drag to your camera · double-click to reset"><span class="grip"></span></div>
+    <div class="line-handle" role="slider" tabindex="0" aria-orientation="vertical" aria-label="Reading line" aria-valuemin="8" aria-valuemax="75" aria-valuenow="34" aria-valuetext="34% from the top"></div>
   </div>
   <main class="script" aria-label="Script"></main>
 </div>
@@ -416,8 +408,6 @@
   <button class="item" type="button" data-action="paste"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="3" width="8" height="4" rx="1"/><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2"/></svg>Paste a script</button>
   <button class="item share" type="button" data-action="copy-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>Copy link</button>
   <button class="item" type="button" data-action="ai"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>Use your AI</button>
-  <div class="pop-sep" role="separator"></div>
-  <p class="keys">Keys: Space play · ← → sections · [ ] speed · − + size · 1–9 links · F full screen</p>
   <div class="pop-sep" role="separator"></div>
   <button class="item" type="button" data-action="start"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>Back to the start</button>
 </div>
