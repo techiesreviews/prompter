@@ -1162,8 +1162,23 @@ export async function run({ browser, base, mode, dist, out }) {
   await shot(TL, "line-moved-mobile");
   await TL.evaluate(() => window.scrollBy(0, 500));
   await shot(TL, "fade-read-text-mobile");
+  // A new window height keeps the line at the same share of it (and remembered).
+  await TL.setViewportSize({ width: 390, height: 700 });
+  await settle(TL);
+  const resized = await lineOf(TL);
+  assert.deepEqual([resized.top, resized.css, resized.now, resized.stored], [Math.round(700 * moved.stored), `${Math.round(700 * moved.stored)}px`, "15", moved.stored], "after a resize the line keeps its share of the window");
+  await TL.setViewportSize({ width: 390, height: 844 });
+  await settle(TL);
+  // Two quick taps on the tab put the line back at 34%.
+  const th2 = await TL.locator(".line-handle").boundingBox();
+  for (let i = 0; i < 2; i++) {
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: th2.x + 22, y: th2.y + 22 }] });
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  }
+  await settle(TL);
+  assert.deepEqual([(await lineOf(TL)).top, (await lineOf(TL)).stored], [287, "0.3400"], "a double tap resets the line to 34%");
   await touchCtx.close();
-  ok("phone: a finger drags the reading line (touch pointer, 44px target) to 15%; the script does not move under it and nothing scrolls sideways");
+  ok("phone: a finger drags the reading line (touch pointer, 44px target) to 15%; the script does not move under it and nothing scrolls sideways; a resize keeps its share of the window; a double tap resets it to 34%");
 
   // ---- Offline (file://) ----
   const offline = await browser.newContext(DESKTOP);

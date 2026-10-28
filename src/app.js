@@ -316,18 +316,22 @@ let lineY = 0;
 let lineDrag = null; // { id, offset, from } while a pointer drags the handle
 let dragFrame = 0;
 let dragY = 0;
+let lastTap = 0; // two taps (or clicks) on the handle without a move reset the line
 
 function readingLineY() { return lineY; }
+// The window height without the phone's address bar: it stays the same when the
+// bar hides or shows while scrolling, so the line and the script do not jump.
+const viewHeight = () => document.documentElement.clientHeight || window.innerHeight;
 
 /**
  * Put the line at `frac` of the window height. With `keepText` the script
  * stays where it is on screen while the line moves (the page scrolls by the
- * change in its top space), except at the very top, where the first title
- * follows the line.
+ * change in its top space), except at the very top and the very end, where
+ * the page cannot scroll further and the text follows the line.
  */
 function setLine(frac, keepText = false) {
   lineFrac = Math.min(LINE_MAX, Math.max(LINE_MIN, Number(frac) || LINE_DEFAULT));
-  const y = Math.round(window.innerHeight * lineFrac);
+  const y = Math.round(viewHeight() * lineFrac);
   const delta = y - lineY;
   lineY = y;
   root.style.setProperty("--line", `${y}px`);
@@ -359,7 +363,7 @@ handle.addEventListener("pointerdown", (e) => {
 handle.addEventListener("pointermove", (e) => {
   if (lineDrag?.id !== e.pointerId) return;
   dragY = e.clientY - lineDrag.offset;
-  if (!dragFrame) dragFrame = requestAnimationFrame(() => { dragFrame = 0; moveLine(dragY / window.innerHeight); });
+  if (!dragFrame) dragFrame = requestAnimationFrame(() => { dragFrame = 0; moveLine(dragY / viewHeight()); });
 });
 function endLineDrag(e) {
   if (lineDrag?.id !== e.pointerId) return;
@@ -368,12 +372,14 @@ function endLineDrag(e) {
   const { offset, from } = lineDrag;
   lineDrag = null;
   delete handle.dataset.dragging;
-  // A click without a move (or a cancelled drag) keeps where the line is.
-  moveLine(e.type === "pointerup" && e.clientY !== from ? (e.clientY - offset) / window.innerHeight : lineFrac, true);
+  if (e.type === "pointerup" && e.clientY !== from) { lastTap = 0; moveLine((e.clientY - offset) / viewHeight(), true); return; }
+  // A tap or click without a move keeps the line, unless it is the second one in a row.
+  const reset = e.type === "pointerup" && e.timeStamp - lastTap < 400;
+  lastTap = reset || e.type !== "pointerup" ? 0 : e.timeStamp;
+  moveLine(reset ? LINE_DEFAULT : lineFrac, true);
 }
 handle.addEventListener("pointerup", endLineDrag);
 handle.addEventListener("pointercancel", endLineDrag);
-handle.addEventListener("dblclick", () => moveLine(LINE_DEFAULT, true));
 handle.addEventListener("keydown", (e) => {
   if (!LINE_KEYS.includes(e.key) || e.metaKey || e.ctrlKey || e.altKey) return;
   e.preventDefault();
