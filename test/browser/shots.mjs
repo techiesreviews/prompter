@@ -334,6 +334,7 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.match(prompt, /temporary, direct MCP connection[\s\S]*Use curl[\s\S]*Do not modify MCP configuration[\s\S]*`initialize`[\s\S]*style preset `default`[\s\S]*`get_format`[\s\S]*`check_script`[\s\S]*`make_prompter_link`/);
   assert.equal(await page.locator("#open-menu:popover-open").count(), 1, "the menu stays open to confirm");
   assert.deepEqual([await copyItem.textContent(), await copyItem.getAttribute("data-copied"), await copyItem.locator(".i-check").isVisible(), await copyItem.locator(".i-copy").isVisible()], ["Copied", "", true, false], "Copied, with a check");
+  assert.equal(await page.locator(".status").textContent(), "", "no status line: the menu item alone confirms");
   await shot(page, "copy-mcp-desktop");
   await page.waitForFunction(() => !document.querySelector("#open-menu .copy-mcp[data-copied]"), null, { timeout: 3000 });
   assert.deepEqual([await copyItem.textContent(), await copyItem.getAttribute("data-copied")], ["Copy MCP", null], "back to Copy MCP after 2 seconds");
@@ -1097,6 +1098,7 @@ export async function run({ browser, base, mode, dist, out }) {
   const mCopy = m.locator('.empty [data-action="copy-mcp"]');
   await mCopy.click();
   assert.deepEqual([await mCopy.textContent(), await mCopy.locator(".i-check").isVisible(), await mCopy.locator(".i-copy").isVisible()], ["Copied", true, false], "the start screen's Copy MCP confirms in place, with a check");
+  assert.equal(await m.locator(".status").textContent(), "", "no status line: the button alone confirms");
   assert.equal((await m.evaluate(() => window.__copied)).length, 1);
   await shot(m, "copy-mcp-start-mobile");
   await clip(m, true);

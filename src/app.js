@@ -340,7 +340,6 @@ async function copyMcp(button) {
     return;
   }
   showCopied(button);
-  setStatus("Copied. Paste it into your AI assistant.");
   clearTimeout(copiedTimer);
   copiedTimer = setTimeout(() => showCopied(null), 2000);
 }
