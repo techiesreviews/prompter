@@ -34,7 +34,7 @@ Server address: `https://prompter.techies.tools/mcp` (Streamable HTTP, stateless
   { "mcpServers": { "prompter": { "type": "http", "url": "https://prompter.techies.tools/mcp" } } }
   ```
 
-The prompter's start screen has steps for ChatGPT, Codex and more ("Use your AI", also in the Open menu). Then ask: *"Help me write a prompter script about …"*. Your assistant interviews you, writes the script, checks it and gives you a link that opens it in the prompter.
+Or press **Copy MCP** on the start screen (also in the Open menu), as in the script and site editors: it copies a message you paste into an AI assistant that can run commands (Claude Code, Codex, T3 Code). The assistant connects for that conversation only, with curl and without changing its settings. Either way, ask: *"Help me write a prompter script about …"*. Your assistant interviews you, writes the script, checks it and gives you a link that opens it in the prompter.
 
 Tools: `get_format`, `check_script`, `make_prompter_link`. Prompt: `write_prompter_script`. Requests are limited to 200 KB.
 

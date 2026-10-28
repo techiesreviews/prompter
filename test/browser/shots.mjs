@@ -219,14 +219,14 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), NIGHT);
   const card = page.locator(".empty .card");
   assert.equal(await card.locator("h1").textContent(), "Your teleprompter");
-  assert.deepEqual(await card.locator(".choices .btn:not([hidden])").allTextContents(), ["Open a script file", "Paste a script", "Use your AI", "Try the demo"]);
+  assert.deepEqual(await card.locator(".choices .btn:not([hidden])").allTextContents(), ["Open a script file", "Paste a script", "Copy MCP", "Try the demo"]);
   assert.equal(await card.locator(".btn.primary").textContent(), "Open a script file", "one orange primary action");
   assert.match(await card.textContent(), /drop a \.md or \.txt file anywhere[\s\S]*Your script stays on this device/);
   const cardBox = await card.boundingBox();
   assert.ok(Math.abs(cardBox.x + cardBox.width / 2 - 683) < 2 && Math.abs(cardBox.y + cardBox.height / 2 - 450) < 2, `card centred: ${JSON.stringify(cardBox)}`);
   assert.equal(await card.evaluate((el) => getComputedStyle(el).textAlign), "start", "card text starts on the left");
   await shot(page, "start-desktop");
-  ok("the plain address shows the start screen: a centred card with one orange Open a script file, Paste, Use your AI, Try the demo, the drop hint and the privacy line; no sidebar, no bar, no script; indigo page; Inter and Roboto Mono");
+  ok("the plain address shows the start screen: a centred card with one orange Open a script file, Paste, Copy MCP, Try the demo, the drop hint and the privacy line; no sidebar, no bar, no script; indigo page; Inter and Roboto Mono");
 
   // Open a script file is a real button: Enter on it opens the file picker.
   await card.locator('[data-action="open-file"]').focus();
@@ -239,7 +239,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await page.goBack();
   await showsStart(page);
   assert.equal(await card.locator(".continue").textContent(), "Continue: MY TALK", "the last script is offered by its first section after PREP");
-  assert.deepEqual(await card.locator(".choices .btn:not([hidden])").allTextContents(), ["Continue: MY TALK", "Open a script file", "Paste a script", "Use your AI", "Try the demo"]);
+  assert.deepEqual(await card.locator(".choices .btn:not([hidden])").allTextContents(), ["Continue: MY TALK", "Open a script file", "Paste a script", "Copy MCP", "Try the demo"]);
   await shot(page, "start-continue-desktop");
   await page.reload();
   await showsStart(page);
@@ -307,7 +307,7 @@ export async function run({ browser, base, mode, dist, out }) {
   // The Open popover: above its button; Escape closes it and focus returns.
   await (await dock(page, ".open-btn")).click();
   await popAbove(page, "#open-menu", ".open-btn", "desktop Open");
-  assert.deepEqual(await page.locator("#open-menu .item").allTextContents(), ["Open a script file", "Paste a script", "Copy link", "Use your AI", "Back to the start"]);
+  assert.deepEqual(await page.locator("#open-menu .item").allTextContents(), ["Open a script file", "Paste a script", "Copy link", "Copy MCP", "Back to the start"]);
   await page.locator('#open-menu [data-action="open-file"]').focus();
   await shot(page, "open-popover-desktop");
   await page.keyboard.press("Escape");
@@ -318,19 +318,36 @@ export async function run({ browser, base, mode, dist, out }) {
   await page.locator("#open-menu:popover-open").waitFor();
   await page.mouse.click(1200, 200);
   assert.equal(await page.locator("#open-menu:popover-open").count(), 0, "a click outside closes it");
-  // Use your AI opens a dialog with this server's address.
+  // Copy MCP (as in the script and site editors): one press copies a message for an AI
+  // assistant with this server's /mcp; the menu stays open and confirms with a check.
+  const clip = (page, fail = false) => page.evaluate((fail) => {
+    window.__copied = [];
+    navigator.clipboard.writeText = async (t) => { if (fail) throw new Error("denied"); window.__copied.push(t); };
+  }, fail);
+  await clip(page);
   await (await dock(page, ".open-btn")).click();
-  await page.locator('#open-menu [data-action="ai"]').click();
-  await page.locator(".ai-dialog[open]").waitFor();
+  const copyItem = page.locator('#open-menu [data-action="copy-mcp"]');
+  await copyItem.click();
+  const [prompt] = await page.evaluate(() => window.__copied);
+  const mcpAt = `${base}/mcp`;
+  assert.ok(prompt.includes(`Server: \`${mcpAt}\``), `the message names this server's /mcp: ${prompt.slice(0, 200)}`);
+  assert.match(prompt, /temporary, direct MCP connection[\s\S]*Use curl[\s\S]*Do not modify MCP configuration[\s\S]*`initialize`[\s\S]*style preset `default`[\s\S]*`get_format`[\s\S]*`check_script`[\s\S]*`make_prompter_link`/);
+  assert.equal(await page.locator("#open-menu:popover-open").count(), 1, "the menu stays open to confirm");
+  assert.deepEqual([await copyItem.textContent(), await copyItem.getAttribute("data-copied"), await copyItem.locator(".i-check").isVisible(), await copyItem.locator(".i-copy").isVisible()], ["Copied", "", true, false], "Copied, with a check");
+  await shot(page, "copy-mcp-desktop");
+  await page.waitForTimeout(2100);
+  assert.deepEqual([await copyItem.textContent(), await copyItem.getAttribute("data-copied")], ["Copy MCP", null], "back to Copy MCP after 2 seconds");
+  // Without a clipboard the message is shown, selected, to copy by hand.
+  await clip(page, true);
+  await copyItem.click();
+  await page.locator(".copy-dialog[open]").waitFor();
   assert.equal(await page.locator("#open-menu:popover-open").count(), 0);
-  const mcpRe = new RegExp(`^${base.replace(/[.:/]/g, "\\$&")}/mcp$`);
-  assert.match(await page.locator(".ai-dialog .mcp-url").textContent(), mcpRe);
-  assert.match(await page.locator(".ai-dialog").textContent(), /Claude[\s\S]*ChatGPT[\s\S]*Codex and T3 Code[\s\S]*within a few minutes of your last request/);
-  assert.equal(await page.locator('.ai-dialog [data-action="copy-mcp"]').isVisible(), true);
-  await shot(page, "ai-dialog-desktop");
+  assert.deepEqual(await page.locator(".copy-text").evaluate((el) => [el.value.length > 0, el.selectionStart, el.selectionEnd === el.value.length, document.activeElement === el, el.value.includes("make_prompter_link")]), [true, 0, true, true, true], "the message, selected");
+  await shot(page, "copy-mcp-manual-desktop");
   await page.keyboard.press("Escape");
-  await page.locator(".ai-dialog:not([open])").waitFor({ state: "attached" });
-  ok("Open popover above its button: Open a script file, Paste, Copy link, Use your AI, Back to the start; Escape and a click outside close it and focus returns to the button; Use your AI is a dialog with this server's /mcp address, a copy button and Claude, ChatGPT and Codex/T3 steps");
+  await page.locator(".copy-dialog:not([open])").waitFor({ state: "attached" });
+  assert.equal(await page.locator(".ai-dialog").count(), 0, "no Use your AI dialog any more");
+  ok("Open popover above its button: Open a script file, Paste, Copy link, Copy MCP, Back to the start; Escape and a click outside close it and focus returns to the button; Copy MCP copies a message for an AI assistant (this server's /mcp, a temporary curl connection, the preset, get_format, check_script, make_prompter_link), confirms with Copied and a check in the open menu for 2 seconds, and without a clipboard shows the message selected in a dialog");
 
   // Paste from the Open popover.
   await (await dock(page, ".open-btn")).click();
@@ -1076,12 +1093,19 @@ export async function run({ browser, base, mode, dist, out }) {
   const mCard = await m.locator(".empty .card").boundingBox();
   assert.ok(mCard.x >= 8 && mCard.x + mCard.width <= 382, `card fits: ${JSON.stringify(mCard)}`);
   await shot(m, "start-mobile");
-  await m.locator('.empty [data-action="ai"]').click();
-  await m.locator(".ai-dialog[open]").waitFor();
-  await noOverflow(m, "mobile AI dialog");
-  const aiBox = await m.locator(".ai-dialog").boundingBox();
-  assert.ok(aiBox.x >= 0 && aiBox.x + aiBox.width <= 390, "AI dialog fits");
-  await shot(m, "ai-dialog-mobile");
+  await clip(m);
+  const mCopy = m.locator('.empty [data-action="copy-mcp"]');
+  await mCopy.click();
+  assert.equal(await mCopy.textContent(), "Copied", "the start screen's Copy MCP confirms in place");
+  assert.equal((await m.evaluate(() => window.__copied)).length, 1);
+  await shot(m, "copy-mcp-start-mobile");
+  await clip(m, true);
+  await mCopy.click();
+  await m.locator(".copy-dialog[open]").waitFor();
+  await noOverflow(m, "mobile Copy MCP dialog");
+  const copyBox = await m.locator(".copy-dialog").boundingBox();
+  assert.ok(copyBox.x >= 0 && copyBox.x + copyBox.width <= 390, "Copy MCP dialog fits");
+  await shot(m, "copy-mcp-manual-mobile");
   await m.keyboard.press("Escape");
   await m.locator('.empty [data-action="demo"]').click();
   await m.locator(".section").first().waitFor();
@@ -1253,9 +1277,9 @@ export async function run({ browser, base, mode, dist, out }) {
   await o.goto(fileUrl);
   await showsStart(o);
   assert.equal(await o.evaluate(() => document.fonts.size), 0, "offline copies use system fonts and request no font file");
-  await o.locator('.empty [data-action="ai"]').click();
-  assert.equal(await o.locator(".ai-dialog .mcp-url").textContent(), "https://prompter.techies.tools/mcp");
-  await o.keyboard.press("Escape");
+  await clip(o);
+  await o.locator('.empty [data-action="copy-mcp"]').click();
+  assert.ok((await o.evaluate(() => window.__copied[0])).includes("Server: `https://prompter.techies.tools/mcp`"), "an offline copy names the public server");
   await o.locator('.empty [data-action="demo"]').click();
   await o.waitForFunction((n) => document.querySelectorAll(".section").length === n, DEMO_SECTIONS);
   await o.goto(fileUrl + new URL(link).hash);

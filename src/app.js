@@ -48,7 +48,7 @@ const voiceNotice = $(".voice-notice");
 const alertEl = $(".note-row.alert");
 const hintEl = $(".screen-hint");
 const pasteDialog = $(".paste-dialog");
-const aiDialog = $(".ai-dialog");
+const copyDialog = $(".copy-dialog");
 const fileInput = $(".file-input");
 const continueBtn = $(".continue");
 const speedInput = $(".speed");
@@ -298,12 +298,51 @@ function showDialog(dialog) {
   dialog.showModal();
 }
 
-/** "Use your AI": this server's own /mcp address, filled in once. */
-function openAi() {
-  const url = mcpUrl();
-  aiDialog.querySelector(".mcp-url").textContent = url;
-  aiDialog.querySelectorAll(".mcp-snippet").forEach((el) => { el.textContent = el.textContent.replaceAll(`${SITE}/mcp`, url); });
-  showDialog(aiDialog);
+// ---------- Copy MCP ----------
+// As in the script and site editors: one press puts a message on the clipboard
+// that tells an AI assistant how to reach this server's open /mcp for this
+// conversation and write a script with it. Without a clipboard the message is
+// shown, selected, to copy by hand.
+function mcpPrompt() {
+  const code = (text) => `\`${text}\``;
+  return `Connect to Prompter for this conversation using a temporary, direct MCP connection over streamable HTTP, so you can help me write a teleprompter script.
+
+Server: ${code(mcpUrl())} (open, no sign-in)
+
+**Use curl to send MCP JSON-RPC requests. Do not modify MCP configuration, install anything, create helper files, or restart yourself.**
+
+Send each JSON-RPC message as its own POST with the headers ${code("Content-Type: application/json")} and ${code("Accept: application/json, text/event-stream")}; the response body is the JSON-RPC result. Start with ${code("initialize")} (protocolVersion "2025-11-25"), then use ${code("tools/call")}. Use the style preset ${code(preset)} in every tool call.
+
+1. Call ${code("get_format")} and follow the format and the rules it returns.
+2. Interview me about my video or livestream, a few questions at a time.
+3. Write the script, call ${code("check_script")} and fix what it reports.
+4. Call ${code("make_prompter_link")} and give me the link: it opens the script in the prompter. The script travels inside the link; nothing is stored on the server.`;
+}
+
+let copiedTimer = 0;
+function showCopied(button) {
+  document.querySelectorAll(".copy-mcp").forEach((b) => {
+    const on = b === button;
+    b.toggleAttribute("data-copied", on);
+    b.querySelector(".copy-label").textContent = on ? "Copied" : "Copy MCP";
+  });
+}
+async function copyMcp(button) {
+  const text = mcpPrompt();
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    showDialog(copyDialog);
+    const box = copyDialog.querySelector(".copy-text");
+    box.value = text;
+    box.focus();
+    box.select();
+    return;
+  }
+  showCopied(button);
+  setStatus("Copied. Paste it into your AI assistant.");
+  clearTimeout(copiedTimer);
+  copiedTimer = setTimeout(() => showCopied(null), 2000);
 }
 
 // ---------- Reading line ----------
@@ -829,17 +868,16 @@ document.addEventListener("click", (e) => {
   const button = e.target.closest("[data-action]");
   const action = button?.dataset.action;
   if (!action) return;
-  if (button.closest(".pop")) hidePopovers();
+  if (button.closest(".pop") && action !== "copy-mcp") hidePopovers(); // Copy MCP confirms in place
   if (action === "open-file") fileInput.click();
   else if (action === "paste") openPaste();
   else if (action === "open-paste") submitPaste();
   else if (action === "close-dialog") button.closest("dialog").close();
   else if (action === "copy-link") copyLink();
-  else if (action === "ai") openAi();
   else if (action === "start") { showAlert(""); history.pushState(null, "", plainAddress()); showStart(); }
   else if (action === "demo") { showAlert(""); openDemo(); }
   else if (action === "continue") { showAlert(""); openScript(store.get(LAST_KEY) || "", { label: "Your last script" }); }
-  else if (action === "copy-mcp") copyText(mcpUrl(), "Server address copied.", "Copy the server address:");
+  else if (action === "copy-mcp") copyMcp(button);
   else if (action === "dismiss") showAlert("");
   else if (action === "connect") connect();
   else if (action === "hint-ok") hideHint();

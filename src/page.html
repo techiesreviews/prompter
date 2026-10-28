@@ -303,21 +303,16 @@
   .seg label:has(input:checked) { color: var(--text); background: var(--chip); }
   .seg label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-  /* Dialogs: paste and Use your AI */
+  /* Dialogs: paste, and Copy MCP where the clipboard is not available */
   .dialog { inline-size: min(720px, 94vw); max-block-size: 90dvh; color: var(--text); background: var(--panel); border: 0; border-radius: 16px; padding: 18px 22px; box-shadow: var(--shadow); }
   .dialog::backdrop { background: oklch(4% 0.06 282 / 0.7); }
   .dialog h2 { margin: 0 0 8px; font-size: 1.25em; }
   .paste { inline-size: 100%; min-block-size: 12em; margin-block-start: 6px; padding: 10px; font: 500 14px/1.45 var(--font-mono); color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); }
   .dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-block-end: 0; }
-  .ai-panel { font: 500 16px/1.55 var(--font-body); text-align: start; }
-  .ai-panel p { margin: 0 0 10px; }
-  .ai-panel ul { margin: 0 0 12px; padding-inline-start: 1.2em; }
-  .ai-panel li { margin: 0 0 8px; }
-  .ai-panel pre { margin: 6px 0 0; padding: 8px 10px; overflow-x: auto; background: var(--bg); border-radius: 8px; }
-  .ai-panel pre code { padding: 0; background: none; }
-  .ai-panel .muted { font-size: 14px; }
-  .mcp-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  .mcp-url { font-size: 0.95em; padding: 6px 10px; overflow-wrap: anywhere; }
+  /* Copy MCP: a copy icon after the label; a check (and "Copied") once it is on the clipboard. */
+  .copy-mcp :is(.i-copy, .i-check) { margin-inline-start: auto; color: var(--muted); }
+  .copy-mcp .i-check, .copy-mcp[data-copied] .i-copy { display: none; }
+  .copy-mcp[data-copied] .i-check { display: block; color: var(--ok); }
 
   @media (max-width: 760px) {
     .script { padding-inline: 5vw; }
@@ -344,7 +339,7 @@
       <button class="btn continue" type="button" data-action="continue" hidden></button>
       <button class="btn primary" type="button" data-action="open-file">Open a script file</button>
       <button class="btn" type="button" data-action="paste">Paste a script</button>
-      <button class="btn" type="button" data-action="ai">Use your AI</button>
+      <button class="btn copy-mcp" type="button" data-action="copy-mcp"><span class="copy-label">Copy MCP</span><svg class="i-copy" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><svg class="i-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button>
       <button class="btn" type="button" data-action="demo">Try the demo</button>
     </div>
     <div class="card-foot">
@@ -410,7 +405,7 @@
   <button class="item" type="button" data-action="open-file"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>Open a script file</button>
   <button class="item" type="button" data-action="paste"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="3" width="8" height="4" rx="1"/><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2"/></svg>Paste a script</button>
   <button class="item share" type="button" data-action="copy-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>Copy link</button>
-  <button class="item" type="button" data-action="ai"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>Use your AI</button>
+  <button class="item copy-mcp" type="button" data-action="copy-mcp"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg><span class="copy-label">Copy MCP</span><svg class="i-copy" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><svg class="i-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button>
   <div class="pop-sep" role="separator"></div>
   <button class="item" type="button" data-action="start"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>Back to the start</button>
 </div>
@@ -438,21 +433,10 @@
   <p class="dialog-actions"><button class="btn primary" type="button" data-action="open-paste">Open in the prompter</button> <button class="btn" type="button" data-action="close-dialog">Cancel</button></p>
 </dialog>
 
-<dialog class="dialog ai-dialog" aria-labelledby="ai-title">
-  <h2 id="ai-title">Use your AI</h2>
-  <div class="ai-panel">
-    <p>Prompter has an open MCP server. Connect it to your AI assistant, then ask: <i>“Help me write a prompter script about …”</i>. It interviews you, writes and checks the script, and gives you a link that opens here.</p>
-    <p class="mcp-row"><code class="mcp-url">https://prompter.techies.tools/mcp</code> <button class="btn" type="button" data-action="copy-mcp">Copy address</button></p>
-    <ul>
-      <li><b>Claude</b> (claude.ai, Claude Desktop): Settings → Connectors → Add custom connector. Name it Prompter and paste the address.</li>
-      <li><b>ChatGPT:</b> Settings → Apps &amp; Connectors → Advanced settings → turn on Developer mode. Then create a connector with the address and <b>No authentication</b>. Menu names can differ a little.</li>
-      <li><b>Codex and T3 Code:</b> add this to <code>~/.codex/config.toml</code> (T3 Code uses your Codex and Claude Code settings):
-        <pre><code class="mcp-snippet">[mcp_servers.prompter]
-url = "https://prompter.techies.tools/mcp"</code></pre></li>
-      <li><b>Claude Code:</b> <code class="mcp-snippet">claude mcp add --transport http prompter https://prompter.techies.tools/mcp</code></li>
-    </ul>
-    <p class="muted">No sign-in. Your script travels only inside the link. To stop heavy use, the server allows 60 requests a minute (10 per 10 seconds) per internet address. It counts them in memory only, under a hashed form of your address, never with your script, and forgets the count within a few minutes of your last request.</p>
-  </div>
+<dialog class="dialog copy-dialog" aria-labelledby="copy-title">
+  <h2 id="copy-title">Copy MCP</h2>
+  <p>Copy this message and paste it into your AI assistant. It connects to the prompter and writes a script with you.</p>
+  <textarea class="paste copy-text" readonly aria-label="Message for your AI"></textarea>
   <p class="dialog-actions"><button class="btn" type="button" data-action="close-dialog">Close</button></p>
 </dialog>
 
