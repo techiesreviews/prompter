@@ -1176,9 +1176,40 @@ export async function run({ browser, base, mode, dist, out }) {
     await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
   }
   await settle(TL);
-  assert.deepEqual([(await lineOf(TL)).top, (await lineOf(TL)).stored], [287, "0.3400"], "a double tap resets the line to 34%");
+  const tapped = await lineOf(TL);
+  assert.deepEqual([tapped.top, tapped.stored], [Math.round(844 * 0.34), "0.3400"], "a double tap resets the line to 34%");
+  // A single tap, and a drag then a quick tap, keep the line; two taps that drift a few px still reset it.
+  const touch = async (points) => {
+    for (const [i, [x, y]] of points.entries()) await cdp.send("Input.dispatchTouchEvent", { type: i ? "touchMove" : "touchStart", touchPoints: [{ x, y }] });
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  };
+  const th3 = await TL.locator(".line-handle").boundingBox();
+  const hx = th3.x + 22;
+  const hy = th3.y + 22;
+  await touch([[hx, hy], [hx, hy - 60]]);
+  await settle(TL);
+  const dragged = (await lineOf(TL)).stored;
+  assert.notEqual(dragged, "0.3400", "dragged up");
+  const hy2 = (await TL.locator(".line-handle").boundingBox()).y + 22;
+  await touch([[hx, hy2]]);
+  await settle(TL);
+  assert.equal((await lineOf(TL)).stored, dragged, "a drag then a quick tap does not reset");
+  await TL.waitForTimeout(450);
+  await touch([[hx, hy2], [hx, hy2 + 3]]);
+  await settle(TL);
+  assert.equal((await lineOf(TL)).stored, dragged, "a single tap (3px drift) keeps the line");
+  await TL.waitForTimeout(450);
+  await touch([[hx, hy2], [hx, hy2 + 2]]);
+  await touch([[hx, hy2 - 2], [hx, hy2]]);
+  await settle(TL);
+  assert.equal((await lineOf(TL)).stored, "0.3400", "two taps that drift 2px still reset");
+  // The address bar hiding changes innerHeight but not the page's own height: nothing moves.
+  const barBefore = await TL.evaluate(() => [window.scrollY, getComputedStyle(document.documentElement).getPropertyValue("--line")]);
+  await TL.evaluate(() => { Object.defineProperty(window, "innerHeight", { value: window.innerHeight + 56, configurable: true }); window.dispatchEvent(new Event("resize")); });
+  await settle(TL);
+  assert.deepEqual(await TL.evaluate(() => [window.scrollY, getComputedStyle(document.documentElement).getPropertyValue("--line")]), barBefore, "an address-bar height change moves neither the line nor the script");
   await touchCtx.close();
-  ok("phone: a finger drags the reading line (touch pointer, 44px target) to 15%; the script does not move under it and nothing scrolls sideways; a resize keeps its share of the window; a double tap resets it to 34%");
+  ok("phone: a finger drags the reading line (touch pointer, 44px target) to 15%; the script does not move under it and nothing scrolls sideways; a resize keeps its share of the window; a single tap keeps it, a double tap (also with drift) resets it to 34%; an address-bar height change moves nothing");
 
   // ---- Offline (file://) ----
   const offline = await browser.newContext(DESKTOP);
