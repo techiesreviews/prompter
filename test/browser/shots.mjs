@@ -335,6 +335,7 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await page.locator("#open-menu:popover-open").count(), 1, "the menu stays open to confirm");
   assert.deepEqual([await copyItem.textContent(), await copyItem.getAttribute("data-copied"), await copyItem.locator(".i-check").isVisible(), await copyItem.locator(".i-copy").isVisible()], ["Copied", "", true, false], "Copied, with a check");
   assert.equal(await page.locator(".status").textContent(), "", "no status line: the menu item alone confirms");
+  assert.equal(await copyItem.locator(".copy-label").getAttribute("aria-live"), "polite", "screen readers still hear Copied");
   await shot(page, "copy-mcp-desktop");
   await page.waitForFunction(() => !document.querySelector("#open-menu .copy-mcp[data-copied]"), null, { timeout: 3000 });
   assert.deepEqual([await copyItem.textContent(), await copyItem.getAttribute("data-copied")], ["Copy MCP", null], "back to Copy MCP after 2 seconds");
