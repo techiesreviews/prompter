@@ -149,6 +149,8 @@ function showStart() {
   if (voiceOn) stopVoice();
   setAuto(false);
   hidePopovers();
+  // A drag of the reading line ends here; the line goes back to where it was.
+  if (lineDrag && handle.hasPointerCapture(lineDrag.id)) handle.releasePointerCapture(lineDrag.id);
   scriptText = "";
   sections = [];
   main.innerHTML = "";
@@ -386,7 +388,7 @@ function endLineDrag(e) {
 }
 handle.addEventListener("pointerup", endLineDrag);
 handle.addEventListener("pointercancel", endLineDrag);
-handle.addEventListener("lostpointercapture", endLineDrag); // e.g. the start screen hid it mid-drag
+handle.addEventListener("lostpointercapture", endLineDrag); // showStart lets go of it mid-drag
 handle.addEventListener("keydown", (e) => {
   if (!LINE_KEYS.includes(e.key) || e.metaKey || e.ctrlKey || e.altKey) return;
   e.preventDefault();
