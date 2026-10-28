@@ -801,11 +801,12 @@ let autoTipTimer = 0;
 // While Follow my voice is on, play is greyed out and its tip says why (no status pops up).
 function setAutoTip() {
   autoBtn.setAttribute("aria-disabled", String(voiceOn));
+  if (!voiceOn) { clearTimeout(autoTipTimer); autoBtn.removeAttribute("data-show-tip"); }
   autoBtn.dataset.tip = voiceOn ? "Auto-scroll is off while Follow my voice is on" : autoOn ? "Pause · Space" : "Auto-scroll · Space";
 }
 function toggleAuto() {
   if (voiceOn) {
-    setStatus("Auto-scroll is paused while Follow my voice is on.");
+    setStatus("Auto-scroll is off while Follow my voice is on.");
     // Shown on the button for a moment, so a tap on a phone also sees why.
     autoBtn.setAttribute("data-show-tip", "");
     clearTimeout(autoTipTimer);
@@ -1005,13 +1006,8 @@ async function copyLink(button) {
   button.setAttribute("data-copied", "");
   label.textContent = "Copied";
   clearTimeout(linkCopiedTimer);
-  linkCopiedTimer = setTimeout(() => {
-    // Back to Copy link without announcing it: only "Copied" is read out.
-    button.removeAttribute("data-copied");
-    label.removeAttribute("aria-live");
-    label.textContent = "Copy link";
-    requestAnimationFrame(() => label.setAttribute("aria-live", "polite"));
-  }, 2000);
+  setStatus("Link copied."); // read out once; the label is only what you see
+  linkCopiedTimer = setTimeout(() => { button.removeAttribute("data-copied"); label.textContent = "Copy link"; }, 2000);
 }
 
 function openPaste() {

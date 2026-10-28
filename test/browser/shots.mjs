@@ -348,11 +348,11 @@ export async function run({ browser, base, mode, dist, out }) {
   await linkItem.click();
   await page.waitForFunction(() => window.__copied.length === 1);
   assert.match(await page.evaluate(() => window.__copied[0]), /#s=/, "the link carries the script");
-  assert.equal(await page.locator(".status").textContent(), "", "Copy link confirms on its item only");
+  assert.deepEqual([await page.locator(".status").textContent(), await linkItem.locator(".share-label").getAttribute("aria-live")], ["Link copied.", null], "screen readers hear Link copied once; the label is only visual");
   assert.deepEqual([await linkItem.textContent(), await linkItem.locator(".i-check").isVisible(), await page.locator("#open-menu:popover-open").count()], ["Copied", true, 1], "Copied with a check, in the open menu");
   assert.deepEqual(await page.locator(".status").evaluate((el) => { const r = el.getBoundingClientRect(); return [r.width <= 1 && r.height <= 1, getComputedStyle(el).clipPath]; }), [true, "inset(50%)"], "status messages are for screen readers only: nothing shows on screen");
   await page.waitForFunction(() => !document.querySelector('#open-menu [data-action="copy-link"][data-copied]'), null, { timeout: 3000 });
-  assert.deepEqual([await linkItem.textContent(), await linkItem.locator(".share-label").getAttribute("aria-live")], ["Copy link", "polite"], "back to Copy link, live again for the next copy");
+  assert.equal(await linkItem.textContent(), "Copy link");
   await page.keyboard.press("Escape");
   const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
   // A scripted agent: one JSON-RPC POST per message with the copied token, as the message says (curl).
@@ -668,7 +668,9 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await v.locator(".auto").getAttribute("aria-pressed"), "false", "auto-scroll pauses");
   assert.deepEqual([await v.locator(".auto").getAttribute("aria-disabled"), await v.locator(".auto").getAttribute("data-tip"), await v.locator(".auto svg").first().evaluate((el) => getComputedStyle(el).opacity)], ["true", "Auto-scroll is off while Follow my voice is on", "0.5"], "play is greyed out and says why (no status pops up)");
   await v.evaluate(() => document.querySelector(".auto").click()); // aria-disabled: Playwright would wait for it to be enabled
-  assert.deepEqual([await v.locator(".auto").getAttribute("aria-pressed"), await v.locator(".auto").evaluate((el) => [getComputedStyle(el, "::after").opacity, getComputedStyle(el).opacity].join(" "))], ["false", "1 1"], "a press shows the reason on the button, at full strength");
+  assert.deepEqual([await v.locator(".auto").getAttribute("aria-pressed"), await v.locator(".auto").evaluate((el) => [getComputedStyle(el, "::after").opacity, getComputedStyle(el).opacity].join(" ")), await v.locator(".status").textContent()], ["false", "1 1", "Auto-scroll is off while Follow my voice is on."], "a press shows the reason on the button, at full strength");
+  assert.notEqual(await v.locator(".auto").evaluate((el) => getComputedStyle(el).backgroundColor), "oklch(0.65 0.227 32.3)", "greyed out: not the orange play colour");
+  await v.waitForFunction(() => !document.querySelector(".auto").hasAttribute("data-show-tip"), null, { timeout: 3000 });
   await v.evaluate(() => window.__speech.say("writing scripts takes too long"));
   await v.waitForFunction(() => document.querySelector("p.cur")?.textContent === "Writing scripts takes too long.");
   await v.evaluate(() => window.__speech.say("reading them looks"));

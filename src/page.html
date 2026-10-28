@@ -319,8 +319,11 @@
   /* Copy link confirms the same way: Copied and a check, in the open menu. */
   .share .i-check { display: none; margin-inline-start: auto; }
   .share[data-copied] .i-check { display: block; color: var(--ok); }
-  /* Greyed out, but its tooltip (the reason) stays fully readable. */
+  /* Greyed out (play while voice follows), but its tooltip (the reason) stays fully readable. */
+  .dock-btn[aria-disabled="true"], .dock-btn.auto[aria-disabled="true"]:hover { background: var(--chip); color: var(--muted); }
   .dock-btn[aria-disabled="true"] > svg { opacity: 0.5; }
+  /* A long reason wraps on a phone instead of running off the screen. */
+  @media (max-width: 760px) { .dock-btn[data-show-tip]::after { white-space: normal; inline-size: max-content; max-inline-size: min(260px, calc(100vw - 32px)); } }
   .dock-btn[data-show-tip]::after { opacity: 1; visibility: visible; }
   .mcp-label { margin-inline-end: 12px; }
   .agent-rows:empty { display: none; }
@@ -434,7 +437,7 @@
 <div class="pop open-pop" id="open-menu" popover aria-label="Open">
   <button class="item" type="button" data-action="open-file"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>Open a script file</button>
   <button class="item" type="button" data-action="paste"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="3" width="8" height="4" rx="1"/><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2"/></svg>Paste a script</button>
-  <button class="item share" type="button" data-action="copy-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg><span class="share-label" aria-live="polite">Copy link</span><svg class="i-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button>
+  <button class="item share" type="button" data-action="copy-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg><span class="share-label">Copy link</span><svg class="i-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button>
   <div class="pop-sep" role="separator"></div>
   <div class="agent-rows"></div>
   <button class="item mcp-action" type="button" data-action="mcp" data-state="off"><span class="status-dot"></span><span class="mcp-label" aria-live="polite">Wait for MCP</span><svg class="i-copy" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><svg class="i-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button>
