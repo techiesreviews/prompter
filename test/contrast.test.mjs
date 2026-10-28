@@ -89,3 +89,24 @@ test("the active section stays clearly brighter than the rest", () => {
   }
   assert.ok(luminance(tokens.text) / luminance(tokens.dim) >= 3, "spoken lines: active vs other sections");
 });
+
+// The one deliberate exception to AA (AGENTS.md): text above the reading line
+// has been read, so a veil in the page colour (--read-veil) fades it almost
+// into the page. It must stay LOW; do not raise it to AA. Browsers blend in
+// gamma-encoded sRGB, so the faded colour is mixed there.
+const veil = root.match(/--read-veil:\s*oklch\(([\d.]+)%\s+([\d.]+)\s+([\d.]+)\s*\/\s*([\d.]+)\)/);
+const gamma = (t) => linear(t).map((v) => (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055));
+const fromGamma = (rgb) => rgb.map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)).reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+
+test("read text above the reading line is deliberately faded below AA (the one exception)", () => {
+  assert.ok(veil, "--read-veil (oklch with an alpha) is missing from :root: read text would no longer fade");
+  const [L, C, h, alpha] = veil.slice(1).map(Number);
+  assert.deepEqual([L / 100, C, h], tokens.bg, "the veil is the page colour");
+  const bg = gamma(tokens.bg);
+  for (const fg of ["text", "dim", "ql", "next"]) {
+    const faded = gamma(tokens[fg]).map((v, i) => v * (1 - alpha) + bg[i] * alpha);
+    const ratio = (fromGamma(faded) + 0.05) / (luminance(tokens.bg) + 0.05);
+    assert.ok(ratio < 2, `--${fg} under the veil is ${ratio.toFixed(2)}:1 on --bg; read text stays faded below 2:1`);
+    assert.ok(ratio > 1.05, `--${fg} under the veil is ${ratio.toFixed(2)}:1; still faintly there`);
+  }
+});

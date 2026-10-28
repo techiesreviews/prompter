@@ -59,6 +59,10 @@ const SETTLE_MS = 700; // wait this long on a section before changing the main s
 const LAST_KEY = "prompter-last-script";
 const PRESET_KEY = "prompter-preset";
 const VOICE_OK_KEY = "prompter-voice-ok";
+const LINE_KEY = "prompter-line";
+const LINE_DEFAULT = 0.34; // the reading line, as a share of the window height from the top
+const LINE_MIN = 0.08;
+const LINE_MAX = 0.75; // clear of the control bar and its notices
 const WIDTHS = ["narrow", "medium", "full"];
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -300,8 +304,84 @@ function openAi() {
   showDialog(aiDialog);
 }
 
+// ---------- Reading line ----------
+// Dragged by its handle (or moved with the keys on it) to camera height and
+// remembered on this device as a share of the window height. It is set on
+// :root as --line in px; the page's CSS and every check here use that one value.
+const handle = $(".line-handle");
+const LINE_STEPS = { ArrowUp: -1, ArrowDown: 1, PageUp: -10, PageDown: 10 }; // percent
+const LINE_KEYS = [...Object.keys(LINE_STEPS), "Home", "End"];
+let lineFrac = LINE_DEFAULT;
+let lineY = 0;
+let lineDrag = null; // { id, offset, from } while a pointer drags the handle
+let dragFrame = 0;
+let dragY = 0;
+
+function readingLineY() { return lineY; }
+
+/**
+ * Put the line at `frac` of the window height. With `keepText` the script
+ * stays where it is on screen while the line moves (the page scrolls by the
+ * change in its top space), except at the very top, where the first title
+ * follows the line.
+ */
+function setLine(frac, keepText = false) {
+  lineFrac = Math.min(LINE_MAX, Math.max(LINE_MIN, Number(frac) || LINE_DEFAULT));
+  const y = Math.round(window.innerHeight * lineFrac);
+  const delta = y - lineY;
+  lineY = y;
+  root.style.setProperty("--line", `${y}px`);
+  const pct = Math.round(lineFrac * 100);
+  handle.setAttribute("aria-valuenow", String(pct));
+  handle.setAttribute("aria-valuetext", `${pct}% from the top`);
+  if (keepText && delta) {
+    window.scrollBy(0, delta);
+    lastScrollY = window.scrollY; // not a scroll by the reader: the bar stays
+  }
+}
+
+/** Move the line for the reader: the section, its link and Follow my voice follow it. */
+function moveLine(frac, save = false) {
+  setLine(frac, true);
+  if (save) store.set(LINE_KEY, lineFrac.toFixed(4));
+  updateActive();
+  if (voiceOn) voiceAt = lineAtReadingLine();
+}
+
+// Mouse, pen and touch drag it the same way; the page does not scroll under a finger (touch-action: none).
+handle.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  handle.setPointerCapture(e.pointerId);
+  lineDrag = { id: e.pointerId, offset: e.clientY - lineY, from: e.clientY };
+  handle.dataset.dragging = "true";
+});
+handle.addEventListener("pointermove", (e) => {
+  if (lineDrag?.id !== e.pointerId) return;
+  dragY = e.clientY - lineDrag.offset;
+  if (!dragFrame) dragFrame = requestAnimationFrame(() => { dragFrame = 0; moveLine(dragY / window.innerHeight); });
+});
+function endLineDrag(e) {
+  if (lineDrag?.id !== e.pointerId) return;
+  cancelAnimationFrame(dragFrame);
+  dragFrame = 0;
+  const { offset, from } = lineDrag;
+  lineDrag = null;
+  delete handle.dataset.dragging;
+  // A click without a move (or a cancelled drag) keeps where the line is.
+  moveLine(e.type === "pointerup" && e.clientY !== from ? (e.clientY - offset) / window.innerHeight : lineFrac, true);
+}
+handle.addEventListener("pointerup", endLineDrag);
+handle.addEventListener("pointercancel", endLineDrag);
+handle.addEventListener("dblclick", () => moveLine(LINE_DEFAULT, true));
+handle.addEventListener("keydown", (e) => {
+  if (!LINE_KEYS.includes(e.key) || e.metaKey || e.ctrlKey || e.altKey) return;
+  e.preventDefault();
+  const pct = Math.round(lineFrac * 100);
+  moveLine(e.key === "Home" ? LINE_MIN : e.key === "End" ? LINE_MAX : (pct + LINE_STEPS[e.key]) / 100, true);
+});
+
 // ---------- Active section ----------
-function readingLineY() { return window.innerHeight * 0.34; }
 
 function updateActive() {
   const els = main.querySelectorAll(".section");
@@ -697,7 +777,7 @@ document.addEventListener("mousemove", (e) => {
 }, { passive: true });
 document.documentElement.addEventListener("mouseleave", () => { mouseNearBottom = false; });
 dockEl.addEventListener("focusin", () => { if (dockEl.querySelector(":focus-visible")) tuckDock(false); });
-window.addEventListener("resize", updateActive);
+window.addEventListener("resize", () => { setLine(lineFrac); updateActive(); });
 // Scrolling by hand while following the voice: continue from where the reader looks.
 // Keyboard and scrollbar scrolling end in "scrollend"; the prompter's own voice
 // scrolling is ignored.
@@ -773,6 +853,8 @@ document.addEventListener("keydown", (e) => {
   const k = e.key;
   // A focused slider keeps its arrow keys; every other shortcut still works.
   if (e.target.matches?.("input[type=range]") && k.startsWith("Arrow")) return;
+  // The focused reading line handle keeps its keys (arrows, Page Up/Down, Home, End).
+  if (e.target.closest(".line-handle") && LINE_KEYS.includes(k)) return;
   // Space on these buttons presses them; on the control bar and the links it still means auto-scroll.
   if (k === " " && e.target.closest(".note-row, .pop")) return;
   if (k === " ") { e.preventDefault(); toggleAuto(); }
@@ -789,6 +871,7 @@ document.addEventListener("keydown", (e) => {
 
 // ---------- Start ----------
 voiceBtn.hidden = !Recognition;
+setLine(store.get(LINE_KEY));
 setSpeed(speed);
 setSize(Number(store.get("prompter-size")) || (window.innerWidth < 640 ? 32 : 52));
 setWidth(store.get("prompter-width") || "medium");

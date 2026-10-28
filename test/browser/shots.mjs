@@ -183,9 +183,10 @@ export async function run({ browser, base, mode, dist, out }) {
     const [sw, iw] = await page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]);
     assert.ok(sw <= iw + 1, `${label}: page is ${sw}px wide in a ${iw}px viewport`);
   };
+  // Both follow the reading line wherever it is (dragged or the default 34%).
   const scrollToSection = (page, i) => page.evaluate((n) => {
     const el = document.querySelectorAll(".section")[n];
-    window.scrollTo(0, el.offsetTop - window.innerHeight * 0.34 + 2);
+    window.scrollTo(0, el.offsetTop - document.querySelector(".reading-line").getBoundingClientRect().top + 2);
   }, i);
 
   // A popover opens above its bar button, inside the window.
@@ -213,6 +214,8 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await page.locator('.sidebar, .scrim, .side-toggle, [data-action="home"], .problems-btn, .bar').count(), 0, "no sidebar, no top toolbar");
   assert.equal(await page.locator(".dock").isVisible(), false, "no control bar on the start screen");
   assert.equal(await page.locator(".reading-line").isVisible(), false);
+  assert.equal(await page.locator(".line-handle").isVisible(), false, "no reading line handle on the start screen");
+  assert.equal(await page.locator(".read-veil").isVisible(), false, "no fading veil on the start screen");
   assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), NIGHT);
   const card = page.locator(".empty .card");
   assert.equal(await card.locator("h1").textContent(), "Your teleprompter");
@@ -578,7 +581,7 @@ export async function run({ browser, base, mode, dist, out }) {
   // Scroll so the reading line passes the inline link's marker.
   const passMark = (page, sel, dy = 0) => page.evaluate(([q, d]) => {
     const el = document.querySelector(q);
-    window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - window.innerHeight * 0.34 - 2 + d);
+    window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - document.querySelector(".reading-line").getBoundingClientRect().top - 2 + d);
   }, [sel, dy]);
   await passMark(L, ".section:nth-child(2) .mark");
   await L.waitForTimeout(300);
@@ -850,6 +853,189 @@ export async function run({ browser, base, mode, dist, out }) {
   await hintConnect.close();
   ok("without a main screen nothing opens; a one-time hint above the control bar; its Connect button hides it, clears the highlight and shows the current link");
 
+  // ---- The reading line: dragged to camera height; read text fades above it ----
+  const lineOf = (page) => page.evaluate(() => {
+    const h = document.querySelector(".line-handle");
+    return {
+      top: document.querySelector(".reading-line").getBoundingClientRect().top,
+      css: getComputedStyle(document.documentElement).getPropertyValue("--line").trim(),
+      now: h.getAttribute("aria-valuenow"), text: h.getAttribute("aria-valuetext"),
+      stored: localStorage.getItem("prompter-line"),
+    };
+  });
+  const activeIs = (page) => page.locator(".section.active").getAttribute("data-i");
+  const settle = (page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+  const lineCtx = await browser.newContext(DESKTOP);
+  await lineCtx.addInitScript(NO_SPEECH);
+  const R = await lineCtx.newPage();
+  watch(R, "reading line");
+  await R.goto(`${base}/#demo`);
+  await R.locator(".section").first().waitFor();
+  assert.deepEqual(await lineOf(R), { top: 306, css: "306px", now: "34", text: "34% from the top", stored: null }, "a new visitor gets the line at 34%");
+  const handle = R.locator(".line-handle");
+  assert.deepEqual(await handle.evaluate((el) => [el.getAttribute("role"), el.getAttribute("aria-orientation"), el.getAttribute("aria-label"), el.getAttribute("aria-valuemin"), el.getAttribute("aria-valuemax"), el.tabIndex, getComputedStyle(el).touchAction, getComputedStyle(el).pointerEvents, getComputedStyle(el.parentElement).pointerEvents]),
+    ["slider", "vertical", "Reading line", "8", "75", 0, "none", "auto", "none"], "a focusable vertical slider; only the handle takes the pointer");
+  let hb = await handle.boundingBox();
+  const clientW = await R.evaluate(() => document.documentElement.clientWidth);
+  assert.ok(hb.width >= 44 && hb.height >= 44, `44px target: ${hb.width}×${hb.height}`);
+  assert.ok(Math.abs(hb.x + hb.width - clientW) <= 1 && Math.abs(hb.y + hb.height / 2 - 306) <= 2, `on the right edge, centred on the line: ${JSON.stringify(hb)}`);
+  const grip = await R.locator(".grip").boundingBox();
+  assert.ok(grip.width <= 20 && grip.height <= 32, `the visible grip stays small: ${grip.width}×${grip.height}`);
+  assert.equal(await R.locator(".grip").evaluate((el) => getComputedStyle(el).boxShadow), "oklch(0.65 0.227 32.3) 0px 0px 0px 1.5px inset", "an orange ring (3:1 on the page)");
+  // Mid-script, drag it up with the mouse: only the line moves, the script stays put.
+  await R.evaluate(() => window.scrollTo(0, 1500));
+  await settle(R);
+  const refTop = () => R.evaluate(() => document.querySelectorAll(".section p")[12].getBoundingClientRect().top);
+  const textBefore = await refTop();
+  await R.mouse.move(hb.x + 22, hb.y + 22);
+  await R.mouse.down();
+  await R.mouse.move(hb.x + 22, hb.y + 22 - 171, { steps: 8 });
+  assert.equal(await handle.getAttribute("data-dragging"), "true");
+  await R.mouse.up();
+  await settle(R);
+  assert.deepEqual(await lineOf(R), { top: 135, css: "135px", now: "15", text: "15% from the top", stored: "0.1500" }, "dragged to 15%, remembered");
+  assert.equal(await refTop(), textBefore, "the script did not move, only the line");
+  assert.equal(await handle.getAttribute("data-dragging"), null);
+  await R.mouse.move(683, 500);
+  await R.waitForTimeout(300);
+  await shot(R, "line-moved-desktop");
+  hb = await handle.boundingBox();
+  await handle.hover();
+  await R.waitForTimeout(600);
+  assert.equal(await handle.evaluate((el) => [getComputedStyle(el, "::after").opacity, getComputedStyle(el, "::after").content].join(" ")), '1 "Drag to your camera · double-click to reset"', "tooltip on hover");
+  await R.screenshot({ path: join(out, "line-drag-handle-hover-desktop.png"), clip: { x: clientW - 420, y: hb.y - 50, width: 420, height: hb.height + 100 } });
+  screenshots.push(join(out, "line-drag-handle-hover-desktop.png"));
+  await R.mouse.move(683, 500);
+  // The veil: from the top of the window to the line, ending exactly there; text below is untouched.
+  const veilBox = await R.locator(".read-veil").evaluate((el) => { const r = el.getBoundingClientRect(); const cs = getComputedStyle(el); return [r.top, r.bottom, cs.pointerEvents, cs.zIndex, cs.backgroundImage]; });
+  assert.deepEqual(veilBox.slice(0, 4), [0, 135, "none", "4"], "the veil covers the window down to the line, under the line (z 5) and the bar");
+  assert.match(veilBox[4], /^linear-gradient\(oklch\(0\.16 0\.06 282 \/ 0\.86\) calc\(100% - 12px\), rgba\(0, 0, 0, 0\)\)$/, "page colour at 86%, a 12px soft edge that ends at the line");
+  const veilOff = (on) => R.evaluate((v) => { document.querySelector(".read-veil").style.visibility = v ? "" : "hidden"; }, on);
+  const region = (y, height) => R.screenshot({ clip: { x: 0, y, width: clientW - 50, height } });
+  await R.waitForTimeout(300);
+  const [aboveOn, belowOn] = [await region(0, 120), await region(138, 60)];
+  await veilOff(false);
+  const [aboveOff, belowOff] = [await region(0, 120), await region(138, 60)];
+  await veilOff(true);
+  assert.equal(aboveOn.equals(aboveOff), false, "text above the line is faded");
+  assert.equal(belowOn.equals(belowOff), true, "the line being read and everything below it are untouched");
+  await R.reload();
+  await R.locator(".section").first().waitFor();
+  assert.deepEqual(await lineOf(R), { top: 135, css: "135px", now: "15", text: "15% from the top", stored: "0.1500" }, "restored after a reload");
+  await scrollToSection(R, 3);
+  await R.evaluate(() => window.scrollBy(0, 300));
+  await shot(R, "fade-read-text-desktop");
+  ok("reading line: a 44px slider handle (small orange grip) on the right edge; a mouse drag moves only the line (the script stays put), updates --line and aria-valuenow, is remembered and restored after a reload; tooltip on hover; the veil fades the text above the line and ends at it, the text below is unchanged (pixel compare)");
+
+  // Keyboard on the handle; the page's own keys still work elsewhere.
+  await handle.dblclick();
+  assert.deepEqual(await lineOf(R), { top: 306, css: "306px", now: "34", text: "34% from the top", stored: "0.3400" }, "double-click resets to 34%");
+  await R.evaluate(() => window.scrollTo(0, 0));
+  await settle(R);
+  await handle.focus();
+  const nowAfter = async (key) => { await R.keyboard.press(key); return handle.getAttribute("aria-valuenow"); };
+  assert.equal(await nowAfter("ArrowDown"), "35");
+  assert.equal(await nowAfter("ArrowUp"), "34");
+  assert.equal(await nowAfter("ArrowUp"), "33");
+  const scrolledBefore = await R.evaluate(() => window.scrollY);
+  assert.equal(await nowAfter("PageDown"), "43");
+  await settle(R);
+  assert.equal(await activeIs(R), "0", "Page Down on the handle moves the line, not to the next section");
+  assert.equal(await R.evaluate(() => window.scrollY), scrolledBefore + 90, "the page only scrolled to keep the text in place");
+  assert.equal(await nowAfter("PageUp"), "33");
+  assert.equal(await nowAfter("End"), "75");
+  assert.equal(await nowAfter("PageDown"), "75", "stops at 75%");
+  assert.equal(await nowAfter("Home"), "8");
+  assert.equal(await nowAfter("ArrowUp"), "8", "stops at 8%");
+  assert.equal((await lineOf(R)).stored, "0.0800");
+  // The highest line: the last line of the script can still reach it.
+  await R.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await settle(R);
+  const lastLine = await R.evaluate(() => [[...document.querySelectorAll("[data-k]")].at(-1).getBoundingClientRect().top, document.querySelector(".reading-line").getBoundingClientRect().top]);
+  assert.ok(lastLine[0] <= lastLine[1], `the last line reaches the line at 8%: ${lastLine}`);
+  await R.evaluate(() => window.scrollTo(0, 0));
+  await settle(R);
+  await R.evaluate(() => document.activeElement.blur());
+  await R.keyboard.press("ArrowRight");
+  assert.equal(await activeIs(R), "1", "away from the handle the arrow keys still jump sections");
+  await R.keyboard.press("PageDown");
+  assert.equal(await activeIs(R), "2", "and so does Page Down");
+  await lineCtx.close();
+  ok("keyboard: the focused handle moves the line 1% with ↑ ↓, 10% with Page Up/Down, to 8% and 75% with Home/End (bounds kept), without jumping sections; elsewhere ← → and Page Down still jump; double-click resets to 34%; at 8% the last line still reaches the line");
+
+  // With the line moved (high at 15%, low at 60%) everything that uses it follows.
+  for (const frac of [0.15, 0.6]) {
+    const Y = Math.round(900 * frac);
+    const ctx = await browser.newContext(DESKTOP);
+    await ctx.addInitScript((f) => { localStorage.setItem("prompter-line", String(f)); localStorage.setItem("prompter-voice-ok", "yes"); }, frac);
+    await ctx.addInitScript(SCREEN_STUB);
+    await ctx.addInitScript(SPEECH_STUB);
+    const open = async (url) => {
+      const pg = await ctx.newPage();
+      watch(pg, `line at ${frac}`);
+      await pg.goto(url);
+      await pg.locator(".section").first().waitFor();
+      return pg;
+    };
+    const sectionTop = (pg, i) => pg.evaluate((n) => document.querySelectorAll(".section")[n].getBoundingClientRect().top, i);
+    const P = await open(`${base}/#demo`);
+    assert.equal((await lineOf(P)).top, Y);
+    await P.keyboard.press("ArrowRight");
+    await P.keyboard.press("ArrowRight");
+    assert.equal(await activeIs(P), "2");
+    assert.ok(Math.abs((await sectionTop(P, 2)) - (Y - 2)) <= 1, `${frac}: next section lands at the line`);
+    await P.keyboard.press("ArrowLeft");
+    assert.equal(await activeIs(P), "1");
+    assert.ok(Math.abs((await sectionTop(P, 1)) - (Y - 2)) <= 1, `${frac}: previous section lands at the line`);
+    // A title 30px below the line is not yet active; just above it, it is.
+    await P.evaluate(([y]) => { const el = document.querySelectorAll(".section")[3]; window.scrollTo(0, el.offsetTop - y - 30); }, [Y]);
+    await settle(P);
+    assert.equal(await activeIs(P), "2", `${frac}: section 3 below the line is not active yet`);
+    await P.evaluate(([y]) => { const el = document.querySelectorAll(".section")[3]; window.scrollTo(0, el.offsetTop - y + 1); }, [Y]);
+    await settle(P);
+    assert.equal(await activeIs(P), "3", `${frac}: section 3 becomes active as its title crosses the line`);
+    const y0 = await P.evaluate(() => window.scrollY);
+    await P.keyboard.press(" ");
+    await P.waitForTimeout(600);
+    await P.keyboard.press(" ");
+    assert.ok((await P.evaluate(() => window.scrollY)) > y0 + 5, `${frac}: auto-scroll runs`);
+    await P.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await settle(P);
+    const last = await P.evaluate(() => [...document.querySelectorAll("[data-k]")].at(-1).getBoundingClientRect().top);
+    assert.ok(last <= Y, `${frac}: the last line reaches the line (${last} vs ${Y})`);
+    await P.close();
+    // Links open at the moved line: the top link at the section start, an own-line link once passed.
+    const Q = await open(inlineLink);
+    await (await dock(Q, ".screen")).click();
+    await Q.mouse.move(683, 120);
+    await scrollToSection(Q, 1);
+    await Q.waitForFunction(() => window.__screen.visits.at(-1) === "https://example.com/intro", null, { timeout: 2000 });
+    await passMark(Q, ".section:nth-child(2) .mark", -40);
+    await Q.waitForTimeout(1000);
+    assert.equal(await Q.evaluate(() => window.__screen.visits.at(-1)), "https://example.com/intro", `${frac}: the marker 40px below the line has not opened yet`);
+    await passMark(Q, ".section:nth-child(2) .mark");
+    await Q.waitForFunction(() => window.__screen.visits.at(-1) === "https://patchstack.com", null, { timeout: 2000 });
+    await Q.close();
+    const X2 = await open(textLink);
+    await (await dock(X2, ".screen")).click();
+    await X2.mouse.move(683, 120);
+    await X2.evaluate(([y]) => { const el = document.querySelector(".inlink"); window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - y - 40); }, [Y]);
+    await X2.waitForTimeout(1000);
+    assert.notEqual(await X2.evaluate(() => window.__screen.visits.at(-1)), "https://developer.mozilla.org/en-US/", `${frac}: the link inside a sentence 40px below the line has not opened yet`);
+    await X2.evaluate(([y]) => { const el = document.querySelector(".inlink"); window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - y - 2); }, [Y]);
+    await X2.waitForFunction(() => window.__screen.visits.at(-1) === "https://developer.mozilla.org/en-US/", null, { timeout: 2000 });
+    await X2.close();
+    // Follow my voice brings the heard line to the moved line.
+    const V = await open(link);
+    await (await dock(V, ".voice")).click();
+    await V.evaluate(() => window.__speech.say("writing scripts takes too long"));
+    await V.waitForFunction(() => document.querySelector("p.cur")?.textContent === "Writing scripts takes too long.");
+    await V.waitForFunction((y) => Math.abs(document.querySelector("p.cur").getBoundingClientRect().top - y) < 12, Y);
+    await V.close();
+    await ctx.close();
+  }
+  ok("with the line moved to 15% and to 60%: next/previous section land their title at it, the active section changes as a title crosses it, auto-scroll runs, the last line reaches it, a top link, an own-line link and a link inside a sentence open there (not before), and Follow my voice brings the heard line to it");
+
   // ---- Mobile ----
   const mobile = await browser.newContext(MOBILE);
   await mobile.addInitScript(SPEECH_STUB);
@@ -940,6 +1126,44 @@ export async function run({ browser, base, mode, dist, out }) {
   await shot(m, "text-link-shown-mobile");
   ok("mobile 390px: start screen card and AI dialog fit; the demo; a one-row centred control bar of eight icons with 44px-tall targets; Open and Settings popovers above their buttons and on screen (tap outside closes); no sideways scroll; voice notice and hint fit", `bar ${Math.round(mobileDock.width)}px`);
   await mobile.close();
+
+  // A finger drags the reading line on a phone (real touch events); the page does not scroll under it.
+  const touchCtx = await browser.newContext(MOBILE);
+  await touchCtx.addInitScript(NO_SPEECH);
+  const TL = await touchCtx.newPage();
+  watch(TL, "reading line touch");
+  await TL.goto(`${base}/#demo`);
+  await TL.locator(".section").first().waitFor();
+  await TL.evaluate(() => window.scrollTo(0, 1600));
+  await settle(TL);
+  assert.equal((await lineOf(TL)).top, 287, "34% of 844px");
+  const th = await TL.locator(".line-handle").boundingBox();
+  assert.ok(th.width >= 44 && th.height >= 44 && th.x + th.width <= 390, `44px touch target inside the window: ${JSON.stringify(th)}`);
+  await TL.evaluate(() => { window.__pointers = []; document.querySelector(".line-handle").addEventListener("pointerdown", (e) => window.__pointers.push(e.pointerType)); });
+  const mText = () => TL.evaluate(() => [window.scrollY, document.querySelectorAll(".section p")[12].getBoundingClientRect().top]);
+  const [, textAt] = await mText();
+  const cdp = await touchCtx.newCDPSession(TL);
+  const tx = th.x + th.width / 2;
+  const ty = th.y + th.height / 2;
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: tx, y: ty }] });
+  for (let i = 1; i <= 8; i++) {
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: tx, y: ty - i * 20 }] });
+    await settle(TL);
+  }
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await settle(TL);
+  assert.deepEqual(await TL.evaluate(() => window.__pointers), ["touch"], "a touch pointer");
+  const moved = await lineOf(TL);
+  assert.equal(moved.top, 127, "the line followed the finger 160px up");
+  assert.equal(moved.now, "15");
+  assert.equal((await mText())[1], textAt, "the script stayed where it was: the finger did not scroll the page");
+  await noOverflow(TL, "mobile reading line");
+  await TL.waitForTimeout(300);
+  await shot(TL, "line-moved-mobile");
+  await TL.evaluate(() => window.scrollBy(0, 500));
+  await shot(TL, "fade-read-text-mobile");
+  await touchCtx.close();
+  ok("phone: a finger drags the reading line (touch pointer, 44px target) to 15%; the script does not move under it and nothing scrolls sideways");
 
   // ---- Offline (file://) ----
   const offline = await browser.newContext(DESKTOP);

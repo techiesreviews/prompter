@@ -13,11 +13,13 @@
      The page is the indigo night colour; surfaces get lighter as they stack;
      the bright orange is for actions. Every text colour meets WCAG AA (4.5:1)
      on the backgrounds it is used on, and white on orange only at 19px bold
-     (large text, 3:1); test/contrast.test.mjs checks the pairs. */
+     (large text, 3:1); test/contrast.test.mjs checks the pairs. The one
+     deliberate exception: text above the reading line has been read and is
+     faded almost into the page (--read-veil). */
   :root {
     --size: 52px;
     --col: 960px;
-    --line: 34vh;
+    /* --line: the reading line's distance from the top in px, set by app.js. */
     --bg: oklch(16% 0.06 282);          /* --color-night, #0b0826 */
     --panel: oklch(24% 0.066 282);      /* raised: night l+0.08, c×1.1 */
     --panel-2: oklch(27% 0.069 282);    /* raised hover: night l+0.11, c×1.15 */
@@ -36,6 +38,7 @@
     --ql-dim: oklch(68% 0.09 80);
     --next: oklch(83% 0.085 282);
     --next-dim: oklch(64% 0.07 282);
+    --read-veil: oklch(16% 0.06 282 / 0.86); /* the page colour over read text: ~14% of it shows */
     --shadow: 0 1px 1px oklch(4% 0.06 282 / 0.5), 0 4px 8px oklch(4% 0.06 282 / 0.4), 0 16px 32px oklch(4% 0.06 282 / 0.3), inset 0 1px 0 oklch(97.5% 0.012 282 / 0.07);
     --radius: 10px;
     --font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -96,10 +99,35 @@
   .card-foot { margin: 16px 0 0; font-size: 13px; color: var(--muted); }
   .card-foot p { margin: 0 0 4px; }
 
-  /* Reading line */
+  /* Reading line: dragged by its handle to camera height (remembered per
+     device). Everything above it has been read and fades almost into the
+     page behind a veil, with a short soft edge that ends at the line. */
   .reading-line {
     position: fixed; inset-inline: 0; inset-block-start: var(--line); z-index: 5; pointer-events: none;
     border-block-start: 2px dashed oklch(65% 0.227 32.3 / 0.5);
+  }
+  .read-veil {
+    position: fixed; inset-inline: 0; inset-block-start: 0; block-size: var(--line); z-index: 4; pointer-events: none;
+    background: linear-gradient(var(--read-veil) calc(100% - 12px), transparent);
+  }
+  /* A 44px target on the right edge; the visible grip is a small orange tab. */
+  .line-handle {
+    position: absolute; inset-block-start: -23px; inset-inline-end: env(safe-area-inset-right, 0px);
+    display: grid; place-items: center; inline-size: 44px; block-size: 44px;
+    pointer-events: auto; touch-action: none; cursor: ns-resize; user-select: none; -webkit-user-select: none;
+  }
+  .line-handle:focus-visible { outline: 0; }
+  .grip {
+    display: grid; place-items: center; justify-self: end; inline-size: 16px; block-size: 28px; margin-inline-end: 4px;
+    border-radius: 6px; background: var(--panel); box-shadow: inset 0 0 0 1.5px var(--accent);
+  }
+  .grip::before { content: ""; inline-size: 10px; block-size: 15px; background: radial-gradient(circle, var(--accent) 1.3px, transparent 1.8px) 0 0 / 5px 5px; }
+  .line-handle:focus-visible .grip { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .line-handle[data-dragging="true"] .grip { background-color: var(--chip); }
+  @media (hover: hover) and (pointer: fine) { .line-handle:hover .grip { background-color: var(--chip); } }
+  @media (prefers-reduced-motion: no-preference) {
+    .grip { transition: background-color 160ms var(--ease-out), scale 160ms var(--ease-out); }
+    .line-handle[data-dragging="true"] .grip { scale: 1.1; }
   }
 
   /* Script: a centred column with a maximum width; the text in it starts on
@@ -107,7 +135,7 @@
      the active one the full ones. */
   .script {
     box-sizing: content-box; max-inline-size: var(--col); margin-inline: auto;
-    padding: calc(var(--line) + 10px) 4vw 70vh;
+    padding: calc(var(--line) + 10px) 4vw max(70vh, calc(100vh - var(--line)));
     font: 600 var(--size)/1.3 var(--font-body); letter-spacing: -0.01em; text-align: start;
   }
   .section {
@@ -183,7 +211,7 @@
     display: flex; align-items: center; gap: 4px; padding: 6px;
     background: var(--panel); border-radius: 18px; box-shadow: var(--shadow);
   }
-  :root[data-view="empty"] :is(.dock, .reading-line, .script) { display: none; }
+  :root[data-view="empty"] :is(.dock, .reading-line, .read-veil, .script) { display: none; }
   /* Scrolling down tucks the bar away; scrolling up or the bottom edge brings it back. */
   .dock[data-tucked="true"] { opacity: 0; }
   .open-pop .keys { margin: 4px 10px 2px; font: 500 12px/1.5 var(--font-mono); color: var(--muted); max-inline-size: 30ch; }
@@ -219,15 +247,17 @@
     .dock-btn.auto:hover { background: var(--accent-hover); }
   }
   /* Tooltips: on hover with a mouse, and on keyboard focus; never over an open popover. */
-  .dock-btn::after {
+  :is(.dock-btn, .line-handle)::after {
     content: attr(data-tip); position: absolute; inset-block-end: calc(100% + 12px); inset-inline-start: 50%; translate: -50% 0;
     padding: 6px 10px; border-radius: 8px; white-space: nowrap; pointer-events: none;
     font: 500 13px/1.2 var(--font-body); color: var(--text); background: var(--chip); box-shadow: var(--shadow);
     opacity: 0; visibility: hidden;
   }
-  .dock-btn:focus-visible::after { opacity: 1; visibility: visible; }
-  @media (hover: hover) and (pointer: fine) { .dock-btn:hover::after { opacity: 1; visibility: visible; transition-delay: 300ms; } }
-  .dock-btn[aria-expanded="true"]::after { display: none; }
+  :is(.dock-btn, .line-handle):focus-visible::after { opacity: 1; visibility: visible; }
+  @media (hover: hover) and (pointer: fine) { :is(.dock-btn, .line-handle):hover::after { opacity: 1; visibility: visible; transition-delay: 300ms; } }
+  .dock-btn[aria-expanded="true"]::after, .line-handle[data-dragging="true"]::after { display: none; }
+  /* The reading line's tooltip sits to the left of its handle. */
+  .line-handle::after { inset-block-end: auto; inset-block-start: 50%; inset-inline-start: auto; inset-inline-end: calc(100% + 2px); translate: 0 -50%; }
   .status {
     max-inline-size: min(560px, 100%); padding: 6px 14px; border-radius: 999px;
     font-size: 13px; color: var(--muted); background: var(--panel);
@@ -330,7 +360,10 @@
 </section>
 
 <div class="stage">
-  <div class="reading-line" aria-hidden="true"></div>
+  <div class="read-veil" aria-hidden="true"></div>
+  <div class="reading-line">
+    <div class="line-handle" role="slider" tabindex="0" aria-orientation="vertical" aria-label="Reading line" aria-valuemin="8" aria-valuemax="75" aria-valuenow="34" aria-valuetext="34% from the top" data-tip="Drag to your camera · double-click to reset"><span class="grip"></span></div>
+  </div>
   <main class="script" aria-label="Script"></main>
 </div>
 <input class="file-input" type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" tabindex="-1" aria-hidden="true">
