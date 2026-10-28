@@ -640,8 +640,48 @@ export async function run({ browser, base, mode, dist, out }) {
   await T.evaluate(() => window.scrollBy(0, 400));
   await T.waitForTimeout(100);
   assert.equal(await tucked(), "false", "it stays while the mouse rests near the bottom");
-  ok("the control bar slides down, fades and blurs away when scrolling down; scrolling up or the bottom edge brings it back and it stays there");
+  // After really using the bar (a click on Play, a popover closed by a click outside) it still tucks away.
+  await T.evaluate(() => window.scrollTo(0, 0));
+  await (await dock(T, ".auto")).click();
+  await T.mouse.move(683, 120);
+  await T.evaluate(() => window.scrollBy(0, 300));
+  await T.waitForFunction(() => document.querySelector(".dock").dataset.tucked === "true", null, { timeout: 3000 });
+  await (await dock(T, ".auto")).click();
+  await (await dock(T, ".settings-btn")).click();
+  await T.mouse.click(683, 200);
+  await T.mouse.move(683, 120);
+  await T.evaluate(() => window.scrollBy(0, 300));
+  await T.waitForFunction(() => document.querySelector(".dock").dataset.tucked === "true", null, { timeout: 3000 });
+  ok("the control bar slides down, fades and blurs away when scrolling down, also after clicking Play or closing a popover; scrolling up or the bottom edge brings it back and it stays there");
   await tuckCtx.close();
+
+  // On a phone a tap on the bar does not count as the mouse resting near the bottom.
+  const tuckTouch = await browser.newContext(MOBILE);
+  await tuckTouch.addInitScript(NO_SPEECH);
+  const TT = await tuckTouch.newPage();
+  watch(TT, "tucking bar touch");
+  await TT.goto(`${base}/#demo`);
+  await TT.locator(".section").first().waitFor();
+  await TT.locator(".dock .auto").tap();
+  await TT.locator(".dock .auto").tap();
+  await TT.evaluate(() => window.scrollBy(0, 400));
+  await TT.waitForFunction(() => document.querySelector(".dock").dataset.tucked === "true", null, { timeout: 3000 });
+  ok("on a phone the control bar still tucks away after tapping its buttons");
+  await tuckTouch.close();
+
+  // A YouTube inline link opens in the page's own #player view.
+  const ytCtx = await browser.newContext(DESKTOP);
+  await ytCtx.addInitScript(SCREEN_STUB);
+  const Y = await ytCtx.newPage();
+  watch(Y, "youtube inline link");
+  await Y.goto(await makeLink("### **INTRO · 00:00**\n\nQL: Watch this?\n\nFirst a few lines.\nThen the video.\n- Video: https://www.youtube.com/watch?v=aqz-KE-bpKQ\nIt plays full size.\n", "lex", base));
+  await Y.locator(".section").first().waitFor();
+  await (await dock(Y, ".screen")).click();
+  await Y.mouse.move(683, 120);
+  await passMark(Y, ".section .mark", 2);
+  await Y.waitForFunction(() => /#player=aqz-KE-bpKQ&start=0$/.test(window.__screen.visits.at(-1) || ""), null, { timeout: 2000 });
+  ok("a YouTube inline link opens the full-window #player view");
+  await ytCtx.close();
 
   // No main screen: one gentle hint, once, above the control bar.
   const hinted = await browser.newContext(DESKTOP);

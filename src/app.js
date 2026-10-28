@@ -262,7 +262,8 @@ for (const pop of document.querySelectorAll(".pop")) {
     // Placed in the frame it first shows in, once it has a size.
     if (open && !anchored) requestAnimationFrame(() => placeAbove(pop));
   });
-  // Closed with Escape or by an item: focus goes back to its bar button.
+  // Closed with Escape, by an item or by a click outside: focus goes back to
+  // its bar button. That focus only holds the bar when it is keyboard focus.
   pop.addEventListener("toggle", (e) => {
     if (e.newState === "closed" && (pop.contains(document.activeElement) || document.activeElement === document.body)) button.focus({ preventScroll: true });
   });
@@ -653,8 +654,10 @@ window.addEventListener("scroll", () => requestAnimationFrame(updateActive), { p
 const dockEl = $(".dock");
 let lastScrollY = window.scrollY;
 let mouseNearBottom = false;
+let lastTouch = 0;
 function tuckDock(tucked) {
-  if (tucked && (mouseNearBottom || dockEl.contains(document.activeElement) || document.querySelector(".pop:popover-open"))) return;
+  // Only keyboard focus holds the bar: a clicked or tapped button keeps focus too.
+  if (tucked && (mouseNearBottom || dockEl.querySelector(":focus-visible") || document.querySelector(".pop:popover-open"))) return;
   dockEl.dataset.tucked = String(tucked);
 }
 window.addEventListener("scroll", () => {
@@ -664,12 +667,15 @@ window.addEventListener("scroll", () => {
   lastScrollY = y;
 }, { passive: true });
 // While the mouse rests near the bottom edge the bar stays, even during auto-scroll.
+// A tap also sends a mousemove at the tap point; those are ignored.
+document.addEventListener("touchstart", () => { lastTouch = Date.now(); mouseNearBottom = false; }, { passive: true, capture: true });
 document.addEventListener("mousemove", (e) => {
+  if (Date.now() - lastTouch < 1000) return;
   mouseNearBottom = e.clientY > window.innerHeight - 110;
   if (mouseNearBottom) tuckDock(false);
 }, { passive: true });
 document.documentElement.addEventListener("mouseleave", () => { mouseNearBottom = false; });
-dockEl.addEventListener("focusin", () => tuckDock(false));
+dockEl.addEventListener("focusin", () => { if (dockEl.querySelector(":focus-visible")) tuckDock(false); });
 window.addEventListener("resize", updateActive);
 // Scrolling by hand while following the voice: continue from where the reader looks.
 // Keyboard and scrollbar scrolling end in "scrollend"; the prompter's own voice

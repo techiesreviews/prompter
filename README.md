@@ -13,6 +13,8 @@ A free teleprompter for talking to camera, plus an MCP server so your AI assista
 - A checker (through the MCP server) that points out long lines, a missing main question, a link without its full address and similar problems.
 - Works offline: the page is one self-contained HTML file.
 
+Keys: Space play/pause · ← → previous/next section · [ ] scroll speed · − + text size · 1–9 open a section's links · F full screen. They are also listed in the Open menu.
+
 ## Your script stays with you
 
 There are no accounts and no server storage. A shared prompter link carries the whole script inside the link itself, in the part after `#` (`#s=`, deflate-raw + base64url), which browsers never send to a server. The page remembers your last script in your own browser only, and offers it on the start screen.

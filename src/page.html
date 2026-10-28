@@ -167,6 +167,7 @@
   :root[data-view="empty"] :is(.dock, .reading-line, .script) { display: none; }
   /* Scrolling down tucks the bar away; scrolling up or the bottom edge brings it back. */
   .dock[data-tucked="true"] { opacity: 0; }
+  .open-pop .keys { margin: 4px 10px 2px; font: 500 12px/1.5 var(--font-mono); color: var(--muted); max-inline-size: 30ch; }
   /* On touch screens a hidden bar must not take taps; a mouse reveals it on approach. */
   @media (hover: none) { .dock[data-tucked="true"] { pointer-events: none; } }
   @media (prefers-reduced-motion: no-preference) {
@@ -363,6 +364,8 @@
   <button class="item" type="button" data-action="paste"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="3" width="8" height="4" rx="1"/><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2"/></svg>Paste a script</button>
   <button class="item share" type="button" data-action="copy-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>Copy link</button>
   <button class="item" type="button" data-action="ai"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>Use your AI</button>
+  <div class="pop-sep" role="separator"></div>
+  <p class="keys">Keys: Space play · ← → sections · [ ] speed · − + size · 1–9 links · F full screen</p>
   <div class="pop-sep" role="separator"></div>
   <button class="item" type="button" data-action="start"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>Back to the start</button>
 </div>
