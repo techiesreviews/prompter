@@ -223,7 +223,7 @@ function render() {
   main.innerHTML = sections.map((s, i) => {
     const links = s.links.length
       ? `<div class="links">${s.links.map((l, j) =>
-          `<button class="link" type="button" data-s="${i}" data-l="${j}" title="${hostLabel(l)}${j < 9 ? ` · key ${j + 1}` : ""}"${j < 9 ? ` aria-keyshortcuts="${j + 1}"` : ""}>${ARROW}<span>${esc(l.label)}</span>${j < 9 ? `<span class="key">${j + 1}</span>` : ""}</button>`).join("")}</div>`
+          `<button class="link" type="button" data-s="${i}" data-l="${j}" title="${hostLabel(l)}${j < 9 ? ` · key ${j + 1}` : ""}"${j < 9 ? ` aria-label="${esc(l.label)}, key ${j + 1}" aria-keyshortcuts="${j + 1}"` : ""}>${ARROW}<span>${esc(l.label)}</span>${j < 9 ? `<span class="key">${j + 1}</span>` : ""}</button>`).join("")}</div>`
       : "";
     // The QL main question is read silently: always show it at the top.
     const qls = s.items.filter((it) => it.type === "ql")
@@ -595,8 +595,11 @@ function onVoiceResult(e) {
   showLink(said.s, said.l, false);
 }
 
+// Links inside a line are left out: their words are ordinary spoken words, so
+// hearing them earlier would open the link early. They open at their line.
 function voiceLinkCandidates() {
-  return [active, active + 1].flatMap((si) => (sections[si]?.links || []).map((l, li) => ({ label: l.label, s: si, l: li, key: `${si}:${li}` })));
+  return [active, active + 1].flatMap((si) => (sections[si]?.links || [])
+    .flatMap((l, li) => (l.inText ? [] : [{ label: l.label, s: si, l: li, key: `${si}:${li}` }])));
 }
 
 const VOICE_ERRORS = {

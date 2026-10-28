@@ -259,6 +259,8 @@ test("links inside a line work only in spoken lines, bullets and Next:/Now:", ()
   const start = classify("[Docs](https://d.test) and [smile]");
   assert.equal(start.type, "say", "a line that starts with a link is spoken, not a reminder");
   assert.equal(start.text, "Docs and [smile]");
+  const upper = classify("[Docs](HTTPS://d.test) and [smile]");
+  assert.equal(upper.text, "Docs and [smile]", "an upper-case address is still a link");
   assert.equal(classify("Just [brackets] here").spans, undefined);
   assert.equal(classify("Not a [link](ftp://x.test)").spans, undefined);
   assert.equal(classify("Empty [ ](https://x.test)").spans, undefined, "a link needs words");

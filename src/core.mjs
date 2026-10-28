@@ -272,7 +272,7 @@ const linkRe = /^-\s*(?:(.+?):\s+)?(https?:\/\/\S+)\s*$/;
 const headingRe = /^#{2,3}\s+(.*)$/;
 // "[words](https://full-url)" inside a line. The address may hold one level of
 // brackets, as Wikipedia addresses do.
-const textLinkRe = /\[([^[\]]*[^\s[\]][^[\]]*)\]\((https?:\/\/(?:[^\s()]|\([^\s()]*\))+)\)/g;
+const textLinkRe = /\[([^[\]]*[^\s[\]][^[\]]*)\]\((https?:\/\/(?:[^\s()]|\([^\s()]*\))+)\)/gi;
 
 export function hostOf(url) {
   try { return new URL(url).hostname; } catch { return ""; }
