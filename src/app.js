@@ -736,7 +736,7 @@ function showLink(si, li, fromUser) {
   setStatus(`On main screen: ${s.links[li].label}`);
 }
 
-// Status messages are for screen readers only (the line is visually hidden): nothing pops up on screen.
+// Status messages are for screen readers only (the line is visually hidden); errors use showAlert.
 function setStatus(t) { statusEl.textContent = t; }
 
 /** A message that must not be missed (errors). Empty text hides it. */
@@ -794,8 +794,13 @@ function setAuto(on) {
   autoOn = on;
   lastFrame = 0;
   autoBtn.setAttribute("aria-pressed", String(on));
-  autoBtn.dataset.tip = on ? "Pause · Space" : "Auto-scroll · Space";
+  setAutoTip();
   if (on) requestAnimationFrame(tick);
+}
+// While Follow my voice is on, play is greyed out and its tip says why (no status pops up).
+function setAutoTip() {
+  autoBtn.setAttribute("aria-disabled", String(voiceOn));
+  autoBtn.dataset.tip = voiceOn ? "Auto-scroll is off while Follow my voice is on" : autoOn ? "Pause · Space" : "Auto-scroll · Space";
 }
 function toggleAuto() {
   if (voiceOn) { setStatus("Auto-scroll is paused while Follow my voice is on."); return; }
@@ -860,6 +865,7 @@ function markLine(k) {
 function setVoiceButton() {
   voiceSwitch.checked = voiceOn;
   updateSettingsBtn();
+  setAutoTip();
 }
 
 function toggleVoice() {
@@ -972,10 +978,9 @@ function publicBase() {
   return /^https?:$/.test(location.protocol) ? location.origin + location.pathname : `${SITE}/`;
 }
 
-async function copyText(text, done, ask) {
+async function copyText(text, ask) {
   try {
     await navigator.clipboard.writeText(text);
-    setStatus(done);
     return true;
   } catch {
     window.prompt(ask, text);
@@ -987,9 +992,9 @@ async function copyText(text, done, ask) {
 let linkCopiedTimer = 0;
 async function copyLink(button) {
   const link = `${publicBase()}#s=${await encodeScript(scriptText)}${preset === "default" ? "" : `&p=${preset}`}`;
-  if (!(await copyText(link, "Link copied. The script is inside the link.", "Copy this link. The script is inside it:"))) return;
+  if (!(await copyText(link, "Copy this link. The script is inside it:"))) return;
   const label = button.querySelector(".share-label");
-  button.toggleAttribute("data-copied", true);
+  button.setAttribute("data-copied", "");
   label.textContent = "Copied";
   clearTimeout(linkCopiedTimer);
   linkCopiedTimer = setTimeout(() => { button.removeAttribute("data-copied"); label.textContent = "Copy link"; }, 2000);
