@@ -103,9 +103,16 @@ export class Relay extends DurableObject {
   // Called by the Worker for each MCP request; message.born is the token's birth time.
   // Answers { status: "ok" | "unauthorized" | "no-tab" | "timeout", result?, error? }.
   async op(message) {
-    const meta = await this.meta();
+    if (!(message.born > 0) || this.now() - message.born >= MAX_AGE_MS) return { status: "unauthorized" };
+    let meta = await this.meta();
+    // No note yet: the tab has not reached the relay (still connecting, or its socket is blocked).
+    // The token is young and was never revoked (a revoked note stays until its alarm), so the
+    // note starts here as fetch() would start it; calls then wait for the tab ("no-tab").
+    if (!meta) {
+      meta = { createdAt: message.born, expiresAt: message.born + MAX_AGE_MS, revoked: false, agent: null };
+      await this.save(meta);
+    }
     if (!this.valid(meta)) return { status: "unauthorized" };
-    if (this.now() - message.born >= MAX_AGE_MS) return { status: "unauthorized" };
     if (message.op === "auth") return { status: "ok" };
     if (message.op === "agent") {
       meta.agent = { name: String(message.name ?? "").slice(0, 60), version: String(message.version ?? "").slice(0, 30) };

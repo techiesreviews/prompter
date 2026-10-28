@@ -439,16 +439,20 @@ function renderAgent() {
     act.dataset.state = live ? s : "offline";
     act.toggleAttribute("data-copied", agent.copied);
     act.toggleAttribute("data-failed", agent.failed && s === "off");
-    act.querySelector(".mcp-label").textContent = agent.copied ? "Copied"
+    const label = agent.copied ? "Copied"
       : !live ? "Copy MCP"
       : s === "on" ? "Disconnect MCP"
       : s === "elsewhere" ? "Use this tab"
       : s === "waiting" ? "Waiting for MCP"
       : agent.failed ? "No connection, try again" : "Wait for MCP";
+    // Only a changed label is written: the label is a polite live region.
+    const el = act.querySelector(".mcp-label");
+    if (el.textContent !== label) el.textContent = label;
   }
   for (const rows of document.querySelectorAll(".agent-rows")) {
     if (s !== "on") { rows.replaceChildren(); continue; }
-    rows.innerHTML = `<div class="agent-row"><span class="status-dot"></span><span class="agent-name"></span><span class="agent-doing"></span><button class="btn" type="button" data-action="agent-stop">Stop</button></div>`;
+    // The row is built once; later renders change only its text, so focus on Stop stays.
+    if (!rows.firstChild) rows.innerHTML = `<div class="agent-row"><span class="status-dot"></span><span class="agent-name"></span><span class="agent-doing"></span><button class="btn" type="button" data-action="agent-stop">Stop</button></div>`;
     rows.querySelector(".agent-name").textContent = name;
     rows.querySelector(".agent-doing").textContent = agent.doing || "listening";
   }
