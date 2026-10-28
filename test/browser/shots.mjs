@@ -352,7 +352,11 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.deepEqual([await linkItem.textContent(), await linkItem.locator(".i-check").isVisible(), await page.locator("#open-menu:popover-open").count()], ["Copied", true, 1], "Copied with a check, in the open menu");
   assert.deepEqual(await page.locator(".status").evaluate((el) => { const r = el.getBoundingClientRect(); return [r.width <= 1 && r.height <= 1, getComputedStyle(el).clipPath]; }), [true, "inset(50%)"], "status messages are for screen readers only: nothing shows on screen");
   await page.waitForFunction(() => !document.querySelector('#open-menu [data-action="copy-link"][data-copied]'), null, { timeout: 3000 });
-  assert.equal(await linkItem.textContent(), "Copy link");
+  assert.equal(await linkItem.textContent(), "Copy link", "back to Copy link");
+  await linkItem.click();
+  await page.waitForFunction(() => window.__copied.length === 2);
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+  assert.equal(await page.locator(".status").textContent(), "Link copied.", "a second copy is read out again (cleared, then set)");
   await page.keyboard.press("Escape");
   const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
   // A scripted agent: one JSON-RPC POST per message with the copied token, as the message says (curl).

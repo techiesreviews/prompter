@@ -737,7 +737,11 @@ function showLink(si, li, fromUser) {
 }
 
 // Status messages are for screen readers only (the line is visually hidden); errors use showAlert.
-function setStatus(t) { statusEl.textContent = t; }
+// The same message again is cleared first, so it is read out again.
+function setStatus(t) {
+  if (t && statusEl.textContent === t) { statusEl.textContent = ""; requestAnimationFrame(() => { statusEl.textContent = t; }); }
+  else statusEl.textContent = t;
+}
 
 /** A message that must not be missed (errors). Empty text hides it. */
 function showAlert(t) {
