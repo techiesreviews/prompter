@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decodeScript, EXAMPLE_SCRIPT, readHash } from "../src/core.mjs";
+import { readFileSync } from "node:fs";
+import { decodeScript, EXAMPLE_SCRIPT, PRESETS, readHash } from "../src/core.mjs";
 import { RATE_LIMIT } from "../src/limiter.mjs";
 import { handleMcp, MAX_BODY_BYTES, memoryLimiter } from "../src/mcp.mjs";
 import worker from "../src/worker.mjs";
@@ -218,18 +219,22 @@ test("the Worker sends /mcp to the handler (with the Durable Object) and everyth
 // this server with curl. Its facts (headers, protocol version, tools, preset
 // argument) must stay true for the server.
 test("the page's Copy MCP message matches the server", async () => {
-  const app = (await import("node:fs")).readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
-  const message = app.slice(app.indexOf("function mcpPrompt()"), app.indexOf("let copiedTimer"));
+  const app = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
+  const [from, to] = [app.indexOf("function mcpPrompt()"), app.indexOf("let copiedTimer")];
+  assert.ok(from >= 0 && to > from, "mcpPrompt() found in src/app.js");
+  const message = app.slice(from, to);
   const version = message.match(/protocolVersion "([\d-]+)"/)?.[1];
   assert.ok(version, "the message names a protocol version");
   assert.match(message, /Content-Type: application\/json[\s\S]*Accept: application\/json, text\/event-stream/);
   const { result } = await rpc("initialize", { protocolVersion: version, capabilities: {}, clientInfo: { name: "curl", version: "1" } });
   assert.equal(result.protocolVersion, version, "the server speaks the version the message asks for");
   const tools = (await rpc("tools/list")).result.tools.map((t) => t.name);
-  for (const name of message.match(/code\("(\w+)"\)/g).map((m) => m.slice(6, -2)).filter((n) => /_/.test(n))) {
+  for (const name of (message.match(/code\("(\w+)"\)/g) ?? []).map((m) => m.slice(6, -2)).filter((n) => /_/.test(n))) {
     assert.ok(tools.includes(name), `the message names the tool ${name}`);
   }
   for (const name of ["get_format", "check_script", "make_prompter_link"]) assert.ok(message.includes(`code("${name}")`), `the message asks for ${name}`);
-  const format = await call("get_format", { preset: "default" });
-  assert.notEqual(format.isError, true, "tools take the preset the message passes");
+  for (const preset of Object.keys(PRESETS)) {
+    assert.notEqual((await call("get_format", { preset })).isError, true, `get_format takes the preset ${preset}`);
+    assert.notEqual((await call("make_prompter_link", { preset, markdown: EXAMPLE_SCRIPT })).isError, true, `make_prompter_link takes the preset ${preset}`);
+  }
 });
