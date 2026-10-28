@@ -1,6 +1,7 @@
-// Page logic. scripts/build.mjs inlines src/core.mjs and src/follow.mjs above
-// this file inside one function, so parse, PRESETS, DEMO_SCRIPT, encodeScript,
-// followLine, heardLink, linkAt, speechWords … are in scope here.
+// Page logic. scripts/build.mjs inlines src/core.mjs, src/follow.mjs and
+// src/agent.mjs above this file inside one function, so parse, PRESETS,
+// DEMO_SCRIPT, encodeScript, followLine, heardLink, linkAt, speechWords,
+// connectionPrompt, agentName … are in scope here.
 
 // ---------- Player view ----------
 // The main-screen window shows a YouTube video full size via this same page.
@@ -41,14 +42,15 @@ const main = $(".script");
 const statusEl = $(".status");
 const clockBtn = $(".clock");
 const clockTime = $(".clock-time");
-const connectBtn = $(".screen");
+const connectBtn = $(".screen"); // in Settings
+const settingsBtn = $(".settings-btn");
+const openBtn = $(".open-btn");
 const autoBtn = $(".auto");
-const voiceBtn = $(".voice");
+const voiceSwitch = $(".voice"); // in Settings
 const voiceNotice = $(".voice-notice");
 const alertEl = $(".note-row.alert");
 const hintEl = $(".screen-hint");
 const pasteDialog = $(".paste-dialog");
-const copyDialog = $(".copy-dialog");
 const fileInput = $(".file-input");
 const continueBtn = $(".continue");
 const speedInput = $(".speed");
@@ -71,6 +73,7 @@ const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch { /* not available */ } },
+  del(k) { try { localStorage.removeItem(k); } catch { /* not available */ } },
 };
 
 let scriptText = "";
@@ -96,8 +99,6 @@ let voiceAt = -1;
 let recognition = null;
 let voiceRestarts = 0;
 let resumeAuto = false;
-
-const mcpUrl = () => (/^https?:$/.test(location.protocol) ? `${location.origin}/mcp` : `${SITE}/mcp`);
 
 // ---------- Opening scripts ----------
 const isEmpty = () => root.dataset.view === "empty";
@@ -298,51 +299,237 @@ function showDialog(dialog) {
   dialog.showModal();
 }
 
-// ---------- Copy MCP ----------
-// As in the script and site editors: one press puts a message on the clipboard
-// that tells an AI assistant how to reach this server's open /mcp for this
-// conversation and write a script with it. Without a clipboard the message is
-// shown, selected, to copy by hand.
-function mcpPrompt() {
-  const code = (text) => `\`${text}\``;
-  return `Connect to Prompter for this conversation using a temporary, direct MCP connection over streamable HTTP, so you can help me write a teleprompter script.
+// ---------- Your own agent over MCP (live relay) ----------
+// As in the script editor: Wait for MCP copies a message with a fresh token
+// from the Worker, and this tab keeps a WebSocket to this site's /api/relay.
+// The agent then reaches this tab through its relay to open a script
+// (show_script) or read the open one (get_open_script); the relay keeps no
+// script. Disconnect MCP revokes the token, so the agent's calls get 401.
+// An offline copy (file://) has no relay: its Copy MCP copies the open
+// server's message, which answers with a link instead.
+const live = /^https?:$/.test(location.protocol);
+const AGENT_KEY = "prompter-agent";
+const AGENT_MAX_AGE = 8 * 60 * 60 * 1000;
+const agent = { token: null, createdAt: 0, ws: null, state: "off", info: null, retry: 0, timer: 0, copied: false, copiedTimer: 0, failed: false, doing: "", doingTimer: 0 };
+const relayUrl = () => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/relay`;
 
-Server: ${code(mcpUrl())} (open, no sign-in)
-
-**Use curl to send MCP JSON-RPC requests. Do not modify MCP configuration, install anything, create helper files, or restart yourself.**
-
-Send each JSON-RPC message as its own POST with the headers ${code("Content-Type: application/json")} and ${code("Accept: application/json, text/event-stream")}; the response body is the JSON-RPC result. Start with ${code("initialize")} (protocolVersion "2025-11-25"), then use ${code("tools/call")}. Use the style preset ${code(preset)} in every tool call.
-
-1. Call ${code("get_format")} and follow the format and the rules it returns.
-2. Interview me about my video or livestream, a few questions at a time.
-3. Write the script, call ${code("check_script")} and fix what it reports.
-4. Call ${code("make_prompter_link")} and give me the link: it opens the script in the prompter. The script travels inside the link; nothing is stored on the server.`;
+// Tokens come from the Worker, which writes its own time into them. A clipboard write needs the click itself, so a
+// spare is fetched when the Open menu opens or the start screen's button is about to be pressed; it is used if it is
+// younger than ten minutes. Ages here use this tab's clock, counted from when the token arrived.
+const SPARE_MS = 10 * 60 * 1000;
+let spareToken = null;
+let spareFetch = null;
+let tokenWait = false;
+function fetchToken() {
+  return fetch("/api/agent-token", { method: "POST", cache: "no-store" })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((b) => (typeof b?.token === "string" && b.token ? { token: b.token, at: Date.now() } : null))
+    .catch(() => null);
 }
+function prefetchToken() {
+  if (!live || liveToken() || spareFetch || (spareToken && Date.now() - spareToken.at < SPARE_MS)) return;
+  spareFetch = fetchToken().then((t) => { spareFetch = null; if (t) spareToken = t; return t; });
+}
+const liveToken = () => Boolean(agent.token) && Date.now() - agent.createdAt < AGENT_MAX_AGE;
 
-let copiedTimer = 0;
-function showCopied(button) {
-  document.querySelectorAll(".copy-mcp").forEach((b) => {
-    const on = b === button;
-    b.toggleAttribute("data-copied", on);
-    b.querySelector(".copy-label").textContent = on ? "Copied" : "Copy MCP";
+function connectRelay() {
+  clearTimeout(agent.timer);
+  if (!agent.token) return;
+  if (Date.now() - agent.createdAt >= AGENT_MAX_AGE) { disconnectAgent(); return; }
+  try { agent.ws?.close(); } catch { /* closed */ }
+  const ws = new WebSocket(relayUrl(), ["prompter", `t.${agent.token}`]);
+  agent.ws = ws;
+  ws.addEventListener("open", () => { agent.retry = 0; });
+  ws.addEventListener("message", (e) => {
+    if (agent.ws !== ws) return; // a detached socket (Disconnect) only carries the revoke
+    let m;
+    try { m = JSON.parse(e.data); } catch { return; }
+    onRelayMessage(m);
+  });
+  ws.addEventListener("close", (e) => {
+    if (agent.ws !== ws) return;
+    agent.ws = null;
+    if (e.code === 4001) { agent.state = "elsewhere"; renderAgent(); return; }
+    if (e.code === 4003) { forgetAgent(); return; }
+    if (!agent.token) return;
+    const delay = Math.min(30000, 1000 * 2 ** agent.retry++) * (0.75 + Math.random() * 0.5);
+    agent.timer = setTimeout(connectRelay, delay);
   });
 }
-async function copyMcp(button) {
-  const text = mcpPrompt();
+function onRelayMessage(m) {
+  if (m.type === "agent") {
+    agent.info = { name: String(m.name || ""), version: String(m.version || "") };
+    agent.state = "on";
+    renderAgent();
+  } else if (m.type === "call" && typeof m.id === "string") {
+    if (agent.state !== "on") { agent.state = "on"; renderAgent(); }
+    handleCall(m);
+  }
+}
+function forgetAgent() {
+  clearTimeout(agent.timer);
+  const ws = agent.ws;
+  agent.ws = null;
+  try { ws?.close(1000, "bye"); } catch { /* closed */ }
+  agent.token = null;
+  agent.createdAt = 0;
+  agent.info = null;
+  agent.state = "off";
+  store.del(AGENT_KEY);
+  renderAgent();
+}
+// Disconnect MCP: the relay forgets the token, so the agent is refused from now on.
+function disconnectAgent() {
+  // Detach the socket and token first, then show "off" at once; the revoke finishes quietly behind it.
+  const token = agent.token;
+  let ws = agent.ws;
+  agent.ws = null; // the close handler now ignores this socket and won't reconnect
+  forgetAgent();
+  if (!token) return;
+  const close = () => { try { ws?.close(1000, "bye"); } catch { /* closed */ } };
+  const send = () => { try { ws.send(JSON.stringify({ type: "revoke" })); } catch { /* closed */ } setTimeout(close, 200); };
+  try {
+    if (!ws || ws.readyState >= WebSocket.CLOSING) ws = new WebSocket(relayUrl(), ["prompter", `t.${token}`]);
+    if (ws.readyState === WebSocket.OPEN) send();
+    else ws.addEventListener("open", send, { once: true });
+  } catch { /* offline: the token still ends after 8 hours */ }
+  setTimeout(close, 5000);
+}
+
+// What the agent did last shows in its row for a few seconds, then "listening" again.
+function showDoing(text) {
+  agent.doing = text;
+  clearTimeout(agent.doingTimer);
+  agent.doingTimer = setTimeout(() => { agent.doing = ""; renderAgent(); }, 5000);
+  renderAgent();
+}
+
+async function handleCall({ id, tool, args = {} }) {
+  const ws = agent.ws;
+  const send = (payload) => { try { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "result", id, ...payload })); } catch { /* closed */ } };
+  try {
+    if (tool === "get_open_script") {
+      showDoing("reading your script");
+      return send({ result: isEmpty() ? { open: false } : { open: true, markdown: scriptText, preset } });
+    }
+    if (tool === "show_script") {
+      // Opened like a #s= link: its preset, and kept as this browser's last script.
+      const text = typeof args.markdown === "string" ? args.markdown : "";
+      if (text.length > MAX_SCRIPT_CHARS) return send({ error: `The script is longer than ${MAX_SCRIPT_CHARS} characters.` });
+      if (!parse(text).length) return send({ error: "No sections found. Each section starts with a title line like: ### **INTRO · 00:00**" });
+      preset = PRESETS[args.preset] ? args.preset : "default";
+      store.set(PRESET_KEY, preset);
+      showAlert("");
+      await openScript(text, { label: `Opened from ${agentName(agent.info?.name)}` });
+      showDoing("opened a script");
+      return send({ result: { opened: true, sections: sections.length } });
+    }
+    send({ error: `Unknown tool: ${tool}` });
+  } catch (error) {
+    send({ error: `The prompter could not do that: ${error?.message || error}` });
+  }
+}
+
+// The action reads Wait for MCP, Waiting for MCP, Disconnect MCP or Use this tab (Copy MCP offline);
+// "Copied" with a check for two seconds after a copy. The Open button shows a dot and names the state.
+function renderAgent() {
+  const s = agent.state;
+  const name = agentName(agent.info?.name);
+  for (const act of document.querySelectorAll(".mcp-action")) {
+    act.dataset.state = live ? s : "offline";
+    act.toggleAttribute("data-copied", agent.copied);
+    act.toggleAttribute("data-failed", agent.failed && s === "off");
+    act.querySelector(".mcp-label").textContent = agent.copied ? "Copied"
+      : !live ? "Copy MCP"
+      : s === "on" ? "Disconnect MCP"
+      : s === "elsewhere" ? "Use this tab"
+      : s === "waiting" ? "Waiting for MCP"
+      : agent.failed ? "No connection, try again" : "Wait for MCP";
+  }
+  for (const rows of document.querySelectorAll(".agent-rows")) {
+    if (s !== "on") { rows.replaceChildren(); continue; }
+    rows.innerHTML = `<div class="agent-row"><span class="status-dot"></span><span class="agent-name"></span><span class="agent-doing"></span><button class="btn" type="button" data-action="agent-stop">Stop</button></div>`;
+    rows.querySelector(".agent-name").textContent = name;
+    rows.querySelector(".agent-doing").textContent = agent.doing || "listening";
+  }
+  const where = s === "on" ? ` · MCP connected to ${name}` : s === "waiting" ? " · waiting for MCP" : s === "elsewhere" ? " · MCP open in another tab" : "";
+  if (s === "on" || s === "waiting") openBtn.dataset.dot = s; else delete openBtn.dataset.dot;
+  openBtn.setAttribute("aria-label", `Open${where}`);
+  openBtn.dataset.tip = `Open a script${where}`;
+}
+
+async function copyPrompt(button, text) {
+  const box = button.parentElement.querySelector(".mcp-prompt");
   try {
     await navigator.clipboard.writeText(text);
   } catch {
-    showDialog(copyDialog);
-    const box = copyDialog.querySelector(".copy-text");
+    // No clipboard here: show the message, selected, to copy by hand.
     box.value = text;
+    box.hidden = false;
     box.focus();
     box.select();
     return;
   }
-  showCopied(button);
-  clearTimeout(copiedTimer);
-  copiedTimer = setTimeout(() => showCopied(null), 2000);
+  box.hidden = true;
+  agent.copied = true;
+  renderAgent();
+  clearTimeout(agent.copiedTimer);
+  agent.copiedTimer = setTimeout(() => { agent.copied = false; renderAgent(); }, 2000);
 }
+
+async function pressMcp(button) {
+  if (!live) { copyPrompt(button, openPrompt(`${SITE}/mcp`, preset)); return; }
+  if (agent.state === "on") { disconnectAgent(); return; }
+  if (agent.state === "elsewhere") { agent.state = "waiting"; connectRelay(); renderAgent(); return; }
+  if (!liveToken()) {
+    if (tokenWait) return;
+    let t = spareToken && Date.now() - spareToken.at < SPARE_MS ? spareToken : null;
+    spareToken = null;
+    if (!t) {
+      tokenWait = true;
+      agent.failed = false; // a retry clears the last "No connection"
+      renderAgent();
+      button.setAttribute("aria-busy", "true");
+      t = await (spareFetch ?? fetchToken());
+      tokenWait = false;
+      button.removeAttribute("aria-busy");
+      if (spareToken === t) spareToken = null;
+    }
+    if (liveToken()) return;
+    // No token from the Worker (offline, say): it stays off, and the button says so until the next try.
+    if (!t) { agent.failed = true; renderAgent(); return; }
+    agent.failed = false;
+    agent.token = t.token;
+    agent.createdAt = t.at;
+    store.set(AGENT_KEY, JSON.stringify({ token: agent.token, createdAt: agent.createdAt }));
+    connectRelay();
+  } else if (!agent.ws) connectRelay();
+  if (agent.state !== "on") agent.state = "waiting";
+  renderAgent();
+  copyPrompt(button, connectionPrompt(`${location.origin}/mcp`, agent.token, preset));
+}
+
+$("#open-menu").addEventListener("toggle", (e) => {
+  if (e.newState === "open") prefetchToken();
+  else $("#open-menu .mcp-prompt").hidden = true;
+});
+const startMcp = $(".empty .mcp-action");
+for (const type of ["pointerenter", "focus", "pointerdown"]) startMcp.addEventListener(type, prefetchToken);
+if (live) {
+  // A keepalive the relay answers without waking up.
+  setInterval(() => { try { if (agent.ws?.readyState === WebSocket.OPEN) agent.ws.send('{"type":"ping"}'); } catch { /* closed */ } }, 45_000);
+  // A token lives at most eight hours; then it is dropped like Disconnect MCP.
+  setInterval(() => { if (agent.token && !liveToken()) disconnectAgent(); }, 60_000);
+  let saved = null;
+  try { saved = JSON.parse(store.get(AGENT_KEY) || "null"); } catch { /* damaged: dropped below */ }
+  if (typeof saved?.token === "string" && Date.now() - saved.createdAt < AGENT_MAX_AGE) {
+    agent.token = saved.token;
+    agent.createdAt = saved.createdAt;
+    agent.state = "waiting";
+    connectRelay();
+  } else if (store.get(AGENT_KEY)) store.del(AGENT_KEY);
+}
+renderAgent();
 
 // ---------- Reading line ----------
 // Dragged anywhere along it (or moved with the keys when focused) to camera height and
@@ -467,10 +654,22 @@ function updateActive() {
 // ---------- Main screen ----------
 function connected() { return mainWin && !mainWin.closed; }
 
+// The main screen's row in Settings; the Settings button shows a dot while it is connected.
 function setConnected(on) {
   connectBtn.dataset.on = String(on);
+  connectBtn.textContent = on ? "Reconnect" : "Connect";
   connectBtn.setAttribute("aria-label", on ? "Main screen connected, reconnect" : "Connect main screen");
-  connectBtn.dataset.tip = on ? "Main screen connected · click to reconnect" : "Connect main screen · links open there";
+  $(".screen-state").textContent = on ? "Connected" : "Not connected";
+  updateSettingsBtn();
+}
+
+// A dot on the Settings button, and its name, while Follow my voice is on or a main screen is connected.
+function updateSettingsBtn() {
+  const on = [voiceOn && "Follow my voice on", connectBtn.dataset.on === "true" && "main screen connected"].filter(Boolean);
+  if (on.length) settingsBtn.dataset.dot = "on"; else delete settingsBtn.dataset.dot;
+  const label = ["Settings", ...on].join(" · ");
+  settingsBtn.setAttribute("aria-label", label);
+  settingsBtn.dataset.tip = label;
 }
 
 function connect() {
@@ -547,16 +746,16 @@ function showHint(label) {
   hintShown = true;
   $(".hint-text").textContent = `“${label}” would open on your main screen now. Connect a main screen and links open by themselves.`;
   hintEl.hidden = false;
-  connectBtn.dataset.hint = "true";
+  settingsBtn.dataset.hint = "true";
   hintTimer = setTimeout(hideHint, 15000);
 }
 function hideHint() {
   clearTimeout(hintTimer);
   hintEl.hidden = true;
-  delete connectBtn.dataset.hint;
+  delete settingsBtn.dataset.hint;
 }
 
-function lost() { showAlert("Main screen window lost. Click the main screen button in the bar, or a link button."); }
+function lost() { showAlert("Main screen window lost. Connect it again in Settings, or click a link button."); }
 function blocked() { showAlert("No window could open. Allow pop-ups for this page."); }
 
 // ---------- Clock ----------
@@ -654,12 +853,14 @@ function markLine(k) {
 }
 
 function setVoiceButton() {
-  voiceBtn.setAttribute("aria-pressed", String(voiceOn));
+  voiceSwitch.checked = voiceOn;
+  updateSettingsBtn();
 }
 
 function toggleVoice() {
   if (voiceOn) { stopVoice(); setStatus("Follow my voice is off."); return; }
   if (store.get(VOICE_OK_KEY) !== "yes") {
+    hidePopovers(); // the notice shows above the bar, where Settings was
     voiceNotice.hidden = false;
     voiceNotice.querySelector('[data-action="voice-ok"]').focus();
     return;
@@ -844,10 +1045,10 @@ for (const type of ["wheel", "touchmove", "scrollend"]) {
     if (voiceOn && !voiceScrolling) requestAnimationFrame(() => { voiceAt = lineAtReadingLine(); });
   }, { passive: true });
 }
-connectBtn.addEventListener("click", connect);
 clockBtn.addEventListener("click", startClock);
 autoBtn.addEventListener("click", toggleAuto);
-voiceBtn.addEventListener("click", toggleVoice);
+// The switch shows whether it is on; the first turn-on waits for the notice's Turn on.
+voiceSwitch.addEventListener("change", () => { voiceSwitch.checked = voiceOn; toggleVoice(); });
 $(".prev").addEventListener("click", () => goSection(-1));
 $(".next").addEventListener("click", () => goSection(1));
 speedInput.addEventListener("input", () => setSpeed(Number(speedInput.value)));
@@ -863,11 +1064,12 @@ main.addEventListener("click", (e) => {
   }
   showLink(Number(b.dataset.s), Number(b.dataset.l), true);
 });
+const KEEP_OPEN = new Set(["mcp", "agent-stop", "connect"]);
 document.addEventListener("click", (e) => {
   const button = e.target.closest("[data-action]");
   const action = button?.dataset.action;
   if (!action) return;
-  if (button.closest(".pop") && action !== "copy-mcp") hidePopovers(); // Copy MCP confirms in place
+  if (button.closest(".pop") && !KEEP_OPEN.has(action)) hidePopovers(); // these confirm in place
   if (action === "open-file") fileInput.click();
   else if (action === "paste") openPaste();
   else if (action === "open-paste") submitPaste();
@@ -876,7 +1078,8 @@ document.addEventListener("click", (e) => {
   else if (action === "start") { showAlert(""); history.pushState(null, "", plainAddress()); showStart(); }
   else if (action === "demo") { showAlert(""); openDemo(); }
   else if (action === "continue") { showAlert(""); openScript(store.get(LAST_KEY) || "", { label: "Your last script" }); }
-  else if (action === "copy-mcp") copyMcp(button);
+  else if (action === "mcp") pressMcp(button);
+  else if (action === "agent-stop") disconnectAgent();
   else if (action === "dismiss") showAlert("");
   else if (action === "connect") connect();
   else if (action === "hint-ok") hideHint();
@@ -927,7 +1130,7 @@ document.addEventListener("keydown", (e) => {
 });
 
 // ---------- Start ----------
-voiceBtn.hidden = !Recognition;
+$(".voice-row").hidden = !Recognition;
 setLine(store.get(LINE_KEY));
 setSpeed(speed);
 setSize(Number(store.get("prompter-size")) || (window.innerWidth < 640 ? 32 : 52));

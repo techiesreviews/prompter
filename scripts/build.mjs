@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Builds dist/: one self-contained index.html (core, follow + app inlined), the
+// Builds dist/: one self-contained index.html (core, follow, agent + app inlined), the
 // _headers file whose Content-Security-Policy pins that inline script's hash,
 // and the two font files (the page falls back to system fonts without them).
 // Usage: node scripts/build.mjs [outDir=dist]
@@ -14,7 +14,7 @@ const read = (file) => readFileSync(join(root, file), "utf8");
 export const FONTS = ["inter-latin.woff2", "roboto-mono-latin.woff2", "OFL.txt"];
 
 /** Shared modules inlined into the page, in this order, without `export`. */
-export const INLINED = ["src/core.mjs", "src/follow.mjs"];
+export const INLINED = ["src/core.mjs", "src/follow.mjs", "src/agent.mjs"];
 
 /** Inline the page script: the shared modules, then the app, in one function scope. */
 export function pageScript() {
@@ -42,6 +42,9 @@ export function build(dir = join(root, "dist")) {
     "style-src 'unsafe-inline'",
     "img-src data:",
     "font-src 'self'",
+    // Only the page's own calls: a token for Wait for MCP and the relay's WebSocket (wss: spelled out for
+    // browsers whose 'self' does not cover it).
+    "connect-src 'self' wss://prompter.techies.tools",
     "frame-src https://www.youtube.com",
     "base-uri 'none'",
     "form-action 'none'",

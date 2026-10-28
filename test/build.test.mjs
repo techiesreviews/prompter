@@ -12,7 +12,11 @@ const headers = readFileSync(join(dist, "_headers"), "utf8");
 test("the page is one self-contained file: no external scripts, styles or fetches", () => {
   assert.doesNotMatch(html, /<script[^>]+src=/i);
   assert.doesNotMatch(html, /<link[^>]+rel="stylesheet"/i);
-  assert.doesNotMatch(html, /@import|fetch\(|XMLHttpRequest|import\(/);
+  assert.doesNotMatch(html, /@import|XMLHttpRequest|import\(|sendBeacon|EventSource/);
+  // Its only calls go to its own site, for the live connection to your agent: a token and the relay.
+  assert.deepEqual(html.match(/fetch\([^,)]*/g), ['fetch("/api/agent-token"']);
+  assert.deepEqual(html.match(/new WebSocket\([^,)]*/g), ["new WebSocket(relayUrl(", "new WebSocket(relayUrl("]);
+  assert.ok(html.includes('`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/relay`'), "the relay is on this site");
   assert.doesNotMatch(html, /^export /m);
   assert.ok(html.includes("function parse(md)"));
   assert.ok(html.includes("<!--SCRIPT-START-->") && html.includes("<!--SCRIPT-END-->"));
@@ -27,6 +31,7 @@ test("the CSP pins the hash of the inline script", () => {
   assert.match(headers, /frame-src https:\/\/www\.youtube\.com;/);
   assert.doesNotMatch(headers, /nocookie/);
   assert.match(headers, /font-src 'self';/);
+  assert.match(headers, /connect-src 'self' wss:\/\/prompter\.techies\.tools;/, "calls only to this site");
 });
 
 test("the fonts and their licence ship in dist/fonts; the page loads them only when served", () => {

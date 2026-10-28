@@ -177,11 +177,23 @@ export async function run({ browser, base, mode, dist, out }) {
   };
   const watch = (page, label) => {
     page.on("pageerror", (e) => errors.push(`${label} pageerror: ${e.message}`));
-    page.on("console", (m) => { if (m.type() === "error") errors.push(`${label} console: ${m.text()}`); });
+    page.on("console", (m) => {
+      // A static server has no Worker: Wait for MCP's token request gets a 404 there (No connection, try again).
+      if (mode === "static" && m.location()?.url?.includes("/api/")) return;
+      if (m.type() === "error") errors.push(`${label} console: ${m.text()}`);
+    });
   };
   const noOverflow = async (page, label) => {
     const [sw, iw] = await page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]);
     assert.ok(sw <= iw + 1, `${label}: page is ${sw}px wide in a ${iw}px viewport`);
+  };
+  // Follow my voice and the main screen live in the Settings popover: press one there, then
+  // close it as a click outside would (focus back on Settings without a keyboard ring).
+  const viaSettings = async (page, sel) => {
+    await (await dock(page, ".settings-btn")).click();
+    await page.locator("#settings:popover-open").waitFor();
+    await page.locator(`#settings ${sel}`).click();
+    await page.evaluate(() => { const pop = document.querySelector("#settings"); if (pop.matches(":popover-open")) pop.hidePopover(); });
   };
   // Both follow the reading line wherever it is (dragged or the default 34%).
   const scrollToSection = (page, i) => page.evaluate((n) => {
@@ -219,14 +231,14 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), NIGHT);
   const card = page.locator(".empty .card");
   assert.equal(await card.locator("h1").textContent(), "Your teleprompter");
-  assert.deepEqual(await card.locator(".choices .btn:not([hidden])").allTextContents(), ["Open a script file", "Paste a script", "Copy MCP", "Try the demo"]);
+  assert.deepEqual(await card.locator(".choices .btn:not([hidden])").allTextContents(), ["Open a script file", "Paste a script", "Wait for MCP", "Try the demo"]);
   assert.equal(await card.locator(".btn.primary").textContent(), "Open a script file", "one orange primary action");
   assert.match(await card.textContent(), /drop a \.md or \.txt file anywhere[\s\S]*Your script stays on this device/);
   const cardBox = await card.boundingBox();
   assert.ok(Math.abs(cardBox.x + cardBox.width / 2 - 683) < 2 && Math.abs(cardBox.y + cardBox.height / 2 - 450) < 2, `card centred: ${JSON.stringify(cardBox)}`);
   assert.equal(await card.evaluate((el) => getComputedStyle(el).textAlign), "start", "card text starts on the left");
   await shot(page, "start-desktop");
-  ok("the plain address shows the start screen: a centred card with one orange Open a script file, Paste, Copy MCP, Try the demo, the drop hint and the privacy line; no sidebar, no bar, no script; indigo page; Inter and Roboto Mono");
+  ok("the plain address shows the start screen: a centred card with one orange Open a script file, Paste, Wait for MCP, Try the demo, the drop hint and the privacy line; no sidebar, no bar, no script; indigo page; Inter and Roboto Mono");
 
   // Open a script file is a real button: Enter on it opens the file picker.
   await card.locator('[data-action="open-file"]').focus();
@@ -239,7 +251,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await page.goBack();
   await showsStart(page);
   assert.equal(await card.locator(".continue").textContent(), "Continue: MY TALK", "the last script is offered by its first section after PREP");
-  assert.deepEqual(await card.locator(".choices .btn:not([hidden])").allTextContents(), ["Continue: MY TALK", "Open a script file", "Paste a script", "Copy MCP", "Try the demo"]);
+  assert.deepEqual(await card.locator(".choices .btn:not([hidden])").allTextContents(), ["Continue: MY TALK", "Open a script file", "Paste a script", "Wait for MCP", "Try the demo"]);
   await shot(page, "start-continue-desktop");
   await page.reload();
   await showsStart(page);
@@ -291,9 +303,9 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.ok(Math.abs(dockBox.x + dockBox.width / 2 - 683) < 2, "the control bar is centred");
   assert.ok(dockBox.y + dockBox.height <= 900 && dockBox.y > 900 - 100, `control bar at ${Math.round(dockBox.y)}px`);
   assert.deepEqual(await page.locator(".dock > button:not([hidden])").evaluateAll((els) => els.map((el) => el.getAttribute("aria-label") || el.textContent.trim())),
-    ["Open", "Previous section", "Auto-scroll", "Next section", "Connect main screen", "Start the show clock, 00:00", "Settings"]);
+    ["Open", "Previous section", "Auto-scroll", "Next section", "Start the show clock, 00:00", "Settings"]);
   await shot(page, "demo-desktop");
-  ok("Try the demo: #demo, PREP is a plain checklist (no buttons); text starts on the left in a centred 960px column; section title left, time right; the bar: Open, previous, play, next, main screen, clock, Settings, centred at the bottom");
+  ok("Try the demo: #demo, PREP is a plain checklist (no buttons); text starts on the left in a centred 960px column; section title left, time right; the bar: Open, previous, play, next, clock, Settings (no mic or monitor: those are in Settings), centred at the bottom");
 
   // Inactive lines stay readable: their colour is the AA dim token, not faded with opacity.
   const looks = await page.evaluate(() => {
@@ -307,7 +319,7 @@ export async function run({ browser, base, mode, dist, out }) {
   // The Open popover: above its button; Escape closes it and focus returns.
   await (await dock(page, ".open-btn")).click();
   await popAbove(page, "#open-menu", ".open-btn", "desktop Open");
-  assert.deepEqual(await page.locator("#open-menu .item").allTextContents(), ["Open a script file", "Paste a script", "Copy link", "Copy MCP", "Back to the start"]);
+  assert.deepEqual(await page.locator("#open-menu .item").allTextContents(), ["Open a script file", "Paste a script", "Copy link", "Wait for MCP", "Back to the start"]);
   await page.locator('#open-menu [data-action="open-file"]').focus();
   await shot(page, "open-popover-desktop");
   await page.keyboard.press("Escape");
@@ -318,38 +330,132 @@ export async function run({ browser, base, mode, dist, out }) {
   await page.locator("#open-menu:popover-open").waitFor();
   await page.mouse.click(1200, 200);
   assert.equal(await page.locator("#open-menu:popover-open").count(), 0, "a click outside closes it");
-  // Copy MCP (as in the script and site editors): one press copies a message for an AI
-  // assistant with this server's /mcp; the menu stays open and confirms with a check.
+  // Your agent over MCP, as in the script editor, lives in the Open menu: Wait for MCP copies a
+  // message with a token (Copied and a check for 2 seconds, then Waiting for MCP); the agent's
+  // calls reach this tab through the local relay. Its own context, so this page keeps its demo.
   const clip = (page, fail = false) => page.evaluate((fail) => {
     window.__copied = [];
     navigator.clipboard.writeText = async (t) => { if (fail) throw new Error("denied"); window.__copied.push(t); };
   }, fail);
-  await clip(page);
   await (await dock(page, ".open-btn")).click();
-  const copyItem = page.locator('#open-menu [data-action="copy-mcp"]');
-  await copyItem.click();
-  const [prompt] = await page.evaluate(() => window.__copied);
-  const mcpAt = `${base}/mcp`;
-  assert.ok(prompt.includes(`Server: \`${mcpAt}\``), `the message names this server's /mcp: ${prompt.slice(0, 200)}`);
-  assert.match(prompt, /temporary, direct MCP connection[\s\S]*Use curl[\s\S]*Do not modify MCP configuration[\s\S]*`initialize`[\s\S]*style preset `default`[\s\S]*`get_format`[\s\S]*`check_script`[\s\S]*`make_prompter_link`/);
-  assert.equal(await page.locator("#open-menu:popover-open").count(), 1, "the menu stays open to confirm");
-  assert.deepEqual([await copyItem.textContent(), await copyItem.getAttribute("data-copied"), await copyItem.locator(".i-check").isVisible(), await copyItem.locator(".i-copy").isVisible()], ["Copied", "", true, false], "Copied, with a check");
-  assert.equal(await page.locator(".status").textContent(), "", "no status line: the menu item alone confirms");
-  assert.equal(await copyItem.locator(".copy-label").getAttribute("aria-live"), "polite", "screen readers still hear Copied");
-  await shot(page, "copy-mcp-desktop");
-  await page.waitForFunction(() => !document.querySelector("#open-menu .copy-mcp[data-copied]"), null, { timeout: 3000 });
-  assert.deepEqual([await copyItem.textContent(), await copyItem.getAttribute("data-copied")], ["Copy MCP", null], "back to Copy MCP after 2 seconds");
-  // Without a clipboard the message is shown, selected, to copy by hand.
-  await clip(page, true);
-  await copyItem.click();
-  await page.locator(".copy-dialog[open]").waitFor();
-  assert.equal(await page.locator("#open-menu:popover-open").count(), 0);
-  assert.deepEqual(await page.locator(".copy-text").evaluate((el) => [el.value.length > 0, el.selectionStart, el.selectionEnd === el.value.length, document.activeElement === el, el.value.includes("make_prompter_link")]), [true, 0, true, true, true], "the message, selected");
-  await shot(page, "copy-mcp-manual-desktop");
+  await page.locator("#open-menu:popover-open").waitFor();
+  const mcpItem = page.locator("#open-menu .mcp-action");
+  assert.deepEqual([await mcpItem.getAttribute("data-state"), await mcpItem.locator(".i-copy").isVisible(), await mcpItem.locator(".mcp-label").getAttribute("aria-live")], ["off", true, "polite"], "Wait for MCP with a copy icon, announced politely");
+  assert.equal(await page.locator(".copy-dialog, .ai-dialog, .copy-mcp").count(), 0, "one copy flow: no Copy MCP item or dialog any more");
   await page.keyboard.press("Escape");
-  await page.locator(".copy-dialog:not([open])").waitFor({ state: "attached" });
-  assert.equal(await page.locator(".ai-dialog").count(), 0, "no Use your AI dialog any more");
-  ok("Open popover above its button: Open a script file, Paste, Copy link, Copy MCP, Back to the start; Escape and a click outside close it and focus returns to the button; Copy MCP copies a message for an AI assistant (this server's /mcp, a temporary curl connection, the preset, get_format, check_script, make_prompter_link), confirms with Copied and a check in the open menu for 2 seconds, and without a clipboard shows the message selected in a dialog");
+  const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+  // A scripted agent: one JSON-RPC POST per message with the copied token, as the message says (curl).
+  let agentId = 100;
+  const agentRpc = async (token, method, params) => {
+    for (let tries = 0; ; tries++) {
+      const res = await fetch(`${base}/mcp`, { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream", authorization: `Bearer ${token}` }, body: JSON.stringify({ jsonrpc: "2.0", id: agentId++, method, ...(params ? { params } : {}) }) });
+      if (res.status === 429 && tries < 3) { await sleep((Number(res.headers.get("retry-after")) || 5) * 1000 + 200); continue; }
+      return { status: res.status, body: await res.json() };
+    }
+  };
+  const agentCall = async (token, name, args = {}) => (await agentRpc(token, "tools/call", { name, arguments: args })).body.result;
+  const state = (p, sel) => p.locator(sel).getAttribute("data-state");
+  const live = await browser.newContext(DESKTOP);
+  await live.addInitScript(NO_SPEECH);
+  const A = await live.newPage();
+  watch(A, "agent tab");
+  await A.goto(`${base}/#demo`);
+  await A.locator(".section").first().waitFor();
+  await clip(A);
+  await (await dock(A, ".open-btn")).click();
+  await popAbove(A, "#open-menu", ".open-btn", "Open with the agent block");
+  const act = A.locator("#open-menu .mcp-action");
+  await act.click();
+  if (mode === "wrangler") {
+    await A.waitForFunction(() => window.__copied.length === 1);
+    const [prompt] = await A.evaluate(() => window.__copied);
+    const token = prompt.match(/Bearer (tp1-[\w-]+)/)?.[1];
+    assert.ok(token, `the message carries a token: ${prompt.slice(0, 300)}`);
+    assert.ok(prompt.includes(`Server: \`${base}/mcp\``), "the message names this server's /mcp");
+    assert.match(prompt, /temporary, direct MCP connection[\s\S]*Do not modify MCP configuration[\s\S]*Keep the token in memory[\s\S]*`Authorization`[\s\S]*protocolVersion "2025-11-25"[\s\S]*at least 40 seconds[\s\S]*style preset `default`[\s\S]*`get_format`[\s\S]*`check_script`[\s\S]*`show_script`[\s\S]*`get_open_script`[\s\S]*`make_prompter_link` only if I ask[\s\S]*Disconnect MCP: calls then fail with 401/);
+    assert.equal(await A.locator("#open-menu:popover-open").count(), 1, "the menu stays open to confirm");
+    assert.deepEqual([await act.textContent(), await act.getAttribute("data-copied"), await act.locator(".i-check").isVisible(), await act.locator(".i-copy").isVisible()], ["Copied", "", true, false], "Copied, with a check");
+    assert.equal(await A.locator(".status").textContent(), "", "no status line: the menu item alone confirms");
+    assert.deepEqual([await A.locator(".open-btn").getAttribute("data-dot"), await A.locator(".open-btn").getAttribute("aria-label")], ["waiting", "Open · waiting for MCP"], "an orange dot on Open");
+    await shot(A, "mcp-copied-desktop");
+    await A.waitForFunction(() => !document.querySelector("#open-menu .mcp-action[data-copied]"), null, { timeout: 3000 });
+    assert.deepEqual([await act.textContent(), await state(A, "#open-menu .mcp-action"), await act.locator(".i-copy").isVisible()], ["Waiting for MCP", "waiting", true], "Waiting for MCP after 2 seconds; pressing again copies again");
+    assert.equal(await A.locator(".status").textContent(), "", "no status line while waiting");
+    await shot(A, "mcp-waiting-desktop");
+    ok("Wait for MCP (Open menu): copies a message with a fresh token (this server's /mcp, a temporary curl connection, Authorization, protocol 2025-11-25, 40 s timeout, the preset, get_format, check_script, show_script, get_open_script, a link only if asked, 401 after Disconnect); Copied with a check for 2 seconds, then Waiting for MCP with an orange dot on the item and on Open; no status line");
+
+    // The agent connects: its name shows; show_script opens the script like a #s= link.
+    const init = await agentRpc(token, "initialize", { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "claude-code", version: "2.1" } });
+    assert.equal(init.status, 200);
+    assert.match(init.body.result.instructions, /show_script/);
+    await A.waitForFunction(() => document.querySelector("#open-menu .mcp-action").dataset.state === "on");
+    assert.deepEqual(await A.locator("#open-menu .agent-row").evaluate((row) => [row.querySelector(".agent-name").textContent, row.querySelector(".agent-doing").textContent, row.querySelector("button").textContent]), ["Claude", "listening", "Stop"]);
+    assert.deepEqual([await act.textContent(), await act.locator(".i-copy").isVisible()], ["Disconnect MCP", false]);
+    assert.deepEqual([await A.locator(".open-btn").getAttribute("data-dot"), await A.locator(".open-btn").getAttribute("aria-label"), await A.locator(".open-btn").getAttribute("data-tip")], ["on", "Open · MCP connected to Claude", "Open a script · MCP connected to Claude"]);
+    const listed = (await agentRpc(token, "tools/list")).body.result.tools.map((t) => t.name);
+    assert.deepEqual(listed, ["get_format", "check_script", "make_prompter_link", "show_script", "get_open_script"]);
+    const shown = await agentCall(token, "show_script", { markdown: EXAMPLE_SCRIPT, preset: "lex" });
+    assert.equal(shown.isError, undefined, JSON.stringify(shown).slice(0, 300));
+    assert.match(shown.content[0].text, /^Opened in the prompter \(preset "lex"\)/);
+    await A.waitForFunction(() => document.querySelectorAll(".section").length === 5);
+    assert.deepEqual(await A.evaluate(() => [location.hash.startsWith("#s=") && location.hash.endsWith("&p=lex"), localStorage.getItem("prompter-last-script"), localStorage.getItem("prompter-preset")]), [true, EXAMPLE_SCRIPT, "lex"], "opened like a #s= link with its preset, and kept as the last script");
+    assert.equal(await A.locator("#open-menu .agent-doing").textContent(), "opened a script");
+    await shot(A, "mcp-connected-desktop");
+    const read = await agentCall(token, "get_open_script");
+    assert.deepEqual(read.structuredContent, { open: true, preset: "lex", markdown: EXAMPLE_SCRIPT });
+    ok("an agent with the copied token: initialize shows its name (claude-code → Claude) with listening and Stop, Disconnect MCP and a green dot on Open; show_script opens the example script with the lex preset in this tab (a #s= address, remembered as the last script); get_open_script reads it back");
+
+    // A second tab takes over; Use this tab takes it back.
+    const B = await live.newPage();
+    watch(B, "agent second tab");
+    await B.goto(`${base}/`);
+    await showsStart(B);
+    await B.waitForFunction(() => document.querySelector(".empty .mcp-action").dataset.state === "on");
+    assert.deepEqual([await B.locator(".empty .mcp-action").textContent(), await B.locator(".empty .agent-name").textContent()], ["Disconnect MCP", "Claude"], "the new tab is connected, its start screen says so");
+    await A.waitForFunction(() => document.querySelector("#open-menu .mcp-action").dataset.state === "elsewhere");
+    assert.deepEqual([await act.textContent(), await act.locator(".i-copy").isVisible(), await A.locator("#open-menu .agent-row").count(), await A.locator(".open-btn").getAttribute("data-dot"), await A.locator(".open-btn").getAttribute("aria-label")],
+      ["Use this tab", false, 0, null, "Open · MCP open in another tab"]);
+    await shot(A, "mcp-elsewhere-desktop");
+    assert.deepEqual((await agentCall(token, "get_open_script")).structuredContent, { open: false }, "calls now reach the new tab (its start screen)");
+    if (!(await A.locator("#open-menu:popover-open").count())) await (await dock(A, ".open-btn")).click();
+    await act.click();
+    await A.waitForFunction(() => document.querySelector("#open-menu .mcp-action").dataset.state === "on");
+    await B.waitForFunction(() => document.querySelector(".empty .mcp-action").dataset.state === "elsewhere");
+    assert.equal(await B.locator(".empty .mcp-action").textContent(), "Use this tab");
+    assert.equal((await agentCall(token, "get_open_script")).structuredContent.open, true, "back in the first tab");
+    await B.close();
+    ok("a second tab with the same token takes over (the first shows Use this tab and loses its dot; calls go to the new tab); Use this tab takes it back");
+
+    // Disconnect MCP: off at once, the token forgotten, the agent refused with 401.
+    await act.click();
+    assert.deepEqual([await act.textContent(), await state(A, "#open-menu .mcp-action"), await A.locator("#open-menu .agent-row").count(), await A.locator(".open-btn").getAttribute("data-dot"), await A.locator(".open-btn").getAttribute("aria-label")],
+      ["Wait for MCP", "off", 0, null, "Open"]);
+    assert.equal(await A.evaluate(() => localStorage.getItem("prompter-agent")), null);
+    assert.equal(await A.locator(".status").textContent(), "Opened from Claude", "no status line for Disconnect (the last one is from opening the script)");
+    let refused;
+    for (let i = 0; i < 25 && refused !== 401; i++) { refused = (await agentRpc(token, "tools/list")).status; if (refused !== 401) await sleep(200); }
+    assert.equal(refused, 401, "after Disconnect MCP the token gets 401");
+    const after = await agentRpc(token, "tools/call", { name: "show_script", arguments: { markdown: EXAMPLE_SCRIPT } });
+    assert.deepEqual([after.status, after.body.error.code], [401, -32001]);
+    ok("Disconnect MCP: back to Wait for MCP at once, no dot, the token dropped from this browser; the agent's next calls get 401");
+
+    // Without a clipboard the message is shown, selected, to copy by hand.
+    await clip(A, true);
+    await act.click();
+    const box = A.locator("#open-menu .mcp-prompt");
+    await box.waitFor();
+    assert.deepEqual(await box.evaluate((el) => [el.selectionStart, el.selectionEnd === el.value.length, document.activeElement === el, /Bearer tp1-/.test(el.value)]), [0, true, true, true], "the message, selected, in the menu");
+    assert.equal(await act.textContent(), "Waiting for MCP");
+    await shot(A, "mcp-manual-desktop");
+    await A.keyboard.press("Escape");
+    assert.equal(await box.isHidden(), true, "closing the menu hides it");
+    ok("without a clipboard the message shows selected in the Open menu, to copy by hand");
+  } else {
+    await A.waitForFunction(() => document.querySelector("#open-menu .mcp-label").textContent === "No connection, try again");
+    assert.deepEqual([await act.locator(".i-copy").isVisible(), await A.evaluate(() => window.__copied.length)], [false, 0]);
+    ok("static mode: Wait for MCP without the Worker says No connection, try again, and copies nothing");
+  }
+  await live.close();
 
   // Paste from the Open popover.
   await (await dock(page, ".open-btn")).click();
@@ -427,17 +533,20 @@ export async function run({ browser, base, mode, dist, out }) {
   await page.mouse.move(700, 300);
   ok("play (orange) toggles auto-scroll, Space on it toggles once; the clock starts on the first press and restarts from 00:00 on the next (tooltip says so), and still turns late; tooltips on hover");
 
-  // Settings: three rows (text size, scroll speed, width), remembered after a reload.
+  // Settings: text size, scroll speed and width (remembered after a reload), then Follow my
+  // voice (only with the speech API) and the main screen.
   await (await dock(page, ".settings-btn")).click();
   await popAbove(page, "#settings", ".settings-btn", "desktop Settings");
   assert.deepEqual(await page.locator("#settings").evaluate((el) => [...el.querySelectorAll(".setting")].map((row) => (row.matches("fieldset") ? row.querySelector("legend") : row).firstChild.textContent.trim())),
-    ["Text size", "Scroll speed", "Width"], "three rows only");
-  assert.equal(await page.locator("#settings").locator("input, select, button, textarea").count(), 5, "two sliders and three width choices, nothing else");
+    ["Text size", "Scroll speed", "Width"]);
+  const toggleRows = (p) => p.locator("#settings .toggle-row:not([hidden])").evaluateAll((rows) => rows.map((r) => r.innerText.replace(/\s+/g, " ").trim()));
+  assert.deepEqual(await toggleRows(page), ["Main screen Not connected Connect"], "no Follow my voice without the speech API; the main screen's row");
+  assert.equal(await page.locator("#settings").locator("input, select, button, textarea").count(), 7, "two sliders, three width choices, the voice switch and Connect, nothing else");
   assert.deepEqual(await page.locator("#settings .seg label").allTextContents(), ["Narrow", "Medium", "Full"]);
   await page.locator(".size").fill("70");
   await page.locator(".speed").fill("120");
   await page.locator('#settings .seg label:has-text("Narrow")').click();
-  assert.deepEqual(await page.locator("#settings .val").allTextContents(), ["70 px", "120"]);
+  assert.deepEqual(await page.locator("#settings .setting .val").allTextContents(), ["70 px", "120"]);
   await shot(page, "settings-popover-desktop");
   const narrowCol = await page.locator(".script").evaluate((el) => el.getBoundingClientRect().width - parseFloat(getComputedStyle(el).paddingLeft) * 2);
   assert.ok(Math.abs(narrowCol - 600) < 2, `narrow column is ${narrowCol}px`);
@@ -528,17 +637,23 @@ export async function run({ browser, base, mode, dist, out }) {
   watch(v, "voice");
   await v.goto(link);
   await v.locator(".section").first().waitFor();
-  await v.locator(".voice").waitFor();
+  await v.locator(".voice-row:not([hidden])").waitFor({ state: "attached" });
   await (await dock(v, ".auto")).click();
   assert.equal(await v.locator(".auto").getAttribute("aria-pressed"), "true");
-  await (await dock(v, ".voice")).click();
+  await viaSettings(v, ".voice");
   await v.locator(".voice-notice:not([hidden])").waitFor();
   assert.match(await v.locator(".voice-notice").textContent(), /speech service[\s\S]*Google[\s\S]*Your script stays on this device/);
   assert.equal(await v.evaluate(() => window.__speech.started), 0, "nothing listens before consent");
   await shot(v, "voice-notice-desktop");
+  assert.equal(await v.locator(".voice").evaluate((el) => el.checked), false, "the switch stays off until Turn on");
   await v.locator('[data-action="voice-ok"]').click();
   assert.equal(await v.evaluate(() => window.__speech.started), 1);
-  assert.equal(await v.locator(".voice").getAttribute("aria-pressed"), "true");
+  assert.equal(await v.locator(".voice").evaluate((el) => String(el.checked)), "true");
+  assert.deepEqual([await v.locator(".settings-btn").getAttribute("data-dot"), await v.locator(".settings-btn").getAttribute("aria-label")], ["on", "Settings · Follow my voice on"], "a dot on Settings while it listens");
+  await (await dock(v, ".settings-btn")).click();
+  await popAbove(v, "#settings", ".settings-btn", "Settings with voice on");
+  await shot(v, "settings-voice-on-desktop");
+  await v.evaluate(() => document.querySelector("#settings").hidePopover());
   assert.equal(await v.locator(".auto").getAttribute("aria-pressed"), "false", "auto-scroll pauses");
   await v.evaluate(() => window.__speech.say("writing scripts takes too long"));
   await v.waitForFunction(() => document.querySelector("p.cur")?.textContent === "Writing scripts takes too long.");
@@ -558,16 +673,17 @@ export async function run({ browser, base, mode, dist, out }) {
   await v.evaluate(() => window.__speech.fail("not-allowed"));
   await v.locator(".note-row.alert:not([hidden])").waitFor();
   assert.match(await v.locator(".alert-text").textContent(), /microphone is blocked/);
-  assert.equal(await v.locator(".voice").getAttribute("aria-pressed"), "false");
+  assert.equal(await v.locator(".voice").evaluate((el) => String(el.checked)), "false");
+  assert.equal(await v.locator(".settings-btn").getAttribute("data-dot"), null);
   assert.equal(await v.locator(".auto").getAttribute("aria-pressed"), "true", "auto-scroll resumes");
   await (await dock(v, ".auto")).click();
   // Consent is remembered: the second time it starts at once.
   await v.reload();
-  await (await dock(v, ".voice")).click();
+  await viaSettings(v, ".voice");
   assert.equal(await v.locator(".voice-notice").isHidden(), true);
   assert.equal(await v.evaluate(() => window.__speech.started), 1);
-  await (await dock(v, ".voice")).click();
-  assert.equal(await v.locator(".voice").getAttribute("aria-pressed"), "false");
+  await viaSettings(v, ".voice");
+  assert.equal(await v.locator(".voice").evaluate((el) => String(el.checked)), "false");
   await voiced.close();
   ok("Follow my voice: shown with the API, notice before first use, follows spoken lines to the reading line, skips QL, pauses auto-scroll, handles a blocked mic, remembers consent");
 
@@ -588,8 +704,10 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await markEl.getAttribute("title"), "patchstack.com · opens on the main screen when it reaches the reading line");
   assert.equal(await markEl.getAttribute("data-k"), null, "the marker is not a spoken line");
   assert.equal(await L.evaluate(() => document.querySelector(".section:nth-child(2) .mark").previousElementSibling.textContent), "Patchstack finds the holes.");
-  await (await dock(L, ".screen")).click();
-  assert.equal(await L.locator(".dock .screen").getAttribute("data-on"), "true");
+  await viaSettings(L, ".screen");
+  assert.equal(await L.locator("#settings .screen").getAttribute("data-on"), "true");
+  assert.deepEqual([await L.locator("#settings .screen").textContent(), await L.locator(".screen-state").textContent(), await L.locator(".settings-btn").getAttribute("data-dot"), await L.locator(".settings-btn").getAttribute("aria-label")],
+    ["Reconnect", "Connected", "on", "Settings · main screen connected"], "Settings shows the main screen connected, with a dot on its button");
   const visits = () => L.evaluate(() => window.__screen.visits.slice());
   const lastVisit = async () => (await visits()).at(-1);
   await L.waitForTimeout(900);
@@ -625,8 +743,8 @@ export async function run({ browser, base, mode, dist, out }) {
   ok("an inline link opens when the reading line passes it (after the settle delay); scrolling back re-shows the link above; quick scrolling flashes nothing");
   // Follow my voice: saying the next section's link label opens it at once.
   await L.evaluate(() => localStorage.setItem("prompter-voice-ok", "yes"));
-  await (await dock(L, ".voice")).click();
-  assert.equal(await L.locator(".voice").getAttribute("aria-pressed"), "true");
+  await viaSettings(L, ".voice");
+  assert.equal(await L.locator(".voice").evaluate((el) => String(el.checked)), "true");
   await L.evaluate(() => window.__speech.say("and then wordfence"));
   await L.waitForFunction(() => window.__screen.visits.at(-1) === "https://www.wordfence.com", null, { timeout: 2000 });
   await L.evaluate(() => window.__speech.say("and then wordfence blocks it"));
@@ -642,7 +760,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await L.evaluate(() => window.__speech.say("back to wordfence"));
   await L.waitForFunction(() => window.__screen.visits.at(-1) === "https://www.wordfence.com", null, { timeout: 2000 });
   assert.equal((await visits()).filter((u) => u === "https://www.wordfence.com").length, 2, "reopened after the screen moved");
-  await (await dock(L, ".voice")).click();
+  await viaSettings(L, ".voice");
   ok("Follow my voice: saying a link's label (next section) opens it at once; heard again it reopens only after the main screen moved");
   // A link on the last line of a section: its marker is the last thing there and opens once passed.
   const lastMark = ".section:nth-child(4) .mark";
@@ -659,7 +777,7 @@ export async function run({ browser, base, mode, dist, out }) {
   watch(D, "demo inline link");
   await D.goto(`${base}/#demo`);
   await D.locator(".section").first().waitFor();
-  await (await dock(D, ".screen")).click();
+  await viaSettings(D, ".screen");
   const demoMark = D.locator(".section .mark");
   assert.equal(await demoMark.count(), 1, "the demo shows one inline link");
   assert.equal(await demoMark.textContent(), "↗Teleprompter");
@@ -680,7 +798,7 @@ export async function run({ browser, base, mode, dist, out }) {
   watch(X, "link inside a sentence");
   await X.goto(textLink);
   await X.locator(".section").first().waitFor();
-  await (await dock(X, ".screen")).click();
+  await viaSettings(X, ".screen");
   await X.mouse.move(40, 40);
   await X.waitForFunction(() => window.__screen.visits.at(-1) === "https://example.com/intro", null, { timeout: 2000 });
   const inlink = X.locator(".inlink").first();
@@ -826,7 +944,7 @@ export async function run({ browser, base, mode, dist, out }) {
   watch(Y, "youtube inline link");
   await Y.goto(await makeLink("### **INTRO · 00:00**\n\nQL: Watch this?\n\nFirst a few lines.\nThen the video.\n- Video: https://www.youtube.com/watch?v=aqz-KE-bpKQ\nIt plays full size.\n", "lex", base));
   await Y.locator(".section").first().waitFor();
-  await (await dock(Y, ".screen")).click();
+  await viaSettings(Y, ".screen");
   await Y.mouse.move(683, 120);
   await passMark(Y, ".section .mark", 2);
   await Y.waitForFunction(() => /#player=aqz-KE-bpKQ&start=0$/.test(window.__screen.visits.at(-1) || ""), null, { timeout: 2000 });
@@ -842,7 +960,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await scrollToSection(H, 1);
   await H.locator(".screen-hint:not([hidden])").waitFor({ timeout: 2000 });
   assert.match(await H.locator(".hint-text").textContent(), /“Intro” would open on your main screen now/);
-  assert.equal(await H.locator(".dock .screen").getAttribute("data-hint"), "true");
+  assert.equal(await H.locator(".settings-btn").getAttribute("data-hint"), "true");
   const deskHint = await H.locator(".screen-hint").boundingBox();
   assert.ok(deskHint.y > 900 * 0.34 + 40 && deskHint.y + deskHint.height < (await H.locator(".dock").boundingBox()).y, "the hint floats above the control bar, clear of the reading line");
   assert.equal(await H.locator(".note-row.alert").isHidden(), true, "no alert, just the hint");
@@ -865,10 +983,10 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.deepEqual(await HC.evaluate(() => window.__screen.visits), [], "nothing opens before Connect");
   await HC.locator('.screen-hint [data-action="connect"]').click();
   assert.equal(await HC.locator(".screen-hint").isHidden(), true);
-  assert.equal(await HC.locator(".dock .screen").getAttribute("data-hint"), null);
+  assert.equal(await HC.locator(".settings-btn").getAttribute("data-hint"), null);
   assert.equal(await HC.evaluate(() => window.__screen.visits.at(-1)), "https://example.com/intro");
-  assert.equal(await HC.locator(".dock .screen").getAttribute("data-on"), "true");
-  assert.equal(await HC.locator(".dock .screen").getAttribute("aria-label"), "Main screen connected, reconnect");
+  assert.equal(await HC.locator("#settings .screen").getAttribute("data-on"), "true");
+  assert.equal(await HC.locator("#settings .screen").getAttribute("aria-label"), "Main screen connected, reconnect");
   await hintConnect.close();
   ok("without a main screen nothing opens; a one-time hint above the control bar; its Connect button hides it, clears the highlight and shows the current link");
 
@@ -1054,7 +1172,7 @@ export async function run({ browser, base, mode, dist, out }) {
     await P.close();
     // Links open at the moved line: the top link at the section start, an own-line link once passed.
     const Q = await open(inlineLink);
-    await (await dock(Q, ".screen")).click();
+    await viaSettings(Q, ".screen");
     await Q.mouse.move(683, 120);
     await scrollToSection(Q, 1);
     await Q.waitForFunction(() => window.__screen.visits.at(-1) === "https://example.com/intro", null, { timeout: 2000 });
@@ -1065,7 +1183,7 @@ export async function run({ browser, base, mode, dist, out }) {
     await Q.waitForFunction(() => window.__screen.visits.at(-1) === "https://patchstack.com", null, { timeout: 2000 });
     await Q.close();
     const X2 = await open(textLink);
-    await (await dock(X2, ".screen")).click();
+    await viaSettings(X2, ".screen");
     await X2.mouse.move(683, 120);
     await X2.evaluate(([y]) => { const el = document.querySelector(".inlink"); window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - y - 40); }, [Y]);
     await X2.waitForTimeout(1000);
@@ -1075,7 +1193,7 @@ export async function run({ browser, base, mode, dist, out }) {
     await X2.close();
     // Follow my voice brings the heard line to the moved line.
     const V = await open(link);
-    await (await dock(V, ".voice")).click();
+    await viaSettings(V, ".voice");
     await V.evaluate(() => window.__speech.say("writing scripts takes too long"));
     await V.waitForFunction(() => document.querySelector("p.cur")?.textContent === "Writing scripts takes too long.");
     await V.waitForFunction((y) => Math.abs(document.querySelector("p.cur").getBoundingClientRect().top - y) < 12, Y);
@@ -1095,21 +1213,53 @@ export async function run({ browser, base, mode, dist, out }) {
   const mCard = await m.locator(".empty .card").boundingBox();
   assert.ok(mCard.x >= 8 && mCard.x + mCard.width <= 382, `card fits: ${JSON.stringify(mCard)}`);
   await shot(m, "start-mobile");
+  // The start screen's Wait for MCP: the same action; the agent's show_script then opens the script.
   await clip(m);
-  const mCopy = m.locator('.empty [data-action="copy-mcp"]');
-  await mCopy.click();
-  assert.deepEqual([await mCopy.textContent(), await mCopy.locator(".i-check").isVisible(), await mCopy.locator(".i-copy").isVisible()], ["Copied", true, false], "the start screen's Copy MCP confirms in place, with a check");
-  assert.equal(await m.locator(".status").textContent(), "", "no status line: the button alone confirms");
-  assert.equal((await m.evaluate(() => window.__copied)).length, 1);
-  await shot(m, "copy-mcp-start-mobile");
+  const mStart = m.locator(".empty .mcp-action");
+  assert.equal(await mStart.textContent(), "Wait for MCP");
+  await mStart.click();
+  if (mode === "wrangler") {
+    await m.waitForFunction(() => window.__copied.length === 1);
+    assert.deepEqual([await mStart.textContent(), await mStart.locator(".i-check").isVisible(), await mStart.locator(".i-copy").isVisible()], ["Copied", true, false], "the start screen's Wait for MCP confirms in place, with a check");
+    assert.equal(await m.locator(".status").textContent(), "", "no status line: the button alone confirms");
+    await m.waitForFunction(() => !document.querySelector(".empty .mcp-action[data-copied]"), null, { timeout: 3000 });
+    assert.deepEqual([await mStart.textContent(), await state(m, ".empty .mcp-action")], ["Waiting for MCP", "waiting"]);
+    await noOverflow(m, "mobile start screen waiting");
+    await shot(m, "mcp-start-waiting-mobile");
+    const mToken = (await m.evaluate(() => window.__copied[0])).match(/Bearer (tp1-[\w-]+)/)[1];
+    assert.equal((await agentRpc(mToken, "initialize", { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "my-helper-mcp-client", version: "1" } })).status, 200);
+    await m.waitForFunction(() => document.querySelector(".empty .agent-name")?.textContent === "My Helper");
+    assert.equal((await agentCall(mToken, "show_script", { markdown: EXAMPLE_SCRIPT })).isError, undefined);
+    await m.locator(".section").first().waitFor();
+    assert.equal(await m.locator(".section").count(), 5, "the agent's script opens from the start screen");
+    await (await dock(m, ".open-btn")).click();
+    const mPop = await popAbove(m, "#open-menu", ".open-btn", "mobile Open with an agent");
+    assert.ok(mPop.x >= 4 && mPop.x + mPop.width <= 386, "the Open menu with the agent row fits a phone");
+    assert.deepEqual(await m.locator("#open-menu .agent-row").evaluate((row) => [row.querySelector(".agent-name").textContent, Math.round(row.querySelector("button").getBoundingClientRect().height) >= 44]), ["My Helper", true], "Stop is a 44px target");
+    await noOverflow(m, "mobile Open menu with an agent");
+    await shot(m, "mcp-popover-mobile");
+    await m.locator("#open-menu .agent-row button").click();
+    assert.deepEqual([await m.locator("#open-menu .mcp-action").textContent(), await m.locator(".open-btn").getAttribute("data-dot")], ["Wait for MCP", null], "Stop disconnects");
+    await m.keyboard.press("Escape");
+    await m.goto(`${base}/`);
+    await showsStart(m);
+    ok("phone: the start screen's Wait for MCP copies with Copied and a check, then Waiting for MCP; an agent (my-helper-mcp-client → My Helper) opens its script from the start screen; the Open menu with the agent row fits 390px; Stop disconnects");
+  }
+  // Without a clipboard the message shows, selected, under the button.
   await clip(m, true);
-  await mCopy.click();
-  await m.locator(".copy-dialog[open]").waitFor();
-  await noOverflow(m, "mobile Copy MCP dialog");
-  const copyBox = await m.locator(".copy-dialog").boundingBox();
-  assert.ok(copyBox.x >= 0 && copyBox.x + copyBox.width <= 390, "Copy MCP dialog fits");
-  await shot(m, "copy-mcp-manual-mobile");
-  await m.keyboard.press("Escape");
+  await mStart.click();
+  if (mode === "wrangler") {
+    const mBox = m.locator(".empty .mcp-prompt");
+    await mBox.waitFor();
+    await noOverflow(m, "mobile manual copy");
+    const copyBox = await mBox.boundingBox();
+    assert.ok(copyBox.x >= 0 && copyBox.x + copyBox.width <= 390, "the message box fits");
+    assert.equal(await mBox.evaluate((el) => document.activeElement === el && el.selectionEnd === el.value.length), true);
+    await shot(m, "mcp-manual-mobile");
+    await m.evaluate(() => localStorage.removeItem("prompter-agent"));
+    await m.reload();
+    await showsStart(m);
+  }
   await m.locator('.empty [data-action="demo"]').click();
   await m.locator(".section").first().waitFor();
   await noOverflow(m, "mobile demo");
@@ -1117,9 +1267,9 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.ok(mobileDock.x >= 0 && mobileDock.x + mobileDock.width <= 390, `control bar ${Math.round(mobileDock.width)}px fits`);
   assert.ok(Math.abs(mobileDock.x + mobileDock.width / 2 - 195) < 2, "control bar centred");
   const tops = await m.locator(".dock > button:not([hidden])").evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().top)));
-  assert.equal(tops.length, 8, "all eight buttons, Follow my voice included");
+  assert.equal(tops.length, 6, "six buttons: Open, previous, play, next, clock, Settings (voice and main screen are in Settings)");
   assert.equal(new Set(tops).size, 1, `control bar is one row: ${tops}`);
-  assert.ok(await m.locator(".dock > button:not([hidden])").evaluateAll((els) => els.every((el) => el.getBoundingClientRect().height >= 44)), "44px tall touch targets");
+  assert.ok(await m.locator(".dock > button:not([hidden])").evaluateAll((els) => els.every((el) => el.getBoundingClientRect().height >= 44 && el.getBoundingClientRect().width >= 44)), "44px touch targets");
   await shot(m, "demo-mobile");
   await (await dock(m, ".open-btn")).click();
   await popAbove(m, "#open-menu", ".open-btn", "mobile Open");
@@ -1136,10 +1286,15 @@ export async function run({ browser, base, mode, dist, out }) {
   await popAbove(m, "#settings", ".settings-btn", "mobile Settings");
   await noOverflow(m, "mobile Settings popover");
   await m.locator('#settings .seg label:has-text("Narrow")').click();
+  assert.deepEqual(await toggleRows(m), ["Follow my voice", "Main screen Not connected Connect"]);
+  for (const sel of [".voice-row", "#settings .screen"]) {
+    const box = await m.locator(sel).boundingBox();
+    assert.ok(box.height >= 44 && box.x >= 0 && box.x + box.width <= 390, `${sel} fits a phone as a 44px target: ${JSON.stringify(box)}`);
+  }
   await shot(m, "settings-popover-mobile");
   await m.mouse.click(195, 120);
   assert.equal(await m.locator("#settings:popover-open").count(), 0, "tapping the page closes Settings");
-  await (await dock(m, ".voice")).click();
+  await viaSettings(m, ".voice");
   await m.locator(".voice-notice:not([hidden])").waitFor();
   await noOverflow(m, "mobile voice notice");
   await shot(m, "voice-notice-mobile");
@@ -1180,7 +1335,7 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await m.locator(".inlink").first().getAttribute("data-shown"), "true", "still on the main screen after settling");
   await noOverflow(m, "mobile link inside a sentence");
   await shot(m, "text-link-shown-mobile");
-  ok("mobile 390px: start screen card and AI dialog fit; the demo; a one-row centred control bar of eight icons with 44px-tall targets; Open and Settings popovers above their buttons and on screen (tap outside closes); no sideways scroll; voice notice and hint fit", `bar ${Math.round(mobileDock.width)}px`);
+  ok("mobile 390px: start screen card and its manual-copy box fit; the demo; a one-row centred control bar of six buttons with 44px targets; Open and Settings popovers above their buttons and on screen (tap outside closes); no sideways scroll; voice notice and hint fit", `bar ${Math.round(mobileDock.width)}px`);
   await mobile.close();
 
   // A finger drags the reading line on a phone (real touch events); the page does not scroll under it.
@@ -1280,9 +1435,17 @@ export async function run({ browser, base, mode, dist, out }) {
   await o.goto(fileUrl);
   await showsStart(o);
   assert.equal(await o.evaluate(() => document.fonts.size), 0, "offline copies use system fonts and request no font file");
+  // No relay offline: Copy MCP copies the open server's message, with Copied and a check; no live states.
   await clip(o);
-  await o.locator('.empty [data-action="copy-mcp"]').click();
-  assert.ok((await o.evaluate(() => window.__copied[0])).includes("Server: `https://prompter.techies.tools/mcp`"), "an offline copy names the public server");
+  const oCopy = o.locator(".empty .mcp-action");
+  assert.deepEqual([await oCopy.textContent(), await oCopy.getAttribute("data-state"), await oCopy.locator(".status-dot").isVisible()], ["Copy MCP", "offline", false]);
+  await oCopy.click();
+  await o.waitForFunction(() => window.__copied.length === 1);
+  const offlinePrompt = await o.evaluate(() => window.__copied[0]);
+  assert.ok(offlinePrompt.includes("Server: `https://prompter.techies.tools/mcp` (open, no sign-in)"), "an offline copy names the public, open server");
+  assert.doesNotMatch(offlinePrompt, /Bearer|show_script/);
+  assert.deepEqual([await oCopy.textContent(), await oCopy.locator(".i-check").isVisible()], ["Copied", true]);
+  assert.equal(await o.evaluate(() => localStorage.getItem("prompter-agent")), null, "no token offline");
   await o.locator('.empty [data-action="demo"]').click();
   await o.waitForFunction((n) => document.querySelectorAll(".section").length === n, DEMO_SECTIONS);
   await o.goto(fileUrl + new URL(link).hash);
@@ -1296,7 +1459,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await o.locator(".section").first().waitFor();
   assert.equal(await o.locator(".section").count(), 5);
   await offline.close();
-  ok("offline: file:// start screen and demo, file:// #s= link and an embedded offline copy all work");
+  ok("offline: file:// start screen (Copy MCP copies the open server's message, no live states) and demo, file:// #s= link and an embedded offline copy all work");
 
   assert.deepEqual(errors, [], errors.join("\n"));
   ok("no page or console errors");
