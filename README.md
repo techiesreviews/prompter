@@ -28,13 +28,20 @@ Server address: `https://prompter.techies.tools/mcp` (Streamable HTTP, stateless
 
 - **Claude (claude.ai, Claude Desktop):** Settings → Connectors → Add custom connector, with the address above.
 - **Claude Code:** `claude mcp add --transport http prompter https://prompter.techies.tools/mcp`
+- **ChatGPT:** Settings → Apps & Connectors → Advanced settings → turn on Developer mode. Then create a connector with the address above and **No authentication**. Menu names can differ a little.
+- **Codex and T3 Code:** add this to `~/.codex/config.toml` (T3 Code uses your Codex and Claude Code settings):
+
+  ```toml
+  [mcp_servers.prompter]
+  url = "https://prompter.techies.tools/mcp"
+  ```
 - **Other MCP apps (JSON config):**
 
   ```json
   { "mcpServers": { "prompter": { "type": "http", "url": "https://prompter.techies.tools/mcp" } } }
   ```
 
-Or press **Copy MCP** on the start screen (also in the Open menu), as in the script and site editors: it copies a message you paste into an AI assistant that can run commands (Claude Code, Codex, T3 Code). The assistant connects for that conversation only, with curl and without changing its settings. Either way, ask: *"Help me write a prompter script about …"*. Your assistant interviews you, writes the script, checks it and gives you a link that opens it in the prompter.
+Or press **Copy MCP** on the start screen (also in the Open menu): it copies a message you paste into an AI assistant that can run commands (Claude Code, Codex, T3 Code). The assistant connects for that conversation only, with curl and without changing its settings. Either way, ask: *"Help me write a prompter script about …"*. Your assistant interviews you, writes the script, checks it and gives you a link that opens it in the prompter.
 
 Tools: `get_format`, `check_script`, `make_prompter_link`. Prompt: `write_prompter_script`. Requests are limited to 200 KB.
 

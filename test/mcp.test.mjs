@@ -213,3 +213,23 @@ test("the Worker sends /mcp to the handler (with the Durable Object) and everyth
   assert.ok(!seen.join(" ").includes("198.51.100.1"), "the raw IP never reaches the Durable Object");
   assert.equal(seen[2], "do:POST:", "the object gets no body, so never a script");
 });
+
+// Copy MCP on the page copies a message that tells an assistant how to talk to
+// this server with curl. Its facts (headers, protocol version, tools, preset
+// argument) must stay true for the server.
+test("the page's Copy MCP message matches the server", async () => {
+  const app = (await import("node:fs")).readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
+  const message = app.slice(app.indexOf("function mcpPrompt()"), app.indexOf("let copiedTimer"));
+  const version = message.match(/protocolVersion "([\d-]+)"/)?.[1];
+  assert.ok(version, "the message names a protocol version");
+  assert.match(message, /Content-Type: application\/json[\s\S]*Accept: application\/json, text\/event-stream/);
+  const { result } = await rpc("initialize", { protocolVersion: version, capabilities: {}, clientInfo: { name: "curl", version: "1" } });
+  assert.equal(result.protocolVersion, version, "the server speaks the version the message asks for");
+  const tools = (await rpc("tools/list")).result.tools.map((t) => t.name);
+  for (const name of message.match(/code\("(\w+)"\)/g).map((m) => m.slice(6, -2)).filter((n) => /_/.test(n))) {
+    assert.ok(tools.includes(name), `the message names the tool ${name}`);
+  }
+  for (const name of ["get_format", "check_script", "make_prompter_link"]) assert.ok(message.includes(`code("${name}")`), `the message asks for ${name}`);
+  const format = await call("get_format", { preset: "default" });
+  assert.notEqual(format.isError, true, "tools take the preset the message passes");
+});
