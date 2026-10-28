@@ -319,7 +319,9 @@
   /* Copy link confirms the same way: Copied and a check, in the open menu. */
   .share .i-check { display: none; margin-inline-start: auto; }
   .share[data-copied] .i-check { display: block; color: var(--ok); }
-  .dock-btn[aria-disabled="true"] { opacity: 0.5; }
+  /* Greyed out, but its tooltip (the reason) stays fully readable. */
+  .dock-btn[aria-disabled="true"] > svg { opacity: 0.5; }
+  .dock-btn[data-show-tip]::after { opacity: 1; visibility: visible; }
   .mcp-label { margin-inline-end: 12px; }
   .agent-rows:empty { display: none; }
   .agent-row { display: flex; align-items: center; gap: 10px; padding: 4px 4px 4px 12px; font-weight: 600; }
