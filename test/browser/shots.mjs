@@ -140,6 +140,14 @@ export async function run({ browser, base, mode, dist, out }) {
   }
 
   const errors = [];
+  // The control bar tucks away after scrolling down; a mouse near the bottom edge brings it back.
+  const dock = async (page, sel) => {
+    const { width, height } = page.viewportSize();
+    await page.mouse.move(width / 2, height - 30);
+    await page.locator(`.dock[data-tucked="false"], .dock:not([data-tucked])`).waitFor();
+    await page.waitForTimeout(300);
+    return page.locator(`.dock ${sel}`);
+  };
   const watch = (page, label) => {
     page.on("pageerror", (e) => errors.push(`${label} pageerror: ${e.message}`));
     page.on("console", (m) => { if (m.type() === "error") errors.push(`${label} console: ${m.text()}`); });
@@ -219,7 +227,7 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await page.evaluate(() => location.hash), "#demo");
   const prep = page.locator(".section").first();
   assert.equal(await prep.locator(".actions, button, label, input").count(), 0, "the demo's PREP has no buttons");
-  assert.deepEqual(await prep.locator("p.bullet").allTextContents(), ["Water within reach", "Camera at eye level", "Phone on silent"]);
+  assert.deepEqual(await prep.locator("p.bullet").allTextContents(), ["Water within reach", "Phone on silent", "Camera at eye level", "Text right under the lens", "Read it once aloud"]);
   assert.equal(await page.locator(".dock").isVisible(), true);
   assert.equal(await page.locator(".voice").isHidden(), true, "Follow my voice is hidden without the speech API");
   await page.evaluate(() => document.fonts.ready);
@@ -267,7 +275,7 @@ export async function run({ browser, base, mode, dist, out }) {
   ok("other sections use the dim AA colour (--dim, oklch 64% 0.04 282) at full opacity");
 
   // The Open popover: above its button; Escape closes it and focus returns.
-  await page.locator(".open-btn").click();
+  await (await dock(page, ".open-btn")).click();
   await popAbove(page, "#open-menu", ".open-btn", "desktop Open");
   assert.deepEqual(await page.locator("#open-menu .item").allTextContents(), ["Open a script file", "Paste a script", "Copy link", "Use your AI", "Back to the start"]);
   await page.locator('#open-menu [data-action="open-file"]').focus();
@@ -276,12 +284,12 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await page.locator("#open-menu:popover-open").count(), 0);
   assert.equal(await page.evaluate(() => document.activeElement.classList.contains("open-btn")), true, "focus returns to the Open button");
   assert.equal(await page.locator(".open-btn").getAttribute("aria-expanded"), "false");
-  await page.locator(".open-btn").click();
+  await (await dock(page, ".open-btn")).click();
   await page.locator("#open-menu:popover-open").waitFor();
   await page.mouse.click(1200, 200);
   assert.equal(await page.locator("#open-menu:popover-open").count(), 0, "a click outside closes it");
   // Use your AI opens a dialog with this server's address.
-  await page.locator(".open-btn").click();
+  await (await dock(page, ".open-btn")).click();
   await page.locator('#open-menu [data-action="ai"]').click();
   await page.locator(".ai-dialog[open]").waitFor();
   assert.equal(await page.locator("#open-menu:popover-open").count(), 0);
@@ -295,7 +303,7 @@ export async function run({ browser, base, mode, dist, out }) {
   ok("Open popover above its button: Open a script file, Paste, Copy link, Use your AI, Back to the start; Escape and a click outside close it and focus returns to the button; Use your AI is a dialog with this server's /mcp address, a copy button and Claude, ChatGPT and Codex/T3 steps");
 
   // Paste from the Open popover.
-  await page.locator(".open-btn").click();
+  await (await dock(page, ".open-btn")).click();
   await page.locator('#open-menu [data-action="paste"]').click();
   await page.locator(".paste-dialog[open]").waitFor();
   await page.locator('[data-action="open-paste"]').click();
@@ -308,7 +316,7 @@ export async function run({ browser, base, mode, dist, out }) {
   ok("Paste a script: empty text shows an error; a script opens and gets a #s= address");
 
   // Back to the start, then Continue.
-  await page.locator(".open-btn").click();
+  await (await dock(page, ".open-btn")).click();
   await page.locator('#open-menu [data-action="start"]').click();
   await showsStart(page);
   assert.equal(await page.evaluate(() => location.hash), "");
@@ -331,23 +339,23 @@ export async function run({ browser, base, mode, dist, out }) {
   await page.keyboard.press("ArrowRight");
   await page.waitForTimeout(250);
   assert.equal(await page.locator(".section.active").getAttribute("data-i"), "2");
-  await page.locator(".dock .next").click();
+  await (await dock(page, ".next")).click();
   await page.waitForTimeout(150);
   assert.equal(await page.locator(".section.active").getAttribute("data-i"), "3");
-  await page.locator(".dock .prev").click();
+  await (await dock(page, ".prev")).click();
   await page.waitForTimeout(150);
   assert.equal(await page.locator(".section.active").getAttribute("data-i"), "2");
   await shot(page, "ql-section-desktop");
   ok("link opens the example: 5 sections, QL first, 4 link chips, &p=lex kept; arrow keys and the bar's previous/next move sections");
 
   // Play is the orange primary button; it toggles auto-scroll like Space.
-  await page.locator(".dock .auto").click();
+  await (await dock(page, ".auto")).click();
   assert.equal(await page.locator(".dock .auto").getAttribute("aria-pressed"), "true");
   assert.equal(await page.locator(".dock .auto").getAttribute("data-tip"), "Pause · Space");
   await page.keyboard.press(" ");
   assert.equal(await page.locator(".dock .auto").getAttribute("aria-pressed"), "false", "Space on the focused play button toggles once");
   // The clock: the first press starts it, the next press starts it over from 00:00.
-  const clock = page.locator(".dock .clock");
+  const clock = await dock(page, ".clock");
   assert.equal(await clock.getAttribute("data-tip"), "Start the show clock");
   await clock.click();
   assert.equal(await clock.getAttribute("data-running"), "true");
@@ -361,7 +369,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await page.evaluate(() => { const t = Date.now; Date.now = () => t() + 10 * 60 * 1000; });
   await page.waitForFunction(() => document.querySelector(".clock").dataset.late === "true", null, { timeout: 3000 });
   await scrollToSection(page, 2);
-  await page.locator(".dock .next").hover();
+  await (await dock(page, ".next")).hover();
   await page.waitForTimeout(600);
   assert.equal(await page.locator(".dock .next").evaluate((el) => getComputedStyle(el, "::after").opacity), "1", "tooltip on hover");
   const dockClip = await page.locator(".dock").boundingBox();
@@ -371,7 +379,7 @@ export async function run({ browser, base, mode, dist, out }) {
   ok("play (orange) toggles auto-scroll, Space on it toggles once; the clock starts on the first press and restarts from 00:00 on the next (tooltip says so), and still turns late; tooltips on hover");
 
   // Settings: three rows (text size, scroll speed, width), remembered after a reload.
-  await page.locator(".settings-btn").click();
+  await (await dock(page, ".settings-btn")).click();
   await popAbove(page, "#settings", ".settings-btn", "desktop Settings");
   assert.deepEqual(await page.locator("#settings").evaluate((el) => [...el.querySelectorAll(".setting")].map((row) => (row.matches("fieldset") ? row.querySelector("legend") : row).firstChild.textContent.trim())),
     ["Text size", "Scroll speed", "Width"], "three rows only");
@@ -399,7 +407,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await scrollToSection(page, 2);
   await page.waitForTimeout(250);
   await shot(page, "narrow-column-desktop");
-  await page.locator(".settings-btn").click();
+  await (await dock(page, ".settings-btn")).click();
   await page.locator('#settings .seg label:has-text("Full")').click();
   const fullCol = await page.locator(".script").evaluate((el) => el.getBoundingClientRect().width);
   assert.ok(fullCol > 1300, `full column is ${fullCol}px`);
@@ -471,9 +479,9 @@ export async function run({ browser, base, mode, dist, out }) {
   await v.goto(link);
   await v.locator(".section").first().waitFor();
   await v.locator(".voice").waitFor();
-  await v.locator(".auto").click();
+  await (await dock(v, ".auto")).click();
   assert.equal(await v.locator(".auto").getAttribute("aria-pressed"), "true");
-  await v.locator(".voice").click();
+  await (await dock(v, ".voice")).click();
   await v.locator(".voice-notice:not([hidden])").waitFor();
   assert.match(await v.locator(".voice-notice").textContent(), /speech service[\s\S]*Google[\s\S]*Your script stays on this device/);
   assert.equal(await v.evaluate(() => window.__speech.started), 0, "nothing listens before consent");
@@ -502,13 +510,13 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.match(await v.locator(".alert-text").textContent(), /microphone is blocked/);
   assert.equal(await v.locator(".voice").getAttribute("aria-pressed"), "false");
   assert.equal(await v.locator(".auto").getAttribute("aria-pressed"), "true", "auto-scroll resumes");
-  await v.locator(".auto").click();
+  await (await dock(v, ".auto")).click();
   // Consent is remembered: the second time it starts at once.
   await v.reload();
-  await v.locator(".voice").click();
+  await (await dock(v, ".voice")).click();
   assert.equal(await v.locator(".voice-notice").isHidden(), true);
   assert.equal(await v.evaluate(() => window.__speech.started), 1);
-  await v.locator(".voice").click();
+  await (await dock(v, ".voice")).click();
   assert.equal(await v.locator(".voice").getAttribute("aria-pressed"), "false");
   await voiced.close();
   ok("Follow my voice: shown with the API, notice before first use, follows spoken lines to the reading line, skips QL, pauses auto-scroll, handles a blocked mic, remembers consent");
@@ -529,7 +537,7 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await markEl.textContent(), "↗ Patchstack · opens here");
   assert.equal(await markEl.getAttribute("data-k"), null, "the marker is not a spoken line");
   assert.equal(await L.evaluate(() => document.querySelector(".section:nth-child(2) .mark").previousElementSibling.textContent), "Patchstack finds the holes.");
-  await L.locator(".dock .screen").click();
+  await (await dock(L, ".screen")).click();
   assert.equal(await L.locator(".dock .screen").getAttribute("data-on"), "true");
   const visits = () => L.evaluate(() => window.__screen.visits.slice());
   const lastVisit = async () => (await visits()).at(-1);
@@ -564,7 +572,7 @@ export async function run({ browser, base, mode, dist, out }) {
   ok("an inline link opens when the reading line passes it (after the settle delay); scrolling back re-shows the link above; quick scrolling flashes nothing");
   // Follow my voice: saying the next section's link label opens it at once.
   await L.evaluate(() => localStorage.setItem("prompter-voice-ok", "yes"));
-  await L.locator(".voice").click();
+  await (await dock(L, ".voice")).click();
   assert.equal(await L.locator(".voice").getAttribute("aria-pressed"), "true");
   await L.evaluate(() => window.__speech.say("and then wordfence"));
   await L.waitForFunction(() => window.__screen.visits.at(-1) === "https://www.wordfence.com", null, { timeout: 2000 });
@@ -581,7 +589,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await L.evaluate(() => window.__speech.say("back to wordfence"));
   await L.waitForFunction(() => window.__screen.visits.at(-1) === "https://www.wordfence.com", null, { timeout: 2000 });
   assert.equal((await visits()).filter((u) => u === "https://www.wordfence.com").length, 2, "reopened after the screen moved");
-  await L.locator(".voice").click();
+  await (await dock(L, ".voice")).click();
   ok("Follow my voice: saying a link's label (next section) opens it at once; heard again it reopens only after the main screen moved");
   // A link on the last line of a section: its marker is the last thing there and opens once passed.
   const lastMark = ".section:nth-child(4) .mark";
@@ -591,22 +599,49 @@ export async function run({ browser, base, mode, dist, out }) {
   ok("a link on a section's last line opens once the reading line passes it");
   await linked.close();
 
-  // The demo's inline video link: YouTube plays in the page's own #player view.
+  // The demo's inline link opens on the main screen when the reading line passes it.
   const demoLinked = await browser.newContext(DESKTOP);
   await demoLinked.addInitScript(SCREEN_STUB);
   const D = await demoLinked.newPage();
   watch(D, "demo inline link");
   await D.goto(`${base}/#demo`);
   await D.locator(".section").first().waitFor();
-  await D.locator(".dock .screen").click();
+  await (await dock(D, ".screen")).click();
   const demoMark = D.locator(".section .mark");
   assert.equal(await demoMark.count(), 1, "the demo shows one inline link");
-  assert.equal(await demoMark.textContent(), "↗ Example video · opens here");
+  assert.equal(await demoMark.textContent(), "↗ Teleprompter · opens here");
   await passMark(D, ".section .mark", 2);
-  await D.waitForFunction(() => /#player=aqz-KE-bpKQ&start=0$/.test(window.__screen.visits.at(-1) || ""), null, { timeout: 2000 });
+  await D.waitForFunction(() => window.__screen.visits.at(-1) === "https://en.wikipedia.org/wiki/Teleprompter", null, { timeout: 2000 });
   await shot(D, "inline-link-demo-desktop");
-  ok("the demo's inline YouTube link opens the full-window #player view");
+  ok("the demo (better speaking with a prompter) opens its inline Teleprompter link when the reading line passes it");
   await demoLinked.close();
+
+  // The control bar tucks away when scrolling down and returns on scrolling up or near the bottom edge.
+  const tuckCtx = await browser.newContext(DESKTOP);
+  const T = await tuckCtx.newPage();
+  watch(T, "tucking bar");
+  await T.goto(`${base}/#demo`);
+  await T.locator(".section").first().waitFor();
+  await T.mouse.move(683, 120);
+  const tucked = () => T.locator(".dock").getAttribute("data-tucked");
+  await T.evaluate(() => window.scrollBy(0, 500));
+  await T.waitForFunction(() => document.querySelector(".dock").dataset.tucked === "true");
+  await T.waitForTimeout(400);
+  const hidden = await T.locator(".dock").evaluate((el) => { const cs = getComputedStyle(el); return { opacity: cs.opacity, filter: cs.filter, translate: cs.translate }; });
+  assert.equal(hidden.opacity, "0");
+  assert.match(hidden.filter, /blur/);
+  assert.notEqual(hidden.translate, "none");
+  await T.evaluate(() => window.scrollBy(0, -200));
+  await T.waitForFunction(() => document.querySelector(".dock").dataset.tucked === "false");
+  await T.evaluate(() => window.scrollBy(0, 400));
+  await T.waitForFunction(() => document.querySelector(".dock").dataset.tucked === "true");
+  await T.mouse.move(683, 880);
+  assert.equal(await tucked(), "false", "the bottom edge brings it back");
+  await T.evaluate(() => window.scrollBy(0, 400));
+  await T.waitForTimeout(100);
+  assert.equal(await tucked(), "false", "it stays while the mouse rests near the bottom");
+  ok("the control bar slides down, fades and blurs away when scrolling down; scrolling up or the bottom edge brings it back and it stays there");
+  await tuckCtx.close();
 
   // No main screen: one gentle hint, once, above the control bar.
   const hinted = await browser.newContext(DESKTOP);
@@ -676,7 +711,7 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(new Set(tops).size, 1, `control bar is one row: ${tops}`);
   assert.ok(await m.locator(".dock > button:not([hidden])").evaluateAll((els) => els.every((el) => el.getBoundingClientRect().height >= 44)), "44px tall touch targets");
   await shot(m, "demo-mobile");
-  await m.locator(".open-btn").click();
+  await (await dock(m, ".open-btn")).click();
   await popAbove(m, "#open-menu", ".open-btn", "mobile Open");
   await noOverflow(m, "mobile Open popover");
   await shot(m, "open-popover-mobile");
@@ -687,14 +722,14 @@ export async function run({ browser, base, mode, dist, out }) {
   await scrollToSection(m, 2);
   await m.waitForTimeout(250);
   await shot(m, "ql-section-mobile");
-  await m.locator(".settings-btn").click();
+  await (await dock(m, ".settings-btn")).click();
   await popAbove(m, "#settings", ".settings-btn", "mobile Settings");
   await noOverflow(m, "mobile Settings popover");
   await m.locator('#settings .seg label:has-text("Narrow")').click();
   await shot(m, "settings-popover-mobile");
   await m.mouse.click(195, 120);
   assert.equal(await m.locator("#settings:popover-open").count(), 0, "tapping the page closes Settings");
-  await m.locator(".dock .voice").click();
+  await (await dock(m, ".voice")).click();
   await m.locator(".voice-notice:not([hidden])").waitFor();
   await noOverflow(m, "mobile voice notice");
   await shot(m, "voice-notice-mobile");

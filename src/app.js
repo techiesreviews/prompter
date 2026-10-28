@@ -647,6 +647,29 @@ async function loadFile(file) {
 
 // ---------- Events ----------
 window.addEventListener("scroll", () => requestAnimationFrame(updateActive), { passive: true });
+
+// The control bar tucks away while scrolling down (by hand, auto-scroll or
+// voice) and comes back when scrolling up, near the bottom edge, or on focus.
+const dockEl = $(".dock");
+let lastScrollY = window.scrollY;
+let mouseNearBottom = false;
+function tuckDock(tucked) {
+  if (tucked && (mouseNearBottom || dockEl.contains(document.activeElement) || document.querySelector(".pop:popover-open"))) return;
+  dockEl.dataset.tucked = String(tucked);
+}
+window.addEventListener("scroll", () => {
+  const y = window.scrollY;
+  if (Math.abs(y - lastScrollY) < 6) return;
+  tuckDock(y > lastScrollY && y > 40);
+  lastScrollY = y;
+}, { passive: true });
+// While the mouse rests near the bottom edge the bar stays, even during auto-scroll.
+document.addEventListener("mousemove", (e) => {
+  mouseNearBottom = e.clientY > window.innerHeight - 110;
+  if (mouseNearBottom) tuckDock(false);
+}, { passive: true });
+document.documentElement.addEventListener("mouseleave", () => { mouseNearBottom = false; });
+dockEl.addEventListener("focusin", () => tuckDock(false));
 window.addEventListener("resize", updateActive);
 // Scrolling by hand while following the voice: continue from where the reader looks.
 // Keyboard and scrollbar scrolling end in "scrollend"; the prompter's own voice

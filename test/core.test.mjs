@@ -321,7 +321,7 @@ test("the demo script follows the lex preset and starts with a PREP checklist", 
   assert.equal(prep.title, "PREP");
   assert.equal(intro.title, "INTRO");
   const bullets = prep.items.filter((it) => it.type === "bullet").map((it) => it.text);
-  assert.deepEqual(bullets, ["Water within reach", "Camera at eye level", "Phone on silent"]);
+  assert.deepEqual(bullets, ["Water within reach", "Phone on silent", "Camera at eye level", "Text right under the lens", "Read it once aloud"]);
   const types = new Set(parse(DEMO_SCRIPT).flatMap((s) => s.entries.map((e) => e.type)));
   for (const t of ["link", "ql", "say", "next", "now", "note", "bullet"]) assert.ok(types.has(t), `demo shows ${t}`);
   const links = parse(DEMO_SCRIPT).flatMap((s) => s.links);

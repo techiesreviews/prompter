@@ -133,94 +133,107 @@ Thanks for watching.
 `;
 
 /**
- * The demo the page opens from its start screen ("Try the demo"). It follows
- * the "lex" preset and teaches the format by example.
+ * The demo the page opens from its start screen ("Try the demo"): how to be a
+ * better speaker with a prompter. It follows the "lex" preset and teaches the
+ * format by example, including one link that opens itself (section 4).
  */
 export const DEMO_SCRIPT = `### **PREP**
 
 - Water within reach
-- Camera at eye level
 - Phone on silent
-
-[PREP: a checklist, not read]
+- Camera at eye level
+- Text right under the lens
+- Read it once aloud
 
 ---
 
 ### **INTRO · 00:00**
 
-QL: What is this page?
+QL: Why use a prompter?
 
-[Brackets are private reminders]
+Reading a script sounds stiff.
+Memorising takes too long.
+A prompter gives you anchors.
+Not words to recite.
+Today: speak, don't read.
 
-This is your prompter.
+Next: one question each.
+Now: why questions work.
+
+---
+
+### **1 · ANSWER, DON'T RECITE · 00:45**
+
+QL: Why answer, not recite?
+
+[Read the question silently.]
+
+Answer in your own words.
+You sound like yourself.
+Short lines are reminders.
+Glance down, then look up.
+
+Next: eyes and camera.
+Now: keep eye contact.
+
+---
+
+### **2 · EYES ON THE LENS · 02:00**
+
+- Eye contact: https://en.wikipedia.org/wiki/Eye_contact
+
+QL: Where should your eyes be?
+
+Put text under the camera.
+Choose a narrow column.
+Your eyes move less.
 Read at the dashed line.
-Big text, short lines.
-Scroll, or press Space.
-Or let your voice scroll.
+Look up between lines.
 
-Next: how sections work.
-Now: one main question.
+Next: pace and pauses.
+Now: slow down a bit.
 
 ---
 
-### **1 · ONE MAIN QUESTION · 00:30**
+### **3 · PACE AND PAUSES · 03:30**
 
-QL: Why one question per section?
+QL: How fast should you go?
 
-The yellow box is QL.
-Answer it in your words.
-It is never read aloud.
-Keep every line short.
-Five words or fewer.
+Slower than feels natural.
+Pause at every full stop.
+Breathe between sections.
+Let the scroll follow you.
+Try Follow my voice.
 
-Next: links on screen.
-Now: connect your main screen.
-
----
-
-### **2 · LINKS ON SCREEN · 01:30**
-
-- Example site: https://example.com
-
-QL: How do links help viewers?
-
-A first link opens here.
-Or put links mid-section.
-Like this video link:
-- Example video: https://www.youtube.com/watch?v=aqz-KE-bpKQ
-It opens when reached.
-Or press 2 any time.
-Next and Now: transitions.
-
-Next: your privacy.
-Now: where scripts live.
+Next: show your screen.
+Now: links open themselves.
 
 ---
 
-### **3 · YOUR SCRIPT STAYS HERE · 02:30**
+### **4 · SHOW, DON'T TELL · 05:00**
 
-QL: Where does my script go?
+QL: When should viewers see it?
 
-Nowhere. It stays here.
-No accounts, no server storage.
-A link carries the script.
-Only after the # sign.
-Browsers never send that part.
+Put links where you speak.
+Like this one, right now:
+- Teleprompter: https://en.wikipedia.org/wiki/Teleprompter
+It opens on your screen.
+Exactly when you reach it.
 
-Next: your own script.
-Now: open, paste or ask.
+Next: practise once.
+Now: rehearse before recording.
 
 ---
 
-### **4 · YOUR TURN · 03:30**
+### **5 · PRACTISE AND RECORD · 06:30**
 
-QL: What will you say first?
+QL: What makes it feel natural?
 
-[Open yours from the bar]
-
-Open a file or paste.
-Or ask your AI.
-Thanks for trying Prompter.
+Do one dry run.
+Mark where you stumble.
+Shorten those lines.
+Smile at the lens.
+Then press record.
 `;
 
 /** Plain-text format guide for one preset, used by the MCP and docs. */
