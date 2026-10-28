@@ -111,7 +111,9 @@ export class Relay extends DurableObject {
     // A young token without a note was never revoked (a revoked note stays until its alarm), so
     // the agent is told to wait for the tab ("no-tab") instead of a 401. Nothing is written here:
     // tokens are not signed, so only a tab (through /api/relay and its guard) starts a note. The
-    // agent's name waits in memory and goes into the note the tab starts.
+    // agent's name waits in memory and goes into the note the tab starts (best effort: if the
+    // object is evicted first, the tab turns "on" at the agent's first call, without its name).
+    // An auth (or unknown) op is fine for a young token.
     if (!meta) {
       if (message.op === "agent") this.earlyAgent = { name: String(message.name ?? "").slice(0, 60), version: String(message.version ?? "").slice(0, 30) };
       return { status: message.op === "call" ? "no-tab" : "ok" };
