@@ -7,14 +7,15 @@ A free teleprompter for talking to camera, plus an MCP server so your AI assista
 - Big text, auto-scroll, a reading line and a show clock.
 - A second "main screen" window that opens links as you reach them: the first link under the title opens when the section starts; the others are on number keys. A link placed on the line where you talk about it opens when you reach that line (YouTube links play full size). With Follow my voice, saying a link's name opens it.
 - Follow my voice (Chrome and Edge): the prompter listens and keeps the line you are reading at the reading mark. Your browser's speech service hears your voice; the script stays on your device.
-- Settings in a sidebar (a bottom sheet on phones) and a floating control bar: previous and next section, auto-scroll, Follow my voice and the clock. Hide the settings and only the script and the bar stay.
-- Sliders for speed and text size, and a narrow column to keep your eyes near the camera.
+- A start screen to open a file, paste a script, connect your AI or try the demo. It offers your last script ("Continue") but never opens it by itself.
+- One floating control bar: Open, previous and next section, auto-scroll, Follow my voice, main screen, the clock (press again to restart it from 00:00) and Settings.
+- Settings kept simple: text size, scroll speed and a narrow, medium or full column (narrow keeps your eyes near the camera).
 - A checker (through the MCP server) that points out long lines, a missing main question, a link without its full address and similar problems.
 - Works offline: the page is one self-contained HTML file.
 
 ## Your script stays with you
 
-There are no accounts and no server storage. A shared prompter link carries the whole script inside the link itself, in the part after `#` (`#s=`, deflate-raw + base64url), which browsers never send to a server. The page remembers your last script in your own browser only.
+There are no accounts and no server storage. A shared prompter link carries the whole script inside the link itself, in the part after `#` (`#s=`, deflate-raw + base64url), which browsers never send to a server. The page remembers your last script in your own browser only, and offers it on the start screen.
 
 The MCP server works the same way: it reads the script from the request, checks it or packs it into a link, and sends the answer back. It keeps nothing. The only thing it holds, briefly and in memory, is a request count per client for the rate limit (see [Limits](#limits)).
 
@@ -30,7 +31,7 @@ Server address: `https://prompter.techies.tools/mcp` (Streamable HTTP, stateless
   { "mcpServers": { "prompter": { "type": "http", "url": "https://prompter.techies.tools/mcp" } } }
   ```
 
-The prompter's demo script has steps for ChatGPT, Codex and more (PREP → "Use your AI"). Then ask: *"Help me write a prompter script about …"*. Your assistant interviews you, writes the script, checks it and gives you a link that opens it in the prompter.
+The prompter's start screen has steps for ChatGPT, Codex and more ("Use your AI", also in the Open menu). Then ask: *"Help me write a prompter script about …"*. Your assistant interviews you, writes the script, checks it and gives you a link that opens it in the prompter.
 
 Tools: `get_format`, `check_script`, `make_prompter_link`. Prompt: `write_prompter_script`. Requests are limited to 200 KB.
 
@@ -59,7 +60,7 @@ Now: links on screen.
 - `QL: question` is the one main question: read it silently and answer it; it is not read aloud. Shown at the top of the section.
 - Plain lines are spoken. `Next: …` / `Now: …` are transitions. `[text]` is a private reminder. `- text` is a bullet.
 
-The full format, the two style presets (`lex`, strict, and `default`, softer) and the checker live in [`src/core.mjs`](src/core.mjs). The page, the checker and the MCP server all use that one file. The `get_format` tool shows the same rules, and the demo script that opens on the page teaches them by example.
+The full format, the two style presets (`lex`, strict, and `default`, softer) and the checker live in [`src/core.mjs`](src/core.mjs). The page, the checker and the MCP server all use that one file. The `get_format` tool shows the same rules, and the page's demo ("Try the demo") teaches them by example.
 
 ## Limits
 
