@@ -6,11 +6,12 @@ A free teleprompter for talking to camera, plus an MCP server so your AI assista
 
 - Big text, auto-scroll, a reading line and a show clock.
 - Drag the reading line (grab it anywhere along it) up or down to sit right under your camera; the prompter remembers it on this device. Double-click (or double-tap) the line to put it back. Text you have already read, above the line, fades almost away, so your eyes stay on the line.
-- A second "main screen" window that opens links as you reach them: the first link under the title opens when the section starts; the others are on number keys. A link placed on the line where you talk about it, or inside the sentence itself, opens when you reach that line (YouTube links play full size). With Follow my voice, saying a link's name opens it.
-- Follow my voice (Chrome and Edge): the prompter listens and keeps the line you are reading at the reading mark. Your browser's speech service hears your voice; the script stays on your device.
-- A start screen to open a file, paste a script, connect your AI or try the demo. It offers your last script ("Continue") but never opens it by itself.
-- One floating control bar: Open, previous and next section, auto-scroll, Follow my voice, main screen, the clock (press again to restart it from 00:00) and Settings.
-- Settings kept simple: text size, scroll speed and a narrow, medium or full column (narrow keeps your eyes near the camera).
+- A second "main screen" window (connect it in Settings) that opens links as you reach them: the first link under the title opens when the section starts; the others are on number keys. A link placed on the line where you talk about it, or inside the sentence itself, opens when you reach that line (YouTube links play full size). With Follow my voice, saying a link's name opens it.
+- Follow my voice (Chrome and Edge, a switch in Settings): the prompter listens and keeps the line you are reading at the reading mark. Your browser's speech service hears your voice; the script stays on your device.
+- A start screen to open a file, paste a script, connect your AI agent (Wait for MCP) or try the demo. It offers your last script ("Continue") but never opens it by itself.
+- One floating control bar: Open, previous and next section, auto-scroll, the clock (press again to restart it from 00:00) and Settings. A small dot on Open shows your AI agent is waiting or connected; a dot on Settings shows Follow my voice is on or a main screen is connected.
+- Settings kept simple: text size, scroll speed, a narrow, medium or full column (narrow keeps your eyes near the camera), Follow my voice and the main screen.
+- Your own AI agent can open the script it wrote straight in your prompter (Wait for MCP, in the Open menu and on the start screen), as in the script editor.
 - A checker (through the MCP server) that points out long lines, a missing main question, a link without its full address and similar problems.
 - Works offline: the page is one self-contained HTML file.
 
@@ -21,6 +22,8 @@ Keys: Space play/pause · ← → previous/next section · [ ] scroll speed · �
 There are no accounts and no server storage. A shared prompter link carries the whole script inside the link itself, in the part after `#` (`#s=`, deflate-raw + base64url), which browsers never send to a server. The page remembers your last script in your own browser only, and offers it on the start screen.
 
 The MCP server works the same way: it reads the script from the request, checks it or packs it into a link, and sends the answer back. It keeps nothing. The only thing it holds, briefly and in memory, is a request count per client for the rate limit (see [Limits](#limits)).
+
+**Wait for MCP (live connection).** When you press Wait for MCP, the page asks this site for a private token and keeps a connection open to a small relay on Cloudflare (a Durable Object picked by a hash of the token). Your own AI agent uses the token to open a script in your prompter tab (`show_script`) or to read the one that is open (`get_open_script`). Those scripts pass through the relay in memory and are never stored or logged. The relay keeps only a short note: when the token was made, when it expires (eight hours later), whether you pressed Disconnect MCP, and your agent's name and version (for example "claude-code 2.1"). An alarm erases that note when the token expires. Disconnect MCP ends the connection at once: your agent's calls get refused from then on. The token is kept in your browser until then, so a reload stays connected.
 
 ## Connect your AI assistant (MCP)
 
@@ -41,9 +44,9 @@ Server address: `https://prompter.techies.tools/mcp` (Streamable HTTP, stateless
   { "mcpServers": { "prompter": { "type": "http", "url": "https://prompter.techies.tools/mcp" } } }
   ```
 
-Or press **Copy MCP** on the start screen (also in the Open menu): it copies a message you paste into an AI assistant that can run commands (Claude Code, Codex, T3 Code). The assistant connects for that conversation only, with curl and without changing its settings. Either way, ask: *"Help me write a prompter script about …"*. Your assistant interviews you, writes the script, checks it and gives you a link that opens it in the prompter.
+Or press **Wait for MCP** on the start screen (also in the Open menu): it copies a message you paste into an AI agent that can run commands (Claude Code, Codex, T3 Code). The agent connects for that conversation only, with curl and a private token, without changing its settings. The button confirms with "Copied" and a check, then reads "Waiting for MCP" until your agent connects; then the Open menu shows your agent's name, what it is doing and Stop, and the button reads "Disconnect MCP". If you open the prompter in a second tab, that tab takes over; the first one offers "Use this tab". Ask: *"Help me write a prompter script about …"*. Your agent interviews you, writes the script, checks it and opens it in your prompter. An offline copy (opened from a file) has no live connection: its **Copy MCP** copies a message for the open server, and the agent gives you a link instead.
 
-Tools: `get_format`, `check_script`, `make_prompter_link`. Prompt: `write_prompter_script`. Requests are limited to 200 KB.
+Tools: `get_format`, `check_script`, `make_prompter_link`; with a Wait for MCP token also `show_script` and `get_open_script`. Prompt: `write_prompter_script`. Requests are limited to 200 KB.
 
 ## Script format
 
@@ -79,6 +82,7 @@ The full format, the two style presets (`lex`, strict, and `default`, softer) an
 
 - `/mcp` is limited per client by a Durable Object (free plan, SQLite-backed class): 60 requests a minute and 10 per 10 seconds. The Worker hashes the client IP with a fixed salt (SHA-256; IPv6 grouped by /64, IPv4-in-IPv6 counted as the IPv4 address) and uses the hash to pick one object per client, so the object never sees an IP. The salt is public, so treat the key as hashed, not anonymous. The object keeps the times of recent requests in memory only: it never writes to its storage, gets no request body (so never a script) and logs nothing. Each request first drops times older than a minute, and Cloudflare drops an idle object from memory, normally 70–140 seconds after its last request, taking any remaining times with it. So counts are gone within a few minutes of your last request. Over the limit, `/mcp` answers HTTP 429 with `Retry-After` and a JSON-RPC error that names the limit that refused.
 - An in-memory guard in each Worker instance (60 per minute) runs first and stops bursts without calling the object. If the object errors or is slow, `/mcp` keeps working (fail open).
+- Wait for MCP: the page's own calls have in-memory guards per client in each Worker instance (20 new tokens and 30 relay connections a minute). A token lasts eight hours; calls with an expired or disconnected token get HTTP 401. A tool call waits at most 10 seconds for your tab.
 - The free Workers rate-limiting binding was removed: in a live test on 2026-10-27 it allowed about 250 requests from one IP within a few minutes.
 - Cost cannot run away: the free plan has no billing for overage. Past 100,000 Worker requests a day, `/mcp` returns errors until the next day; the page itself is served as static assets and keeps working. Durable Objects have their own free daily allowance; when it runs out, the limiter fails open.
 
@@ -89,20 +93,20 @@ You need [Node.js](https://nodejs.org/) 24 or newer. There are no npm dependenci
 ```sh
 node scripts/build.mjs           # builds dist/index.html and dist/_headers
 node --test test/*.test.mjs      # runs the tests
-npx wrangler dev                 # page and /mcp at http://localhost:8787
+npx wrangler dev                 # page, /mcp and the live relay at http://localhost:8787
 ```
 
-Opening `dist/index.html` directly also works (everything except `/mcp`; it uses your system fonts). To make an offline copy with a script built in: `node scripts/embed.mjs script.md out.html`.
+Opening `dist/index.html` directly also works (everything except `/mcp` and Wait for MCP; it uses your system fonts). To make an offline copy with a script built in: `node scripts/embed.mjs script.md out.html`.
 
 ## Deploy your own copy
 
-It runs on the Cloudflare Workers **free plan**: one Worker serves the page as static assets and answers `/mcp`, and one Durable Object class (SQLite-backed, the kind the free plan allows) does the rate limiting.
+It runs on the Cloudflare Workers **free plan**: one Worker serves the page as static assets and answers `/mcp` and `/api/*`, and two Durable Object classes (SQLite-backed, the kind the free plan allows) do the rate limiting (`McpLimiter`) and the live relay (`Relay`).
 
 1. Make a free Cloudflare account and log in: `npx wrangler login`.
 2. In `wrangler.jsonc`, change `"name"` if you like, and replace the `routes` entry `prompter.techies.tools` with your own domain (it must be a zone in your Cloudflare account). No domain? Remove `routes` and set `"workers_dev": true` to get a `*.workers.dev` address.
-3. Deploy: `node scripts/build.mjs && npx wrangler deploy`. The first deploy creates the Durable Object class from the `migrations` entry.
+3. Deploy: `node scripts/build.mjs && npx wrangler deploy`. The first deploy creates the Durable Object classes from the `migrations` entries.
 
-Links made by your copy, and the server address in its demo script, follow your own address automatically. Three places still name `prompter.techies.tools`; change them to yours: `SITE` in `src/core.mjs` (used by offline copies opened from a file) and the `make_prompter_link` description and `instructions` text in `src/mcp.mjs`.
+Links made by your copy, and the server address in its demo script, follow your own address automatically. A few places still name `prompter.techies.tools`; change them to yours: `SITE` in `src/core.mjs` (used by offline copies opened from a file), the `make_prompter_link` description and both `instructions` texts in `src/mcp.mjs`, and the `wss://` address in the `connect-src` line of `scripts/build.mjs`.
 
 ## Contributing
 
