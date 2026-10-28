@@ -53,7 +53,7 @@ export function build(dir = join(root, "dist")) {
   X-Content-Type-Options: nosniff
   Permissions-Policy: camera=(), microphone=(self), geolocation=()
 /fonts/*
-  Cache-Control: public, max-age=31536000, immutable
+  Cache-Control: public, max-age=2592000
 `;
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "index.html"), html);

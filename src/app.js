@@ -84,6 +84,7 @@ let anchorKey = "";
 let hintShown = false;
 let hintTimer = 0;
 let voiceLinkKey = ""; // the link Follow my voice opened last by hearing its label
+let voiceLinkAt = -1; // index of the speech result that label was heard in
 let clockStart = 0;
 let autoOn = false;
 let speed = Number(store.get("prompter-speed")) || 40;
@@ -218,6 +219,7 @@ function render() {
   anchor = null;
   anchorKey = "";
   voiceLinkKey = "";
+  voiceLinkAt = -1;
   clearTimeout(settleTimer);
   voiceAt = -1;
   updateActive();
@@ -272,7 +274,6 @@ function updateActive() {
   if (key === anchorKey) return;
   anchor = at;
   anchorKey = key;
-  voiceLinkKey = ""; // the reading point moved on: a label heard again opens again
   clearTimeout(settleTimer);
   if (at) settleTimer = setTimeout(() => showLink(at.s, at.l, false), SETTLE_MS);
 }
@@ -502,6 +503,7 @@ function startVoice() {
   voiceOn = true;
   voiceRestarts = 0;
   voiceLinkKey = "";
+  voiceLinkAt = -1;
   voiceAt = lineAtReadingLine();
   resumeAuto = autoOn;
   setAuto(false);
@@ -530,13 +532,21 @@ function onVoiceResult(e) {
   const k = followLine(voiceLines, voiceAt, heard);
   if (k !== voiceAt && k >= 0) { voiceAt = k; markLine(k); }
   // Saying a link's label (this section or the next) opens it at once. The
-  // same label heard again is skipped while the main screen still shows it.
+  // heard words keep a label for a few more results; that echo never reopens
+  // it. Only a label heard in a later result does, and only when the main
+  // screen shows something else.
   const said = heardLink(voiceLinkCandidates(), heard);
-  if (said && !(said.key === voiceLinkKey && screenUrl(sections[said.s].links[said.l].url) === shownUrl)) {
-    voiceLinkKey = said.key;
-    clearTimeout(settleTimer);
-    showLink(said.s, said.l, false);
-  }
+  if (!said) return;
+  let at = e.results.length - 1;
+  while (at > 0 && !heardLink([said], e.results[at][0].transcript)) at--;
+  const fresh = said.key !== voiceLinkKey
+    || (at > voiceLinkAt && screenUrl(sections[said.s].links[said.l].url) !== shownUrl);
+  // Heard while already on screen: remember where, so its echo stays quiet too.
+  if (!fresh) { if (said.key === voiceLinkKey) voiceLinkAt = Math.max(voiceLinkAt, at); return; }
+  voiceLinkKey = said.key;
+  voiceLinkAt = at;
+  clearTimeout(settleTimer);
+  showLink(said.s, said.l, false);
 }
 
 function voiceLinkCandidates() {
@@ -560,6 +570,7 @@ function onVoiceError(e) {
 function onVoiceEnd() {
   if (!voiceOn || !recognition) return;
   if (++voiceRestarts > 5) { stopVoice("Follow my voice stopped hearing you. Turn it on again to retry."); return; }
+  voiceLinkAt = -1; // a new session numbers its results from 0 again
   try { recognition.start(); } catch { stopVoice("Follow my voice stopped. Turn it on again to retry."); }
 }
 
@@ -701,6 +712,8 @@ voiceBtn.hidden = !Recognition;
 $(".voice-row").hidden = $(".voice-help").hidden = !Recognition;
 $(".no-voice").hidden = Boolean(Recognition);
 setSide(!narrow.matches && store.get(SIDE_KEY) !== "closed");
+// Crossing the phone width: the sheet closes on phones, the sidebar returns as remembered.
+narrow.addEventListener("change", () => setSide(!narrow.matches && store.get(SIDE_KEY) !== "closed"));
 setSpeed(speed);
 setSize(Number(store.get("prompter-size")) || (window.innerWidth < 640 ? 32 : 52));
 setWidth(store.get("prompter-width") || "full");

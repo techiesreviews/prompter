@@ -55,7 +55,7 @@ Now: links on screen.
 ```
 
 - `### **TITLE · mm:ss**` starts a section (time optional). `---` is ignored.
-- `- Label: https://full-url` is a link. Right under the title, the first link opens when the section starts; the others are on number keys. Put it where you talk about it, and it opens automatically when you reach that line (the prompter shows an "opens here" marker). Number keys 1–9 open a section's links any time. With Follow my voice, saying a link's label opens it, so a short one-word label (like "Docs") can open when you only mention the word in passing; give links distinctive labels.
+- `- Label: https://full-url` is a link. Right under the title (before or after the QL), the first link opens when the section starts; the others are on number keys. Put it where you talk about it, and it opens automatically when you reach that line (the prompter shows an "opens here" marker). Number keys 1–9 open a section's links any time. With Follow my voice, saying a link's label opens it, so a short one-word label (like "Docs") can open when you only mention the word in passing; give links distinctive labels.
 - `QL: question` is the one main question: read it silently and answer it; it is not read aloud. Shown at the top of the section.
 - Plain lines are spoken. `Next: …` / `Now: …` are transitions. `[text]` is a private reminder. `- text` is a bullet.
 

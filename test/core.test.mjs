@@ -181,6 +181,7 @@ test("a link right after the QL is still a top link: it opens when the section s
   assert.equal(sections[0].links[0].inline, false);
   assert.deepEqual(linkAt(sections, 0, -1), { s: 0, l: 0 });
   const afterLine = parse("### **INTRO · 00:00**\n\nQL: Why?\n\nHello.\n- Site: https://example.com");
+  assert.equal(parse("### **A**\n\n[remember]\n- Site: https://x.test\nHi")[0].links[0].inline, true, "a reminder is a visible line: a link after it is inline");
   assert.equal(afterLine[0].links[0].inline, true, "after a spoken line it is inline");
 });
 

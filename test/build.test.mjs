@@ -33,7 +33,7 @@ test("the fonts and their licence ship in dist/fonts; the page loads them only w
   for (const file of FONTS) assert.ok(existsSync(join(dist, "fonts", file)), file);
   const licence = readFileSync(join(dist, "fonts", "OFL.txt"), "utf8");
   assert.match(licence, /The Inter Project Authors[\s\S]*The Roboto Mono Project Authors[\s\S]*SIL OPEN FONT LICENSE[\s\S]*Version 1\.1/);
-  assert.match(headers, /\/fonts\/\*\n {2}Cache-Control: public, max-age=31536000, immutable/);
+  assert.match(headers, /\/fonts\/\*\n {2}Cache-Control: public, max-age=2592000\n/);
   assert.doesNotMatch(html.replace(/<script>[\s\S]*?<\/script>/, ""), /@font-face/, "no @font-face in the stylesheet: offline copies use system fonts");
   assert.ok(pageScript().includes('src:url("/fonts/${file}")'));
 });

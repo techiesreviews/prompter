@@ -111,8 +111,10 @@
   .side-ai > summary { list-style: none; }
   .side-ai > summary::-webkit-details-marker { display: none; }
   .side-ai[open] > summary { box-shadow: inset 0 0 0 1px var(--accent); }
-  .side-ai .ai-panel { margin-block: 10px 0; padding: 12px; font-size: 14px; text-align: start; background: var(--panel-2); }
-  .side-ai .ai-panel p, .side-ai .ai-panel li { text-align: start; }
+  @scope (.side-ai) {
+    .ai-panel { margin-block: 10px 0; padding: 12px; font-size: 14px; text-align: start; background: var(--panel-2); }
+    .ai-panel :is(p, li) { text-align: start; }
+  }
   input[type="range"] { inline-size: 100%; margin: 0; accent-color: var(--accent); }
   .width { inline-size: 100%; font: 600 14px/1.25 var(--font-body); color: var(--text); background: var(--chip); border: 0; border-radius: var(--radius); padding: 9px 10px; }
   .state::before { content: ""; display: inline-block; inline-size: 7px; block-size: 7px; margin-inline-end: 6px; border-radius: 50%; background: var(--dim); }

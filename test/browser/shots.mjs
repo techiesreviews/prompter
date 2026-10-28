@@ -464,6 +464,10 @@ export async function run({ browser, base, mode, dist, out }) {
   // The main screen moves on (a link chip); saying the label again reopens it.
   await L.keyboard.press("1");
   assert.equal(await lastVisit(), "https://example.com/intro");
+  // The label still sits in the recent words: that echo must not take the screen back.
+  await L.evaluate(() => window.__speech.say("then the next line"));
+  await L.waitForTimeout(300);
+  assert.equal(await lastVisit(), "https://example.com/intro", "an echo of an earlier label does not reopen it");
   await L.evaluate(() => window.__speech.say("back to wordfence"));
   await L.waitForFunction(() => window.__screen.visits.at(-1) === "https://www.wordfence.com", null, { timeout: 2000 });
   assert.equal((await visits()).filter((u) => u === "https://www.wordfence.com").length, 2, "reopened after the screen moved");
