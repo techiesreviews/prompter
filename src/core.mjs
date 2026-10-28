@@ -133,18 +133,16 @@ Thanks for watching.
 `;
 
 /**
- * The script the page opens with when there is no link and no remembered
- * script. It follows the "lex" preset and teaches the format by example. In
- * PREP, the page shows the bullets named in DEMO_ACTIONS as buttons.
+ * The demo the page opens from its start screen ("Try the demo"). It follows
+ * the "lex" preset and teaches the format by example.
  */
 export const DEMO_SCRIPT = `### **PREP**
 
-- Open a script file
-- Paste a script
-- Drop a file anywhere
-- Use your AI
+- Water within reach
+- Camera at eye level
+- Phone on silent
 
-[Scripts stay on your device]
+[PREP: a checklist, not read]
 
 ---
 
@@ -218,20 +216,12 @@ Now: open, paste or ask.
 
 QL: What will you say first?
 
-[Scroll up to PREP]
+[Open yours from the bar]
 
 Open a file or paste.
 Or ask your AI.
 Thanks for trying Prompter.
 `;
-
-/** PREP bullets in the demo that the page turns into controls. */
-export const DEMO_ACTIONS = {
-  "Open a script file": "open-file",
-  "Paste a script": "paste",
-  "Drop a file anywhere": "drop-hint",
-  "Use your AI": "ai",
-};
 
 /** Plain-text format guide for one preset, used by the MCP and docs. */
 export function formatGuide(presetName) {

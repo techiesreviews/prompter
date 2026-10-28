@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-side="open">
+<html lang="en" data-view="empty">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -16,9 +16,7 @@
      (large text, 3:1); test/contrast.test.mjs checks the pairs. */
   :root {
     --size: 52px;
-    --col: none;
-    --side-w: 304px;
-    --side-offset: 0px;
+    --col: 960px;
     --line: 34vh;
     --bg: oklch(16% 0.06 282);          /* --color-night, #0b0826 */
     --panel: oklch(24% 0.066 282);      /* raised: night l+0.08, c×1.1 */
@@ -44,7 +42,7 @@
     --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   }
   :root[data-width="narrow"] { --col: 600px; }
-  :root[data-width="medium"] { --col: 960px; }
+  :root[data-width="full"] { --col: none; }
 
   /* Global helpers */
   * { box-sizing: border-box; }
@@ -55,7 +53,7 @@
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   kbd, code { font: 500 0.88em/1.3 var(--font-mono); background: var(--panel-2); border-radius: 4px; padding: 0.05em 0.35em; }
   svg { flex: none; }
-  .sr-only { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); white-space: nowrap; }
+  .sr-only, .file-input { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); white-space: nowrap; }
   .btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 0.4em;
     font: 600 15px/1.25 var(--font-body); color: var(--text); background: var(--chip);
@@ -64,114 +62,49 @@
   }
   /* White on orange is large text only: 19px bold. */
   .btn.primary { background: var(--accent); color: var(--on-accent); font-size: 19px; font-weight: 700; }
-  .btn:active, .dock-btn:active, .link:active, .mark:active { scale: 0.97; }
+  .btn:active, .dock-btn:active, .link:active, .mark:active, .item:active { scale: 0.97; }
   @media (hover: hover) and (pointer: fine) {
     .btn:hover { background: var(--chip-hover); }
     .btn.primary:hover { background: var(--accent-hover); }
   }
   .muted { color: var(--muted); }
   .error-text { color: var(--accent); }
-  .file-input { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); white-space: nowrap; }
-  label.btn:has(.file-input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
   .dropping { outline: 3px dashed var(--accent); outline-offset: -12px; }
   @media (prefers-reduced-motion: no-preference) {
-    .btn, .dock-btn, .link, .mark { transition: scale 160ms var(--ease-out), background-color 160ms var(--ease-out); }
+    .btn, .dock-btn, .link, .mark, .item { transition: scale 160ms var(--ease-out), background-color 160ms var(--ease-out); }
   }
-
-  /* Settings sidebar: open on wide screens (remembered), a bottom sheet on phones. */
-  .sidebar {
-    position: fixed; inset-block: 0; inset-inline-start: 0; z-index: 30;
-    inline-size: var(--side-w); display: flex; flex-direction: column;
-    background: var(--panel); box-shadow: var(--shadow);
-  }
-  :root[data-side="open"] { --side-offset: var(--side-w); }
-  :root[data-side="closed"] .sidebar { visibility: hidden; translate: -100% 0; }
-  @media (prefers-reduced-motion: no-preference) {
-    .sidebar { transition: translate 260ms var(--ease-out), visibility 260ms; }
-  }
-  .side-head { flex: none; display: flex; align-items: center; gap: 10px; padding: 16px 14px 14px 18px; border-block-end: 1px solid var(--border); }
-  .brand-name { margin: 0; display: flex; align-items: center; gap: 8px; font: 700 19px/1.1 var(--font-body); letter-spacing: -0.01em; }
-  .version { font: 500 11px/1 var(--font-mono); color: var(--text); background: var(--chip); border-radius: 999px; padding: 4px 7px; }
-  .by { display: inline-flex; align-items: center; gap: 5px; margin-block-start: 4px; font: 500 11px/1 var(--font-mono); letter-spacing: 0.04em; color: var(--muted); text-decoration: none; }
-  .by::before { content: ""; inline-size: 6px; block-size: 6px; border-radius: 50%; background: var(--accent); }
-  .side-head .icon-btn { margin-inline-start: auto; }
-  .side-body { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 4px 18px 24px; }
-  .group { padding-block: 16px 18px; border-block-end: 1px solid var(--border); }
-  .group:last-child { border-block-end: 0; }
-  .group-label { display: flex; gap: 8px; margin: 0 0 12px; font: 500 11px/1.2 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--text); }
-  .num { color: var(--accent); }
-  .row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin: 10px 0 6px; font-weight: 600; font-size: 14px; }
-  .row:first-of-type { margin-block-start: 0; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin: 0 0 6px; font-weight: 600; font-size: 14px; }
   .val { font: 500 12px/1.2 var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
-  .side-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .side-btn { inline-size: 100%; font-size: 14px; padding: 9px 10px; }
-  .wide { grid-column: 1 / -1; }
-  .side-note { margin: 10px 0 0; font-size: 13px; line-height: 1.45; color: var(--muted); }
-  .side-ai { margin-block-start: 8px; }
-  .side-ai > summary { list-style: none; }
-  .side-ai > summary::-webkit-details-marker { display: none; }
-  .side-ai[open] > summary { box-shadow: inset 0 0 0 1px var(--accent); }
-  @scope (.side-ai) {
-    .ai-panel { margin-block: 10px 0; padding: 12px; font-size: 14px; text-align: start; background: var(--panel-2); }
-    .ai-panel :is(p, li) { text-align: start; }
-  }
   input[type="range"] { inline-size: 100%; margin: 0; accent-color: var(--accent); }
-  .width { inline-size: 100%; font: 600 14px/1.25 var(--font-body); color: var(--text); background: var(--chip); border: 0; border-radius: var(--radius); padding: 9px 10px; }
-  .state::before { content: ""; display: inline-block; inline-size: 7px; block-size: 7px; margin-inline-end: 6px; border-radius: 50%; background: var(--dim); }
-  .state[data-on="true"] { color: var(--ok); }
-  .state[data-on="true"]::before { background: var(--ok); }
-  .connect[data-hint="true"] { box-shadow: inset 0 0 0 2px var(--accent); }
-  .keys dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 0; font-size: 13px; color: var(--muted); }
-  .keys dt { text-align: end; white-space: nowrap; }
-  .keys dd { margin: 0; }
-  .side-foot { margin: 14px 0 0; font-size: 12px; color: var(--muted); }
 
-  /* A switch: Follow my voice. */
-  .switch { position: relative; flex: none; inline-size: 44px; block-size: 26px; border: 0; border-radius: 999px; background: var(--chip); cursor: pointer; padding: 0; }
-  .switch::after { content: ""; position: absolute; inset-block-start: 3px; inset-inline-start: 3px; inline-size: 20px; block-size: 20px; border-radius: 50%; background: var(--text); }
-  .switch[aria-checked="true"] { background: var(--accent); }
-  .switch[aria-checked="true"]::after { translate: 18px 0; }
-  @media (prefers-reduced-motion: no-preference) {
-    .switch::after { transition: translate 160ms var(--ease-out); }
+  /* Start screen: one centred card. */
+  .empty { min-block-size: 100dvh; display: grid; place-items: center; padding: 24px 16px calc(24px + env(safe-area-inset-bottom, 0px)); }
+  .card {
+    inline-size: min(460px, 100%); padding: 28px 28px 22px; text-align: start;
+    background: var(--panel); border-radius: 18px; box-shadow: var(--shadow);
   }
-  .row:has(.switch) { align-items: center; }
-
-  .icon-btn {
-    display: inline-grid; place-items: center; inline-size: 40px; block-size: 40px;
-    color: var(--text); background: transparent; border: 0; border-radius: var(--radius); cursor: pointer;
-  }
-  @media (hover: hover) and (pointer: fine) { .icon-btn:hover { background: var(--panel-2); } }
-
-  /* Phones: the bottom sheet over a dimmed page. */
-  .scrim { display: none; }
-  @media (max-width: 760px) {
-    :root[data-side="open"] { --side-offset: 0px; }
-    .sidebar {
-      inset: auto 0 0 0; inline-size: auto; max-block-size: 82dvh;
-      border-start-start-radius: 18px; border-start-end-radius: 18px;
-      padding-block-end: env(safe-area-inset-bottom, 0px);
-    }
-    :root[data-side="closed"] .sidebar { translate: 0 100%; }
-    :root[data-side="open"] .scrim { display: block; position: fixed; inset: 0; z-index: 25; background: oklch(4% 0.06 282 / 0.6); }
-    .side-head::before { content: ""; position: absolute; inset-block-start: 6px; inset-inline-start: 50%; translate: -50% 0; inline-size: 36px; block-size: 4px; border-radius: 2px; background: var(--chip-hover); }
-  }
+  .card h1 { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; font: 700 26px/1.2 var(--font-body); letter-spacing: -0.01em; }
+  .card-lead { margin: 0 0 20px; color: var(--muted); font-size: 16px; }
+  .choices { display: grid; gap: 8px; }
+  .choices .btn { inline-size: 100%; justify-content: flex-start; text-align: start; padding: 12px 16px; }
+  .choices .btn.primary { padding-block: 13px; }
+  .continue { overflow-wrap: anywhere; box-shadow: inset 0 0 0 1px var(--accent); }
+  .card-foot { margin: 16px 0 0; font-size: 13px; color: var(--muted); }
+  .card-foot p { margin: 0 0 4px; }
 
   /* Reading line */
   .reading-line {
-    position: fixed; inset-inline: var(--side-offset) 0; inset-block-start: var(--line); z-index: 5; pointer-events: none;
+    position: fixed; inset-inline: 0; inset-block-start: var(--line); z-index: 5; pointer-events: none;
     border-block-start: 2px dashed oklch(65% 0.227 32.3 / 0.5);
   }
 
-  /* Script: centred, in a column that can be narrowed. Inactive sections use
-     the dim colours (still AA on the page); the active one the full ones. */
-  .stage { padding-inline-start: var(--side-offset); }
-  @media (prefers-reduced-motion: no-preference) {
-    .stage, .reading-line { transition: padding-inline-start 260ms var(--ease-out), inset-inline-start 260ms var(--ease-out); }
-  }
+  /* Script: a centred column with a maximum width; the text in it starts on
+     the left. Inactive sections use the dim colours (still AA on the page);
+     the active one the full ones. */
   .script {
     box-sizing: content-box; max-inline-size: var(--col); margin-inline: auto;
     padding: calc(var(--line) + 10px) 4vw 70vh;
-    font: 600 var(--size)/1.3 var(--font-body); letter-spacing: -0.01em; text-align: center;
+    font: 600 var(--size)/1.3 var(--font-body); letter-spacing: -0.01em; text-align: start;
   }
   .section {
     --c-say: var(--dim); --c-ql: var(--ql-dim); --c-next: var(--next-dim); --c-now: var(--dim); --c-chip: var(--muted);
@@ -180,19 +113,19 @@
   .section.active { --c-say: var(--text); --c-ql: var(--ql); --c-next: var(--next); --c-now: var(--accent); --c-chip: var(--text); }
   .section :is(p, .title, .link, .mark) { transition: color 200ms ease-out, border-color 200ms ease-out; }
   .title {
-    display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 0.35em 0.8em;
+    display: flex; align-items: center; gap: 0.35em 0.8em;
     margin: 0 0 0.6em; font: 500 max(13px, 0.3em)/1.3 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--c-say);
   }
-  .title::before { content: ""; inline-size: 0.6em; block-size: 0.6em; border-radius: 50%; background: var(--c-now); }
+  .title::before { content: ""; flex: none; inline-size: 0.6em; block-size: 0.6em; border-radius: 50%; background: var(--c-now); }
   .time:empty { display: none; }
-  .time { color: var(--muted); background: var(--chip); border-radius: 999px; padding: 0.2em 0.7em; font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
+  .time { flex: none; margin-inline-start: auto; color: var(--muted); background: var(--chip); border-radius: 999px; padding: 0.2em 0.7em; font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
   .script p { margin: 0 0 0.25em; }
   .bullet::before { content: "• "; color: var(--c-now); }
   .next { color: var(--c-next); }
   .now b { color: var(--c-now); }
   .next b, .now b { font-weight: 800; }
   .ql {
-    color: var(--c-ql); margin: 0 auto 0.5em; padding: 0.35em 0.6em 0.4em; max-inline-size: 100%;
+    color: var(--c-ql); margin: 0 0 0.5em; padding: 0.35em 0.6em 0.4em;
     border: 2px solid var(--c-ql); border-radius: 0.3em; background: var(--panel);
   }
   .ql small { display: block; margin-block-end: 0.3em; font: 500 max(12px, 0.28em)/1.3 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
@@ -202,7 +135,7 @@
   .script p.cur { color: var(--text); background: var(--panel-2); border-radius: 0.2em; box-shadow: 0 0 0 0.15em var(--panel-2), 0 0.2em 0 0.15em var(--accent); }
 
   /* Link chips: indigo with an orange arrow. */
-  .links { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.25em; margin: 0 0 0.6em; }
+  .links { display: flex; flex-wrap: wrap; gap: 0.25em; margin: 0 0 0.6em; }
   .link, .mark {
     display: inline-flex; align-items: center; gap: 0.45em; text-align: start;
     font: 600 max(14px, 0.36em)/1.2 var(--font-body); letter-spacing: 0; color: var(--c-chip);
@@ -215,42 +148,23 @@
   @media (hover: hover) and (pointer: fine) { .link:hover, .mark:hover { background: var(--chip-hover); } }
 
   /* A link placed mid-section: opens when it reaches the reading line. */
-  .mark { display: flex; inline-size: fit-content; max-inline-size: 100%; margin: 0.1em auto 0.35em; overflow-wrap: anywhere; }
+  .mark { display: flex; inline-size: fit-content; max-inline-size: 100%; margin: 0.1em 0 0.35em; overflow-wrap: anywhere; }
   .mark-note { color: var(--muted); font-weight: 500; }
   .mark[data-shown="true"] .mark-note { display: none; }
   .mark[data-shown="true"]::after { content: "· on main screen"; color: var(--ok); }
 
-  /* Demo PREP: the actions and the "Use your AI" panel */
-  .actions { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px; margin: 0 0 0.5em; }
-  .actions .btn { font-size: 19px; font-weight: 700; padding: 12px 22px; }
-  .actions .drop-hint { flex-basis: 100%; font: 500 max(15px, 0.32em)/1.3 var(--font-body); color: var(--muted); }
-  .ai-panel {
-    max-inline-size: 68ch; margin: 0 auto 0.6em; padding: 18px 22px;
-    font: 500 17px/1.55 var(--font-body); letter-spacing: 0; color: var(--text); text-align: center;
-    background: var(--panel); border-radius: 14px; box-shadow: var(--shadow);
-  }
-  .ai-panel p { margin: 0 0 10px; }
-  .ai-panel ul { margin: 0 0 12px; padding-inline-start: 1.2em; text-align: start; }
-  .ai-panel li { margin: 0 0 8px; }
-  .ai-panel pre { margin: 6px 0 0; padding: 8px 10px; overflow-x: auto; background: var(--bg); border-radius: 8px; }
-  .ai-panel pre code { padding: 0; background: none; }
-  .mcp-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; align-items: center; }
-  .mcp-url { font-size: 0.95em; padding: 6px 10px; overflow-wrap: anywhere; }
-
   /* Floating control bar, notices and status at the bottom centre. */
   .dock-wrap {
-    position: fixed; inset-block-end: 0; inset-inline: var(--side-offset) 0; z-index: 20;
+    position: fixed; inset-block-end: 0; inset-inline: 0; z-index: 20;
     display: flex; flex-direction: column; align-items: center; gap: 8px;
     padding: 0 12px calc(16px + env(safe-area-inset-bottom, 0px)); pointer-events: none;
   }
   .dock-wrap > * { pointer-events: auto; }
-  @media (prefers-reduced-motion: no-preference) {
-    .dock-wrap { transition: inset-inline-start 260ms var(--ease-out); }
-  }
   .dock {
     display: flex; align-items: center; gap: 4px; padding: 6px;
     background: var(--panel); border-radius: 18px; box-shadow: var(--shadow);
   }
+  :root[data-view="empty"] :is(.dock, .reading-line, .script) { display: none; }
   .dock-sep { inline-size: 1px; block-size: 24px; margin-inline: 4px; background: var(--border); }
   .dock-btn {
     position: relative; display: inline-grid; place-items: center; min-inline-size: 44px; block-size: 44px; padding: 0 10px;
@@ -260,7 +174,12 @@
   .dock-btn.auto .pause, .dock-btn.auto[aria-pressed="true"] .play { display: none; }
   .dock-btn.auto[aria-pressed="true"] .pause { display: block; }
   .dock-btn.voice[aria-pressed="true"] { background: var(--chip); box-shadow: inset 0 0 0 2px var(--accent); }
-  .dock-btn.side-toggle[aria-expanded="true"] { background: var(--panel-2); }
+  .dock-btn[aria-expanded="true"] { background: var(--panel-2); }
+  /* Main screen: a green dot once a window is connected. */
+  .screen::before { content: ""; position: absolute; inset-block-start: 8px; inset-inline-end: 8px; inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 2px var(--panel); visibility: hidden; }
+  .screen[data-on="true"] { color: var(--ok); }
+  .screen[data-on="true"]::before { visibility: visible; }
+  .screen[data-hint="true"] { box-shadow: inset 0 0 0 2px var(--accent); }
   .clock { font: 500 17px/1 var(--font-mono); font-variant-numeric: tabular-nums; padding-inline: 12px; }
   .clock[data-running="false"] { color: var(--muted); }
   .clock[data-late="true"] { color: var(--accent); }
@@ -268,7 +187,7 @@
     .dock-btn:hover { background: var(--panel-2); }
     .dock-btn.auto:hover { background: var(--accent-hover); }
   }
-  /* Tooltips: on hover with a mouse, and on keyboard focus. */
+  /* Tooltips: on hover with a mouse, and on keyboard focus; never over an open popover. */
   .dock-btn::after {
     content: attr(data-tip); position: absolute; inset-block-end: calc(100% + 12px); inset-inline-start: 50%; translate: -50% 0;
     padding: 6px 10px; border-radius: 8px; white-space: nowrap; pointer-events: none;
@@ -277,6 +196,7 @@
   }
   .dock-btn:focus-visible::after { opacity: 1; visibility: visible; }
   @media (hover: hover) and (pointer: fine) { .dock-btn:hover::after { opacity: 1; visibility: visible; transition-delay: 300ms; } }
+  .dock-btn[aria-expanded="true"]::after { display: none; }
   .status {
     max-inline-size: min(560px, 100%); padding: 6px 14px; border-radius: 999px;
     font-size: 13px; color: var(--muted); background: var(--panel);
@@ -285,7 +205,7 @@
   .status:empty { display: none; }
   .note-row {
     inline-size: min(560px, 100%); margin: 0; padding: 12px 16px;
-    display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 10px; align-items: center; text-align: center;
+    display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; text-align: start;
     color: var(--text); background: var(--panel); border-radius: 14px; box-shadow: var(--shadow), inset 0 0 0 1px var(--border);
   }
   .note-row > span { flex-basis: 100%; }
@@ -293,18 +213,65 @@
   .note-row .btn { font-size: 14px; padding: 8px 14px; }
   .note-row .btn.primary { font-size: 19px; padding: 8px 16px; }
 
-  /* Paste dialog */
-  .paste-dialog { inline-size: min(720px, 94vw); color: var(--text); background: var(--panel); border: 0; border-radius: 16px; padding: 18px 22px; box-shadow: var(--shadow); }
-  .paste-dialog::backdrop { background: oklch(4% 0.06 282 / 0.7); }
-  .paste-dialog h2 { margin: 0 0 8px; font-size: 1.25em; }
+  /* Popovers: Open and Settings, above their bar buttons (anchor positioning;
+     app.js places them by hand where the browser has none). */
+  .pop {
+    position: fixed; inset: auto; margin: 0 8px 12px; padding: 8px;
+    inline-size: max-content; max-inline-size: calc(100vw - 16px);
+    color: var(--text); background: var(--panel); border: 0; border-radius: 14px;
+    box-shadow: var(--shadow), inset 0 0 0 1px var(--border);
+  }
+  .open-btn { anchor-name: --open-btn; }
+  .settings-btn { anchor-name: --settings-btn; }
+  @supports (position-anchor: --a) {
+    .pop { position-area: top; position-try-fallbacks: top span-right, top span-left, bottom; }
+    .open-pop { position-anchor: --open-btn; }
+    .settings-pop { position-anchor: --settings-btn; }
+  }
+  .open-pop { min-inline-size: 240px; }
+  .item {
+    display: flex; align-items: center; gap: 10px; inline-size: 100%; padding: 10px 12px;
+    font: 600 15px/1.25 var(--font-body); color: var(--text); text-align: start;
+    background: transparent; border: 0; border-radius: var(--radius); cursor: pointer;
+  }
+  .item svg { color: var(--muted); }
+  @media (hover: hover) and (pointer: fine) { .item:hover { background: var(--panel-2); } }
+  .pop-sep { block-size: 1px; margin: 6px 4px; background: var(--border); }
+  .settings-pop { inline-size: 300px; padding: 16px 16px 14px; }
+  .setting + .setting { margin-block-start: 16px; }
+  .setting legend { padding: 0; margin: 0 0 6px; font-weight: 600; font-size: 14px; }
+  fieldset.setting { margin-inline: 0; padding: 0; border: 0; }
+  .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; padding: 3px; background: var(--bg); border-radius: var(--radius); }
+  .seg label { position: relative; display: grid; place-items: center; min-block-size: 36px; padding: 0 6px; border-radius: 8px; font-size: 14px; font-weight: 600; color: var(--muted); cursor: pointer; }
+  .seg input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+  .seg label:has(input:checked) { color: var(--text); background: var(--chip); }
+  .seg label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  /* Dialogs: paste and Use your AI */
+  .dialog { inline-size: min(720px, 94vw); max-block-size: 90dvh; color: var(--text); background: var(--panel); border: 0; border-radius: 16px; padding: 18px 22px; box-shadow: var(--shadow); }
+  .dialog::backdrop { background: oklch(4% 0.06 282 / 0.7); }
+  .dialog h2 { margin: 0 0 8px; font-size: 1.25em; }
   .paste { inline-size: 100%; min-block-size: 12em; margin-block-start: 6px; padding: 10px; font: 500 14px/1.45 var(--font-mono); color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); }
-  .dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-block-end: 0; }
+  .ai-panel { font: 500 16px/1.55 var(--font-body); text-align: start; }
+  .ai-panel p { margin: 0 0 10px; }
+  .ai-panel ul { margin: 0 0 12px; padding-inline-start: 1.2em; }
+  .ai-panel li { margin: 0 0 8px; }
+  .ai-panel pre { margin: 6px 0 0; padding: 8px 10px; overflow-x: auto; background: var(--bg); border-radius: 8px; }
+  .ai-panel pre code { padding: 0; background: none; }
+  .ai-panel .muted { font-size: 14px; }
+  .mcp-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .mcp-url { font-size: 0.95em; padding: 6px 10px; overflow-wrap: anywhere; }
 
   @media (max-width: 760px) {
     .script { padding-inline: 5vw; }
     .dock-wrap { padding-inline: 8px; }
-    .dock { gap: 2px; padding: 5px; }
-    .dock-sep { margin-inline: 2px; }
+    .dock { gap: 0; padding: 4px; }
+    .dock-sep { display: none; }
+    .dock-btn { min-inline-size: 42px; padding-inline: 6px; }
+    .dock-btn.auto { min-inline-size: 48px; }
+    .clock { font-size: 15px; padding-inline: 5px; }
+    .card { padding: 22px 18px 18px; }
   }
   @media (prefers-reduced-motion: reduce) {
     .section :is(p, .title, .link, .mark) { transition: none; }
@@ -313,89 +280,29 @@
 </head>
 <body>
 
-<aside class="sidebar" id="settings" aria-label="Settings">
-  <header class="side-head">
-    <svg width="34" height="34" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#2f2c64"/><path d="M8 11h16M8 16h11M8 21h14" stroke="#fb401f" stroke-width="3" stroke-linecap="round"/></svg>
-    <div>
-      <p class="brand-name">Prompter <span class="version">v0.2</span></p>
-      <a class="by" href="https://techies.review/">by Techies</a>
+<section class="empty" aria-labelledby="empty-title" hidden>
+  <div class="card">
+    <h1 id="empty-title"><svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#2f2c64"/><path d="M8 11h16M8 16h11M8 21h14" stroke="#fb401f" stroke-width="3" stroke-linecap="round"/></svg>Your teleprompter</h1>
+    <p class="card-lead">Open your script and read it in big text that scrolls while you talk to camera.</p>
+    <div class="choices">
+      <button class="btn continue" type="button" data-action="continue" hidden></button>
+      <button class="btn primary" type="button" data-action="open-file">Open a script file</button>
+      <button class="btn" type="button" data-action="paste">Paste a script</button>
+      <button class="btn" type="button" data-action="ai">Use your AI</button>
+      <button class="btn" type="button" data-action="demo">Try the demo</button>
     </div>
-    <button class="icon-btn side-close" type="button" data-action="sidebar" aria-controls="settings" aria-label="Hide settings">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
-    </button>
-  </header>
-  <div class="side-body">
-    <section class="group" aria-labelledby="g-script">
-      <h2 class="group-label" id="g-script"><span class="num">01</span>Script</h2>
-      <div class="side-grid">
-        <label class="btn side-btn">Open file<input class="file-input" type="file" accept=".md,.markdown,.txt,text/markdown,text/plain"></label>
-        <button class="btn side-btn" type="button" data-action="paste">Paste</button>
-        <button class="btn side-btn" type="button" data-action="demo">Back to demo</button>
-        <button class="btn side-btn share" type="button">Copy link</button>
-      </div>
-      <details class="side-ai">
-        <summary class="btn side-btn">Use your AI</summary>
-        <div class="ai-slot"></div>
-      </details>
-      <p class="side-note">Or drop a .md or .txt file anywhere. Your script stays on this device.</p>
-    </section>
-
-    <section class="group" aria-labelledby="g-reading">
-      <h2 class="group-label" id="g-reading"><span class="num">02</span>Reading</h2>
-      <label class="row" for="speed">Speed <span class="val speed-val"></span></label>
-      <input class="speed" id="speed" type="range" min="10" max="300" step="10">
-      <label class="row" for="size">Text size <span class="val size-val"></span></label>
-      <input class="size" id="size" type="range" min="20" max="110" step="2">
-      <label class="row" for="width">Column</label>
-      <select class="width" id="width">
-        <option value="narrow">Narrow</option>
-        <option value="medium">Medium</option>
-        <option value="full">Full width</option>
-      </select>
-      <p class="side-note">A narrow column keeps your eyes near the camera.</p>
-    </section>
-
-    <section class="group" aria-labelledby="g-voice">
-      <h2 class="group-label" id="g-voice"><span class="num">03</span>Voice</h2>
-      <div class="row voice-row"><span id="voice-label">Follow my voice</span><button class="switch voice-switch" type="button" role="switch" aria-checked="false" aria-labelledby="voice-label"></button></div>
-      <p class="side-note voice-help">Scrolls as you read out loud. Your browser's speech service (in Chrome, Google) hears your voice; the script stays on this device.</p>
-      <p class="side-note no-voice" hidden>Follow my voice works in Chrome and Edge.</p>
-    </section>
-
-    <section class="group" aria-labelledby="g-screen">
-      <h2 class="group-label" id="g-screen"><span class="num">04</span>Main screen</h2>
-      <div class="row">Window <span class="val state screen-state" data-on="false">Not connected</span></div>
-      <button class="btn side-btn connect" type="button" data-on="false">Connect main screen</button>
-      <p class="side-note">Opens a window. Drag it to your main screen once; links open there by themselves. Keys 1–9 show a section's links.</p>
-    </section>
-
-    <section class="group" aria-labelledby="g-clock">
-      <h2 class="group-label" id="g-clock"><span class="num">05</span>Clock</h2>
-      <button class="btn side-btn start" type="button">Start clock</button>
-      <p class="side-note">Counts from the start of your show and turns orange when you run past the next section's time.</p>
-    </section>
-
-    <section class="group keys" aria-labelledby="g-keys">
-      <h2 class="group-label" id="g-keys"><span class="num">06</span>Keys</h2>
-      <dl>
-        <dt><kbd>Space</kbd></dt><dd>Auto-scroll</dd>
-        <dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>Slower, faster</dd>
-        <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Previous, next section</dd>
-        <dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Scroll</dd>
-        <dt><kbd>−</kbd> <kbd>+</kbd></dt><dd>Text size</dd>
-        <dt><kbd>1</kbd>–<kbd>9</kbd></dt><dd>Show that link of the section</dd>
-        <dt><kbd>F</kbd></dt><dd>Full screen</dd>
-      </dl>
-      <p class="side-foot">Made by <a href="https://techies.review/">Techies Reviews</a>.</p>
-    </section>
+    <div class="card-foot">
+      <p>Or drop a .md or .txt file anywhere on this page.</p>
+      <p>Your script stays on this device.</p>
+    </div>
   </div>
-</aside>
-<div class="scrim" data-action="sidebar-close" aria-hidden="true"></div>
+</section>
 
 <div class="stage">
   <div class="reading-line" aria-hidden="true"></div>
-  <main class="script"></main>
+  <main class="script" aria-label="Script"></main>
 </div>
+<input class="file-input" type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" tabindex="-1" aria-hidden="true">
 
 <div class="dock-wrap">
   <p class="note-row alert" role="alert" hidden><span class="alert-text"></span><button class="btn" type="button" data-action="dismiss">OK</button></p>
@@ -411,8 +318,8 @@
   </p>
   <span class="status" role="status"></span>
   <nav class="dock" aria-label="Prompter controls">
-    <button class="dock-btn side-toggle" type="button" data-action="sidebar" aria-controls="settings" aria-expanded="true" aria-label="Settings" data-tip="Settings">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+    <button class="dock-btn open-btn" type="button" popovertarget="open-menu" aria-label="Open" data-tip="Open a script">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
     </button>
     <span class="dock-sep" aria-hidden="true"></span>
     <button class="dock-btn prev" type="button" aria-label="Previous section" data-tip="Previous section ←">
@@ -422,27 +329,58 @@
       <svg class="play" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12.5-7.5z" fill="currentColor"/></svg>
       <svg class="pause" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg>
     </button>
-    <button class="dock-btn voice" type="button" aria-pressed="false" aria-label="Follow my voice" data-tip="Follow my voice" hidden>
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>
-    </button>
     <button class="dock-btn next" type="button" aria-label="Next section" data-tip="Next section →">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 5 9 7-9 7z"/><path d="M18 5v14"/></svg>
     </button>
     <span class="dock-sep" aria-hidden="true"></span>
-    <button class="dock-btn clock" type="button" data-running="false" data-tip="Start the show clock"><span class="sr-only">Show clock </span><span class="clock-time">00:00</span></button>
+    <button class="dock-btn voice" type="button" aria-pressed="false" aria-label="Follow my voice" data-tip="Follow my voice" hidden>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>
+    </button>
+    <button class="dock-btn screen" type="button" data-on="false" aria-label="Connect main screen" data-tip="Connect main screen · links open there">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
+    </button>
+    <button class="dock-btn clock" type="button" data-running="false" data-tip="Start the show clock"><span class="sr-only clock-label">Start the show clock, </span><span class="clock-time">00:00</span></button>
+    <span class="dock-sep" aria-hidden="true"></span>
+    <button class="dock-btn settings-btn" type="button" popovertarget="settings" aria-label="Settings" data-tip="Settings">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
   </nav>
 </div>
 
-<dialog class="paste-dialog" aria-labelledby="paste-title">
+<div class="pop open-pop" id="open-menu" popover aria-label="Open">
+  <button class="item" type="button" data-action="open-file"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>Open a script file</button>
+  <button class="item" type="button" data-action="paste"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="3" width="8" height="4" rx="1"/><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2"/></svg>Paste a script</button>
+  <button class="item share" type="button" data-action="copy-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>Copy link</button>
+  <button class="item" type="button" data-action="ai"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>Use your AI</button>
+  <div class="pop-sep" role="separator"></div>
+  <button class="item" type="button" data-action="start"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>Back to the start</button>
+</div>
+
+<div class="pop settings-pop" id="settings" popover aria-label="Settings">
+  <label class="row setting" for="size">Text size <span class="val size-val"></span></label>
+  <input class="size" id="size" type="range" min="20" max="110" step="2">
+  <label class="row setting" for="speed">Scroll speed <span class="val speed-val"></span></label>
+  <input class="speed" id="speed" type="range" min="10" max="300" step="10">
+  <fieldset class="setting width">
+    <legend>Width</legend>
+    <div class="seg">
+      <label><input type="radio" name="width" value="narrow">Narrow</label>
+      <label><input type="radio" name="width" value="medium">Medium</label>
+      <label><input type="radio" name="width" value="full">Full</label>
+    </div>
+  </fieldset>
+</div>
+
+<dialog class="dialog paste-dialog" aria-labelledby="paste-title">
   <h2 id="paste-title">Paste a script</h2>
   <label for="paste-text" class="muted">Script text (Markdown, like the demo)</label>
   <textarea id="paste-text" class="paste" placeholder="### **INTRO · 00:00**&#10;&#10;QL: Why should they stay?&#10;&#10;Hi, I'm Sam. Welcome."></textarea>
   <p class="error-text paste-error" role="alert" hidden></p>
-  <p class="dialog-actions"><button class="btn primary" type="button" data-action="open-paste">Open in the prompter</button> <button class="btn" type="button" data-action="close-paste">Cancel</button></p>
+  <p class="dialog-actions"><button class="btn primary" type="button" data-action="open-paste">Open in the prompter</button> <button class="btn" type="button" data-action="close-dialog">Cancel</button></p>
 </dialog>
 
-<!-- Shown under "Use your AI" in the demo's PREP section and in the settings. -->
-<template id="ai-template">
+<dialog class="dialog ai-dialog" aria-labelledby="ai-title">
+  <h2 id="ai-title">Use your AI</h2>
   <div class="ai-panel">
     <p>Prompter has an open MCP server. Connect it to your AI assistant, then ask: <i>“Help me write a prompter script about …”</i>. It interviews you, writes and checks the script, and gives you a link that opens here.</p>
     <p class="mcp-row"><code class="mcp-url">https://prompter.techies.tools/mcp</code> <button class="btn" type="button" data-action="copy-mcp">Copy address</button></p>
@@ -456,7 +394,8 @@ url = "https://prompter.techies.tools/mcp"</code></pre></li>
     </ul>
     <p class="muted">No sign-in. Your script travels only inside the link. To stop heavy use, the server allows 60 requests a minute (10 per 10 seconds) per internet address. It counts them in memory only, under a hashed form of your address, never with your script, and forgets the count within a few minutes of your last request.</p>
   </div>
-</template>
+  <p class="dialog-actions"><button class="btn" type="button" data-action="close-dialog">Close</button></p>
+</dialog>
 
 <!-- An offline copy can carry a script here: scripts/embed.mjs replaces everything between the markers. -->
 <script type="text/markdown" id="script-md">

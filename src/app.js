@@ -41,27 +41,24 @@ const main = $(".script");
 const statusEl = $(".status");
 const clockBtn = $(".clock");
 const clockTime = $(".clock-time");
-const connectBtn = $(".connect");
-const screenState = $(".screen-state");
+const connectBtn = $(".screen");
 const autoBtn = $(".auto");
 const voiceBtn = $(".voice");
-const voiceSwitch = $(".voice-switch");
 const voiceNotice = $(".voice-notice");
 const alertEl = $(".note-row.alert");
 const hintEl = $(".screen-hint");
-const sideAi = $(".side-ai");
-const sideToggle = $(".side-toggle");
 const pasteDialog = $(".paste-dialog");
+const aiDialog = $(".ai-dialog");
+const fileInput = $(".file-input");
+const continueBtn = $(".continue");
 const speedInput = $(".speed");
 const sizeInput = $(".size");
-const widthSelect = $(".width");
-const narrow = window.matchMedia("(max-width: 760px)");
+const widthInputs = document.querySelectorAll('input[name="width"]');
 const WINDOW_NAME = "prompter-main-screen";
 const SETTLE_MS = 700; // wait this long on a section before changing the main screen
 const LAST_KEY = "prompter-last-script";
 const PRESET_KEY = "prompter-preset";
 const VOICE_OK_KEY = "prompter-voice-ok";
-const SIDE_KEY = "prompter-sidebar";
 const WIDTHS = ["narrow", "medium", "full"];
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -96,39 +93,74 @@ let recognition = null;
 let voiceRestarts = 0;
 let resumeAuto = false;
 
-const isDemo = () => scriptText === DEMO_SCRIPT;
 const mcpUrl = () => (/^https?:$/.test(location.protocol) ? `${location.origin}/mcp` : `${SITE}/mcp`);
 
 // ---------- Opening scripts ----------
+const isEmpty = () => root.dataset.view === "empty";
+const plainAddress = () => location.pathname + location.search;
+
 /**
- * Show a script. `fromLink` keeps the current address (a #s= link, the demo or
- * an embedded copy); otherwise the address gets the script's #s= link.
+ * Show a script. `fromLink` keeps the current address (a #s= link, #demo or
+ * an embedded copy); otherwise the address gets the script's #s= link, as a
+ * new history entry when it replaces the start screen (so Back returns there).
  * `remember` keeps it as this browser's last script. Returns false if empty.
  */
 async function openScript(text, { fromLink = false, remember = true, label = "" } = {}) {
   const parsed = parse(text);
   if (!parsed.length) return false;
   if (voiceOn) stopVoice();
+  const fromStart = isEmpty();
   scriptText = text;
   sections = parsed;
   if (remember) store.set(LAST_KEY, text);
-  if (narrow.matches) setSide(false);
+  root.dataset.view = "script";
+  $(".empty").hidden = true;
   window.scrollTo(0, 0);
   render();
   setStatus(label);
   if (!fromLink) {
     try {
       const data = await encodeScript(text);
-      history.replaceState(null, "", `#s=${data}${preset === "default" ? "" : `&p=${preset}`}`);
+      const url = `#s=${data}${preset === "default" ? "" : `&p=${preset}`}`;
+      if (fromStart) history.pushState(null, "", url); else history.replaceState(null, "", url);
     } catch { /* the link is a convenience; the prompter works without it */ }
   }
   return true;
 }
 
-function openDemo(label = "", { forget = false } = {}) {
-  if (forget) store.set(LAST_KEY, "");
-  if (location.hash) history.replaceState(null, "", location.pathname + location.search);
-  return openScript(DEMO_SCRIPT, { fromLink: true, remember: false, label });
+function openDemo() {
+  if (location.hash !== "#demo") history[isEmpty() ? "pushState" : "replaceState"](null, "", "#demo");
+  return openScript(DEMO_SCRIPT, { fromLink: true, remember: false });
+}
+
+// A remembered script is named by its first section after PREP and INTRO
+// (which most scripts start with), so the reader knows which one it is.
+function rememberedTitle(text) {
+  const parsed = text ? parse(text) : [];
+  return (parsed.find((s) => !/^(PREP|INTRO)$/i.test(s.title)) || parsed[0])?.title || "";
+}
+
+/** The start screen: open, paste, ask your AI or try the demo. Opens nothing by itself. */
+function showStart() {
+  if (voiceOn) stopVoice();
+  setAuto(false);
+  hidePopovers();
+  scriptText = "";
+  sections = [];
+  main.innerHTML = "";
+  active = -1;
+  anchor = null;
+  anchorKey = "";
+  clearTimeout(settleTimer);
+  hideHint();
+  setStatus("");
+  if (location.hash) history.replaceState(null, "", plainAddress());
+  const title = rememberedTitle(store.get(LAST_KEY));
+  continueBtn.hidden = !title;
+  continueBtn.textContent = `Continue: ${title}`;
+  root.dataset.view = "empty";
+  $(".empty").hidden = false;
+  window.scrollTo(0, 0);
 }
 
 async function route() {
@@ -140,43 +172,29 @@ async function route() {
     store.set(PRESET_KEY, preset);
     let text;
     try { text = await decodeScript(data || ""); } catch (error) {
-      await openDemo("");
+      showStart();
       showAlert(`This link could not be opened: ${error.message}`);
       return;
     }
     if (!(await openScript(text, { fromLink: true, label: "Opened from link" }))) {
-      await openDemo("");
+      showStart();
       showAlert("This link has no sections. Each section starts with a title line like: ### **INTRO · 00:00**");
     }
     return;
   }
+  if (hash === "#demo") { await openDemo(); return; }
   const embedded = $("#script-md").textContent;
   if (parse(embedded).length) {
     await openScript(embedded, { fromLink: true, remember: false });
     return;
   }
-  const last = store.get(LAST_KEY);
-  if (last && last !== DEMO_SCRIPT && await openScript(last, { label: "Your last script · Settings › Back to demo" })) return;
-  await openDemo();
+  showStart();
 }
 
 // ---------- Rendering ----------
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const lead = (s) => esc(s).replace(/^([^:]{1,12}:)/, "<b>$1</b>");
 const SPOKEN = new Set(["say", "bullet", "next", "now"]);
-const FILE_ACCEPT = ".md,.markdown,.txt,text/markdown,text/plain";
-
-function demoActions(items) {
-  const html = items.map((it) => {
-    const action = DEMO_ACTIONS[it.text];
-    if (action === "open-file") return `<label class="btn primary">${esc(it.text)}<input class="file-input" type="file" accept="${FILE_ACCEPT}"></label>`;
-    if (action === "drop-hint") return `<span class="drop-hint">or ${esc(it.text.toLowerCase())}</span>`;
-    if (action === "ai") return `<button class="btn" type="button" data-action="ai" aria-expanded="false" aria-controls="demo-ai">${esc(it.text)}</button>`;
-    return `<button class="btn" type="button" data-action="${action}">${esc(it.text)}</button>`;
-  }).join("");
-  return `<div class="actions">${html}</div><div class="ai-slot" id="demo-ai" hidden></div>`;
-}
-
 // A link placed mid-section: a small marker at its line, not a spoken line.
 const ARROW = `<span class="arrow" aria-hidden="true">↗</span>`;
 const mark = (l, i, j) =>
@@ -184,7 +202,6 @@ const mark = (l, i, j) =>
 
 function render() {
   voiceLines = [];
-  const demo = isDemo();
   main.innerHTML = sections.map((s, i) => {
     const links = s.links.length
       ? `<div class="links">${s.links.map((l, j) =>
@@ -195,14 +212,8 @@ function render() {
       .map((it) => `<p class="ql"><small>Main question · answer it, don't read it</small>${esc(it.text)}</p>`).join("");
     // Items in order, with each inline link's marker just before items[at].
     const marksAt = (n) => s.links.flatMap((l, j) => (l.inline && l.at === n ? [{ type: "mark", l, j }] : []));
-    let rest = s.items.flatMap((it, n) => [...marksAt(n), it]).concat(marksAt(s.items.length))
+    const rest = s.items.flatMap((it, n) => [...marksAt(n), it]).concat(marksAt(s.items.length))
       .filter((it) => it.type !== "ql");
-    let actions = "";
-    if (demo && i === 0) {
-      const isAction = (it) => it.type === "bullet" && DEMO_ACTIONS[it.text];
-      actions = demoActions(rest.filter(isAction));
-      rest = rest.filter((it) => !isAction(it));
-    }
     while (rest[0]?.type === "gap") rest.shift();
     while (rest.at(-1)?.type === "gap") rest.pop();
     const items = rest.map((it) => {
@@ -212,7 +223,7 @@ function render() {
       if (it.type === "next" || it.type === "now") return `<p class="${it.type}"${k}>${lead(it.text)}</p>`;
       return `<p class="${it.type}"${k}>${esc(it.text)}</p>`;
     }).join("");
-    return `<section class="section" data-i="${i}"><h2 class="title"><span>${esc(s.title)}</span><span class="time">${esc(s.time)}</span></h2>${links}${qls}${actions}${items}</section>`;
+    return `<section class="section" data-i="${i}"><h2 class="title"><span>${esc(s.title)}</span><span class="time">${esc(s.time)}</span></h2>${links}${qls}${items}</section>`;
   }).join("");
   active = -1;
   shownUrl = "";
@@ -225,32 +236,50 @@ function render() {
   updateActive();
 }
 
-/** Fills an "Use your AI" slot once, with this server's own /mcp address. */
-function fillAiSlot(slot) {
-  if (slot.firstElementChild) return;
-  slot.append($("#ai-template").content.cloneNode(true));
-  slot.querySelector(".mcp-url").textContent = mcpUrl();
-  slot.querySelectorAll(".mcp-snippet").forEach((el) => { el.textContent = el.textContent.replaceAll(`${SITE}/mcp`, mcpUrl()); });
+// ---------- Popovers and dialogs ----------
+// Open and Settings are native popovers (light dismiss, Escape) anchored above
+// their bar buttons with CSS anchor positioning. Where the browser has none,
+// placeAbove() puts them there by hand.
+const anchored = CSS.supports?.("position-anchor: --a") ?? false;
+const invokerOf = (pop) => document.querySelector(`[popovertarget="${pop.id}"]`);
+
+function placeAbove(pop) {
+  const b = invokerOf(pop).getBoundingClientRect();
+  const w = pop.offsetWidth;
+  const x = Math.min(window.innerWidth - w - 8, Math.max(8, b.left + b.width / 2 - w / 2)) - 8; // minus its side margin
+  pop.style.inset = `auto auto ${Math.round(window.innerHeight - b.top)}px ${Math.round(x)}px`;
 }
 
-function toggleAiPanel(button) {
-  const slot = main.querySelector(".ai-slot");
-  if (!slot) return;
-  fillAiSlot(slot);
-  slot.hidden = !slot.hidden;
-  button.setAttribute("aria-expanded", String(!slot.hidden));
+function hidePopovers() {
+  document.querySelectorAll(".pop").forEach((pop) => { if (pop.matches(":popover-open")) pop.hidePopover(); });
 }
 
-// ---------- Settings sidebar ----------
-// Wide screens: a column on the left, open unless closed before (remembered).
-// Phones: a bottom sheet, closed on every visit.
-function setSide(open, { remember = false, focus = false } = {}) {
-  root.dataset.side = open ? "open" : "closed";
-  document.querySelectorAll('[data-action="sidebar"][aria-expanded]').forEach((b) => b.setAttribute("aria-expanded", String(open)));
-  if (remember && !narrow.matches) store.set(SIDE_KEY, open ? "open" : "closed");
-  if (focus) (open ? $(".side-close") : sideToggle).focus();
+for (const pop of document.querySelectorAll(".pop")) {
+  const button = invokerOf(pop);
+  pop.addEventListener("beforetoggle", (e) => {
+    const open = e.newState === "open";
+    button.setAttribute("aria-expanded", String(open));
+    // Placed in the frame it first shows in, once it has a size.
+    if (open && !anchored) requestAnimationFrame(() => placeAbove(pop));
+  });
+  // Closed with Escape or by an item: focus goes back to its bar button.
+  pop.addEventListener("toggle", (e) => {
+    if (e.newState === "closed" && (pop.contains(document.activeElement) || document.activeElement === document.body)) button.focus({ preventScroll: true });
+  });
 }
-const sideOpen = () => root.dataset.side === "open";
+
+function showDialog(dialog) {
+  hidePopovers();
+  dialog.showModal();
+}
+
+/** "Use your AI": this server's own /mcp address, filled in once. */
+function openAi() {
+  const url = mcpUrl();
+  aiDialog.querySelector(".mcp-url").textContent = url;
+  aiDialog.querySelectorAll(".mcp-snippet").forEach((el) => { el.textContent = el.textContent.replaceAll(`${SITE}/mcp`, url); });
+  showDialog(aiDialog);
+}
 
 // ---------- Active section ----------
 function readingLineY() { return window.innerHeight * 0.34; }
@@ -283,9 +312,8 @@ function connected() { return mainWin && !mainWin.closed; }
 
 function setConnected(on) {
   connectBtn.dataset.on = String(on);
-  connectBtn.textContent = on ? "Reconnect main screen" : "Connect main screen";
-  screenState.dataset.on = String(on);
-  screenState.textContent = on ? "Connected" : "Not connected";
+  connectBtn.setAttribute("aria-label", on ? "Main screen connected, reconnect" : "Connect main screen");
+  connectBtn.dataset.tip = on ? "Main screen connected · click to reconnect" : "Connect main screen · links open there";
 }
 
 function connect() {
@@ -371,7 +399,7 @@ function hideHint() {
   delete connectBtn.dataset.hint;
 }
 
-function lost() { showAlert("Main screen window lost. Click “Connect main screen” or a link button."); }
+function lost() { showAlert("Main screen window lost. Click the main screen button in the bar, or a link button."); }
 function blocked() { showAlert("No window could open. Allow pop-ups for this page."); }
 
 // ---------- Clock ----------
@@ -384,11 +412,12 @@ function updateClock() {
   const next = sections.slice(active + 1).find((s) => s.time);
   clockBtn.dataset.late = String(Boolean(next && el > toSeconds(next.time)));
 }
+// Pressing the clock starts it; pressing it again starts it over from 00:00.
 function startClock() {
   clockStart = Date.now();
-  $(".start").textContent = "Restart clock";
   clockBtn.dataset.running = "true";
-  clockBtn.dataset.tip = "Show clock · restart it in Settings";
+  clockBtn.dataset.tip = "Show clock · click to restart from 00:00";
+  $(".clock-label").textContent = "Show clock, click to restart from 00:00: ";
   updateClock();
 }
 setInterval(updateClock, 1000);
@@ -430,9 +459,9 @@ function setSize(px) {
 const curSize = () => parseInt(getComputedStyle(root).getPropertyValue("--size"), 10);
 
 function setWidth(name) {
-  const w = WIDTHS.includes(name) ? name : "full";
+  const w = WIDTHS.includes(name) ? name : "medium";
   root.dataset.width = w;
-  widthSelect.value = w;
+  widthInputs.forEach((input) => { input.checked = input.value === w; });
   store.set("prompter-width", w);
 }
 
@@ -469,13 +498,11 @@ function markLine(k) {
 
 function setVoiceButton() {
   voiceBtn.setAttribute("aria-pressed", String(voiceOn));
-  voiceSwitch.setAttribute("aria-checked", String(voiceOn));
 }
 
 function toggleVoice() {
   if (voiceOn) { stopVoice(); setStatus("Follow my voice is off."); return; }
   if (store.get(VOICE_OK_KEY) !== "yes") {
-    if (narrow.matches) setSide(false); // the notice sits where the sheet is
     voiceNotice.hidden = false;
     voiceNotice.querySelector('[data-action="voice-ok"]').focus();
     return;
@@ -595,7 +622,7 @@ async function copyLink() {
 
 function openPaste() {
   $(".paste-error").hidden = true;
-  pasteDialog.showModal();
+  showDialog(pasteDialog);
   $("#paste-text").focus();
 }
 
@@ -630,18 +657,14 @@ for (const type of ["wheel", "touchmove", "scrollend"]) {
   }, { passive: true });
 }
 connectBtn.addEventListener("click", connect);
-$(".start").addEventListener("click", startClock);
-clockBtn.addEventListener("click", () => { if (!clockStart) startClock(); });
+clockBtn.addEventListener("click", startClock);
 autoBtn.addEventListener("click", toggleAuto);
 voiceBtn.addEventListener("click", toggleVoice);
-voiceSwitch.addEventListener("click", toggleVoice);
 $(".prev").addEventListener("click", () => goSection(-1));
 $(".next").addEventListener("click", () => goSection(1));
-sideAi.addEventListener("toggle", () => { if (sideAi.open) fillAiSlot(sideAi.querySelector(".ai-slot")); });
 speedInput.addEventListener("input", () => setSpeed(Number(speedInput.value)));
 sizeInput.addEventListener("input", () => setSize(Number(sizeInput.value)));
-widthSelect.addEventListener("change", () => setWidth(widthSelect.value));
-$(".share").addEventListener("click", copyLink);
+widthInputs.forEach((input) => input.addEventListener("change", () => setWidth(input.value)));
 main.addEventListener("click", (e) => {
   const b = e.target.closest(".link, .mark");
   if (b) showLink(Number(b.dataset.s), Number(b.dataset.l), true);
@@ -649,13 +672,17 @@ main.addEventListener("click", (e) => {
 document.addEventListener("click", (e) => {
   const button = e.target.closest("[data-action]");
   const action = button?.dataset.action;
-  if (action === "paste") openPaste();
+  if (!action) return;
+  if (button.closest(".pop")) hidePopovers();
+  if (action === "open-file") fileInput.click();
+  else if (action === "paste") openPaste();
   else if (action === "open-paste") submitPaste();
-  else if (action === "close-paste") pasteDialog.close();
-  else if (action === "demo") { showAlert(""); openDemo("", { forget: true }); }
-  else if (action === "sidebar") setSide(!sideOpen(), { remember: true, focus: e.detail === 0 });
-  else if (action === "sidebar-close") setSide(false);
-  else if (action === "ai") toggleAiPanel(button);
+  else if (action === "close-dialog") button.closest("dialog").close();
+  else if (action === "copy-link") copyLink();
+  else if (action === "ai") openAi();
+  else if (action === "start") { showAlert(""); history.pushState(null, "", plainAddress()); showStart(); }
+  else if (action === "demo") { showAlert(""); openDemo(); }
+  else if (action === "continue") { showAlert(""); openScript(store.get(LAST_KEY) || "", { label: "Your last script" }); }
   else if (action === "copy-mcp") copyText(mcpUrl(), "Server address copied.", "Copy the server address:");
   else if (action === "dismiss") showAlert("");
   else if (action === "connect") connect();
@@ -663,11 +690,10 @@ document.addEventListener("click", (e) => {
   else if (action === "voice-ok") { store.set(VOICE_OK_KEY, "yes"); startVoice(); }
   else if (action === "voice-cancel") { voiceNotice.hidden = true; }
 });
-// File inputs live in the settings and in the demo, which is re-rendered.
-document.addEventListener("change", (e) => {
-  if (!e.target.matches(".file-input")) return;
-  loadFile(e.target.files[0]);
-  e.target.value = "";
+// One file input for the start screen and the Open menu.
+fileInput.addEventListener("change", () => {
+  loadFile(fileInput.files[0]);
+  fileInput.value = "";
 });
 document.addEventListener("dragover", (e) => {
   if (![...(e.dataTransfer?.types || [])].includes("Files")) return;
@@ -683,18 +709,16 @@ document.addEventListener("drop", (e) => {
   loadFile(file);
 });
 // Fires for Back/Forward and for a new #s= link pasted into the address bar.
-// Back to an entry without a script link shows the demo; the remembered script
-// is only for the first page load.
-window.addEventListener("popstate", () => { if (location.hash) route(); else { showAlert(""); openDemo(); } });
+// Back to an entry without a script link shows the start screen.
+window.addEventListener("popstate", () => { showAlert(""); route(); });
 document.addEventListener("keydown", (e) => {
-  if (pasteDialog.open || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (isEmpty() || document.querySelector("dialog[open]") || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.target.closest("textarea, select, input:not([type=range])")) return;
   const k = e.key;
   // A focused slider keeps its arrow keys; every other shortcut still works.
   if (e.target.matches?.("input[type=range]") && k.startsWith("Arrow")) return;
-  if (k === "Escape" && narrow.matches && sideOpen()) { setSide(false, { focus: true }); return; }
   // Space on these buttons presses them; on the control bar and the link chips it still means auto-scroll.
-  if (k === " " && e.target.closest(".note-row, .actions, .ai-panel, summary, .sidebar :is(button, label, a)")) return;
+  if (k === " " && e.target.closest(".note-row, .pop")) return;
   if (k === " ") { e.preventDefault(); toggleAuto(); }
   else if (k === "ArrowRight" || k === "PageDown") { e.preventDefault(); goSection(1); }
   else if (k === "ArrowLeft" || k === "PageUp") { e.preventDefault(); goSection(-1); }
@@ -709,12 +733,7 @@ document.addEventListener("keydown", (e) => {
 
 // ---------- Start ----------
 voiceBtn.hidden = !Recognition;
-$(".voice-row").hidden = $(".voice-help").hidden = !Recognition;
-$(".no-voice").hidden = Boolean(Recognition);
-setSide(!narrow.matches && store.get(SIDE_KEY) !== "closed");
-// Crossing the phone width: the sheet closes on phones, the sidebar returns as remembered.
-narrow.addEventListener("change", () => setSide(!narrow.matches && store.get(SIDE_KEY) !== "closed"));
 setSpeed(speed);
 setSize(Number(store.get("prompter-size")) || (window.innerWidth < 640 ? 32 : 52));
-setWidth(store.get("prompter-width") || "full");
+setWidth(store.get("prompter-width") || "medium");
 route();

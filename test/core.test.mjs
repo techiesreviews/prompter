@@ -312,8 +312,8 @@ test("format guide carries the format, the preset rules and the example", () => 
   assert.match(formatGuide("default"), /Preset: default/);
 });
 
-test("the demo script follows the lex preset and names its PREP actions", async () => {
-  const { DEMO_ACTIONS, DEMO_SCRIPT } = await import("../src/core.mjs");
+test("the demo script follows the lex preset and starts with a PREP checklist", async () => {
+  const { DEMO_SCRIPT } = await import("../src/core.mjs");
   const r = check(DEMO_SCRIPT, "lex");
   assert.equal(r.errors, 0, describeProblems(r));
   assert.equal(r.warnings, 0, describeProblems(r));
@@ -321,7 +321,7 @@ test("the demo script follows the lex preset and names its PREP actions", async 
   assert.equal(prep.title, "PREP");
   assert.equal(intro.title, "INTRO");
   const bullets = prep.items.filter((it) => it.type === "bullet").map((it) => it.text);
-  assert.deepEqual(bullets, Object.keys(DEMO_ACTIONS));
+  assert.deepEqual(bullets, ["Water within reach", "Camera at eye level", "Phone on silent"]);
   const types = new Set(parse(DEMO_SCRIPT).flatMap((s) => s.entries.map((e) => e.type)));
   for (const t of ["link", "ql", "say", "next", "now", "note", "bullet"]) assert.ok(types.has(t), `demo shows ${t}`);
   const links = parse(DEMO_SCRIPT).flatMap((s) => s.links);
