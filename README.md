@@ -5,7 +5,7 @@ A free teleprompter for talking to camera, plus an MCP server so your AI assista
 **Live:** https://prompter.techies.tools
 
 - Big text, auto-scroll, a reading line and a show clock.
-- A second "main screen" window that opens links as you reach them: the first link under the title opens when the section starts; the others are on number keys. A link placed on the line where you talk about it opens when you reach that line (YouTube links play full size). With Follow my voice, saying a link's name opens it.
+- A second "main screen" window that opens links as you reach them: the first link under the title opens when the section starts; the others are on number keys. A link placed on the line where you talk about it, or inside the sentence itself, opens when you reach that line (YouTube links play full size). With Follow my voice, saying a link's name opens it.
 - Follow my voice (Chrome and Edge): the prompter listens and keeps the line you are reading at the reading mark. Your browser's speech service hears your voice; the script stays on your device.
 - A start screen to open a file, paste a script, connect your AI or try the demo. It offers your last script ("Continue") but never opens it by itself.
 - One floating control bar: Open, previous and next section, auto-scroll, Follow my voice, main screen, the clock (press again to restart it from 00:00) and Settings.
@@ -52,13 +52,16 @@ One question keeps you focused.
 
 Here is the example page.
 - Example page: https://example.com/page
+Or read [the docs](https://example.com/docs) here.
 
 Next: show the tool.
 Now: links on screen.
 ```
 
 - `### **TITLE · mm:ss**` starts a section (time optional). `---` is ignored.
-- `- Label: https://full-url` is a link. Right under the title (before or after the QL), the first link opens when the section starts; the others are on number keys. Put it where you talk about it, and it opens automatically when you reach that line (the prompter shows an "opens here" marker). Number keys 1–9 open a section's links any time. With Follow my voice, saying a link's label opens it, so a short one-word label (like "Docs") can open when you only mention the word in passing; give links distinctive labels.
+- `- Label: https://full-url` is a link. Right under the title (before or after the QL), the first link opens when the section starts; the others are on number keys. Put it where you talk about it, and it opens automatically when you reach that line (the prompter shows a small ↗ marker there). Number keys 1–9 open a section's links any time; a small row at the top of the section lists them.
+- `[words](https://full-url)` puts a link inside a spoken line, a bullet or a `Next:`/`Now:` line. The prompter shows only the words, like the rest of the line with a faint dotted underline, and opens the link when that line reaches the reading line. Only the words count towards the line's length. Not in `QL:` lines, `[reminders]` or titles.
+- Links stay quiet while you read: the one on the main screen gets a thin orange border, and hovering a link turns it orange. The address shows only in the link's tooltip. With Follow my voice, saying a link's label opens it, so a short one-word label (like "Docs") can open when you only mention the word in passing; give links distinctive labels.
 - `QL: question` is the one main question: read it silently and answer it; it is not read aloud. Shown at the top of the section.
 - Plain lines are spoken. `Next: …` / `Now: …` are transitions. `[text]` is a private reminder. `- text` is a bullet.
 

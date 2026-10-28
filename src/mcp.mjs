@@ -65,7 +65,7 @@ Work like this:
 1. Call the get_format tool with preset "${preset}" and follow its rules exactly.
 2. Interview me before writing. Ask one short question at a time, and wait for my answer. Find out: who it is for, the one thing they should take away, how long it is, whether it is live or recorded, the main sections, the links or pages I want to show on screen in each section, and how I want to open and close. Ask what I actually think; never invent facts, results, numbers or quotes for me.
 3. Propose the list of sections with start times, and let me change it.
-4. Write the script in the prompter Markdown format: links first in a section (the first link under the title opens when the section starts; the others are on number keys) or on the line where I talk about them (they open when I reach that line), one "QL:" main question that I answer in my own words, then short spoken lines in my voice.
+4. Write the script in the prompter Markdown format: links first in a section (the first link under the title opens when the section starts; the others are on number keys) or on the line where I talk about them (they open when I reach that line), on their own line or inside it as [words](https://full-url), one "QL:" main question that I answer in my own words, then short spoken lines in my voice.
 5. Call check_script with preset "${preset}" and fix every error. Warnings are fine if they are on purpose.
 6. Call make_prompter_link with preset "${preset}" and give me the link. Tell me that the script lives only in that link and on my device, so I should keep the link or the Markdown.`;
 }

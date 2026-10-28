@@ -44,12 +44,12 @@ const inGamut = (t) => {
 // [text, background, where, minimum]
 const PAIRS = [
   ["text", "bg", "active spoken lines"],
-  ["dim", "bg", "lines and titles of the other sections, their Now: label"],
-  ["muted", "bg", "reminders"],
+  ["dim", "bg", "lines and titles of the other sections, their Now: label and links"],
+  ["muted", "bg", "reminders, the active section's link row and link markers"],
   ["next", "bg", "active Next: lines"],
   ["next-dim", "bg", "other sections' Next: lines"],
   ["accent", "bg", "active Now: label"],
-  ["ok", "bg", "on main screen"],
+  ["accent", "link-tint", "hovered links"],
   ["text", "panel", "start screen, control bar, popovers, notices, dialogs"],
   ["muted", "panel", "start screen notes, setting values, status, idle clock, QL label"],
   ["dim", "panel", "lines and labels on raised surfaces"],
@@ -59,14 +59,13 @@ const PAIRS = [
   ["ql-dim", "panel", "other sections' QL box"],
   ["text", "panel-2", "the line Follow my voice heard, hovered menu items"],
   ["muted", "panel-2", "code on raised surfaces"],
-  ["text", "chip", "buttons, active link chips, chosen width, tooltips"],
-  ["muted", "chip", "other sections' link chips, link addresses, section times"],
-  ["ok", "chip", "link chip on main screen"],
+  ["text", "chip", "buttons, chosen width, tooltips"],
+  ["muted", "chip", "section times"],
   ["text", "chip-hover", "hovered buttons"],
   ["on-accent", "accent", "orange buttons: 19px bold labels only (large text)", 3],
   ["on-accent", "accent-hover", "hovered orange buttons: 19px bold (large text)", 3],
-  // Not text: the orange arrow on a chip and the play icon are graphics (3:1).
-  ["accent", "chip", "orange arrow on link chips (graphic)", 3],
+  // Not text: the orange border of the link on the main screen (3:1).
+  ["accent", "bg", "border of the link on the main screen (graphic)", 3],
 ];
 
 test("page uses the indigo night colour and every text colour meets WCAG AA on its background", () => {

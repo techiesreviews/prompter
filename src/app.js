@@ -193,25 +193,44 @@ async function route() {
 
 // ---------- Rendering ----------
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const lead = (s) => esc(s).replace(/^([^:]{1,12}:)/, "<b>$1</b>");
 const SPOKEN = new Set(["say", "bullet", "next", "now"]);
-// A link placed mid-section: a small marker at its line, not a spoken line.
+const OPENS_AT_LINE = "opens on the main screen when it reaches the reading line";
+// Links stay quiet: a small row at the top of the section, a small marker for
+// a link on its own line mid-section, and words with a faint underline for a
+// link inside a line. The address is only in the tooltip.
 const ARROW = `<span class="arrow" aria-hidden="true">↗</span>`;
+const hostLabel = (l) => esc(hostOf(l.url) || l.url);
 const mark = (l, i, j) =>
-  `<button class="mark" type="button" data-s="${i}" data-l="${j}" title="Opens on the main screen when it reaches the reading line">${ARROW} ${esc(l.label)}<span class="mark-note"> · opens here</span></button>`;
+  `<button class="mark" type="button" data-s="${i}" data-l="${j}" title="${hostLabel(l)} · ${OPENS_AT_LINE}">${ARROW}<span>${esc(l.label)}</span></button>`;
+const textLink = (l, i, j) =>
+  `<a class="inlink" href="${esc(l.url)}" rel="noopener noreferrer" data-s="${i}" data-l="${j}" title="${hostLabel(l)} · ${OPENS_AT_LINE}">${esc(l.label)}</a>`;
+
+/** A line's text: a Next:/Now: label in bold, links written inside it in place. */
+function lineHtml(it, i) {
+  const t = it.text;
+  const bold = it.type === "next" || it.type === "now" ? (t.match(/^[^:]{1,12}:/)?.[0].length ?? 0) : 0;
+  let html = bold ? `<b>${esc(t.slice(0, bold))}</b>` : "";
+  let at = bold;
+  for (const span of it.spans || []) {
+    html += esc(t.slice(at, span.from)) + textLink(sections[i].links[span.l], i, span.l);
+    at = span.to;
+  }
+  return html + esc(t.slice(at));
+}
 
 function render() {
   voiceLines = [];
   main.innerHTML = sections.map((s, i) => {
     const links = s.links.length
       ? `<div class="links">${s.links.map((l, j) =>
-          `<button class="link" type="button" data-s="${i}" data-l="${j}">${ARROW}<span>${j < 9 ? `${j + 1} · ` : ""}${esc(l.label)}</span><small>${esc(hostOf(l.url) || l.url)}</small></button>`).join("")}</div>`
+          `<button class="link" type="button" data-s="${i}" data-l="${j}" title="${hostLabel(l)}${j < 9 ? ` · key ${j + 1}` : ""}"${j < 9 ? ` aria-keyshortcuts="${j + 1}"` : ""}>${ARROW}<span>${esc(l.label)}</span>${j < 9 ? `<span class="key">${j + 1}</span>` : ""}</button>`).join("")}</div>`
       : "";
     // The QL main question is read silently: always show it at the top.
     const qls = s.items.filter((it) => it.type === "ql")
       .map((it) => `<p class="ql"><small>Main question · answer it, don't read it</small>${esc(it.text)}</p>`).join("");
-    // Items in order, with each inline link's marker just before items[at].
-    const marksAt = (n) => s.links.flatMap((l, j) => (l.inline && l.at === n ? [{ type: "mark", l, j }] : []));
+    // Items in order, with each own-line inline link's marker just before
+    // items[at]. Links inside a line are drawn in that line's text.
+    const marksAt = (n) => s.links.flatMap((l, j) => (l.inline && !l.inText && l.at === n ? [{ type: "mark", l, j }] : []));
     const rest = s.items.flatMap((it, n) => [...marksAt(n), it]).concat(marksAt(s.items.length))
       .filter((it) => it.type !== "ql");
     while (rest[0]?.type === "gap") rest.shift();
@@ -220,8 +239,7 @@ function render() {
       if (it.type === "gap") return `<div class="gap"></div>`;
       if (it.type === "mark") return mark(it.l, i, it.j);
       const k = SPOKEN.has(it.type) ? ` data-k="${voiceLines.push(speechWords(it.text)) - 1}"` : "";
-      if (it.type === "next" || it.type === "now") return `<p class="${it.type}"${k}>${lead(it.text)}</p>`;
-      return `<p class="${it.type}"${k}>${esc(it.text)}</p>`;
+      return `<p class="${it.type}"${k}>${SPOKEN.has(it.type) ? lineHtml(it, i) : esc(it.text)}</p>`;
     }).join("");
     return `<section class="section" data-i="${i}"><h2 class="title"><span>${esc(s.title)}</span><span class="time">${esc(s.time)}</span></h2>${links}${qls}${items}</section>`;
   }).join("");
@@ -298,7 +316,7 @@ function updateActive() {
   // The most recent link above the reading line goes on the main screen once
   // the reader settles there, so fast scrolling does not flash every link.
   let reached = -1;
-  els[idx]?.querySelectorAll(".mark").forEach((el) => { if (el.getBoundingClientRect().top <= y + 4) reached = Number(el.dataset.l); });
+  els[idx]?.querySelectorAll(".mark, .inlink").forEach((el) => { if (el.getBoundingClientRect().top <= y + 4) reached = Number(el.dataset.l); });
   const at = linkAt(sections, idx, reached);
   const key = at ? `${at.s}:${at.l}` : "";
   if (key === anchorKey) return;
@@ -371,7 +389,7 @@ function showLink(si, li, fromUser) {
     try { mainWin.location.href = url; } catch { mainWin = window.open(url, WINDOW_NAME); }
     shownUrl = url;
   }
-  main.querySelectorAll(".link, .mark").forEach((b) => {
+  main.querySelectorAll(".link, .mark, .inlink").forEach((b) => {
     b.dataset.shown = String(screenUrl(sections[b.dataset.s].links[b.dataset.l].url) === shownUrl);
   });
   setStatus(`On main screen: ${s.links[li].label}`);
@@ -695,8 +713,14 @@ speedInput.addEventListener("input", () => setSpeed(Number(speedInput.value)));
 sizeInput.addEventListener("input", () => setSize(Number(sizeInput.value)));
 widthInputs.forEach((input) => input.addEventListener("change", () => setWidth(input.value)));
 main.addEventListener("click", (e) => {
-  const b = e.target.closest(".link, .mark");
-  if (b) showLink(Number(b.dataset.s), Number(b.dataset.l), true);
+  const b = e.target.closest(".link, .mark, .inlink");
+  if (!b) return;
+  // A link inside a line is a real link: with a modifier key it opens in a new tab as usual.
+  if (b.matches(".inlink")) {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+  }
+  showLink(Number(b.dataset.s), Number(b.dataset.l), true);
 });
 document.addEventListener("click", (e) => {
   const button = e.target.closest("[data-action]");
@@ -746,7 +770,7 @@ document.addEventListener("keydown", (e) => {
   const k = e.key;
   // A focused slider keeps its arrow keys; every other shortcut still works.
   if (e.target.matches?.("input[type=range]") && k.startsWith("Arrow")) return;
-  // Space on these buttons presses them; on the control bar and the link chips it still means auto-scroll.
+  // Space on these buttons presses them; on the control bar and the links it still means auto-scroll.
   if (k === " " && e.target.closest(".note-row, .pop")) return;
   if (k === " ") { e.preventDefault(); toggleAuto(); }
   else if (k === "ArrowRight" || k === "PageDown") { e.preventDefault(); goSection(1); }

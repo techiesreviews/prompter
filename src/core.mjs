@@ -10,7 +10,8 @@ export const MAX_DECODED_BYTES = 1_000_000;
 
 export const FORMAT = [
   { syntax: "### **TITLE · mm:ss**", meaning: "Starts a section. The time is optional and is when the section should start." },
-  { syntax: "- Label: https://full-url", meaning: "A link, on its own line. Right under the title (before or after the QL), the first link opens on the main screen when the section starts; the others are on number keys. Or put a link where you talk about it: it opens automatically when you reach that line, and the prompter shows a small \"opens here\" marker there. Every link of a section also gets a numbered button at the top; number keys 1–9 open them any time." },
+  { syntax: "- Label: https://full-url", meaning: "A link, on its own line. Right under the title (before or after the QL), the first link opens on the main screen when the section starts; the others are on number keys. Or put a link where you talk about it: it opens automatically when you reach that line, and the prompter shows a small marker there. Every link of a section is also listed, small, at the top of the section; number keys 1–9 open them any time." },
+  { syntax: "[words](https://full-url)", meaning: "A link inside a spoken line, a bullet or a Next:/Now: line. The prompter shows only the words, like the rest of the line with a faint underline, and opens the link on the main screen when that line reaches the reading line. Only the words count towards the line's length. Not in QL lines, [reminders] or titles." },
   { syntax: "QL: question", meaning: "The one main question of the section. Read it silently and answer it in your own words; it is not read aloud. Shown at the top of the section." },
   { syntax: "Plain line", meaning: "A spoken line." },
   { syntax: "Next: … / Now: …", meaning: "A transition: where you are going, then what you do now." },
@@ -34,7 +35,7 @@ export const PRESETS = {
     rules: [
       "Order: prep first, then intro, then the show.",
       "Section titles: small (five words or fewer), numbered, ALL CAPS, with start time. PREP needs no number or time; INTRO needs no number.",
-      "Each section: links either first (the first link under the title opens when the section starts; the others are on number keys) or on the line where you talk about them (they open when you reach that line). Then one QL main question, then lines of five words or fewer (only URLs may be longer). This includes the intro, transitions and reminders. PREP needs no QL.",
+      "Each section: links either first (the first link under the title opens when the section starts; the others are on number keys) or on the line where you talk about them (they open when you reach that line): on a line of their own, or inside the spoken line as [words](https://full-url). Then one QL main question, then lines of five words or fewer (URLs do not count; for a link inside a line only its words count). This includes the intro, transitions and reminders. PREP needs no QL.",
       "Transitions are two short lines: `Next: …` then `Now: …`.",
       "Livestreams: one main topic in depth for most of the stream; the last 5–10 minutes for other things you worked on. The title and thumbnail promise the main topic.",
     ],
@@ -52,8 +53,8 @@ export const PRESETS = {
     prepThenIntro: false,
     rules: [
       "Every section has a title. A start time is optional.",
-      "Put a link first under the title (the first link under the title opens when the section starts; the others are on number keys), or on the line where you talk about it to open it when you reach that line.",
-      "Keep lines short: a warning above ten words (URLs do not count).",
+      "Put a link first under the title (the first link under the title opens when the section starts; the others are on number keys), or on the line where you talk about it to open it when you reach that line: on a line of its own, or inside the spoken line as [words](https://full-url).",
+      "Keep lines short: a warning above ten words (URLs do not count; for a link inside a line only its words count).",
       "A QL main question is optional; use at most one per section.",
     ],
   },
@@ -135,7 +136,8 @@ Thanks for watching.
 /**
  * The demo the page opens from its start screen ("Try the demo"): how to be a
  * better speaker with a prompter. It follows the "lex" preset and teaches the
- * format by example, including one link that opens itself (section 4).
+ * format by example, including a link that opens itself and one inside a
+ * sentence (section 4).
  */
 export const DEMO_SCRIPT = `### **PREP**
 
@@ -219,6 +221,7 @@ Like this one, right now:
 - Teleprompter: https://en.wikipedia.org/wiki/Teleprompter
 It opens on your screen.
 Exactly when you reach it.
+Or [mid-sentence, like this](https://en.wikipedia.org/wiki/Hyperlink).
 
 Next: practise once.
 Now: rehearse before recording.
@@ -267,9 +270,32 @@ export function formatGuide(presetName) {
 const timeRe = /^(.*?)\s*·\s*(\d{1,3}:\d{2})\s*$/;
 const linkRe = /^-\s*(?:(.+?):\s+)?(https?:\/\/\S+)\s*$/;
 const headingRe = /^#{2,3}\s+(.*)$/;
+// "[words](https://full-url)" inside a line. The address may hold one level of
+// brackets, as Wikipedia addresses do.
+const textLinkRe = /\[([^[\]]*[^\s[\]][^[\]]*)\]\((https?:\/\/(?:[^\s()]|\([^\s()]*\))+)\)/g;
 
 export function hostOf(url) {
   try { return new URL(url).hostname; } catch { return ""; }
+}
+
+/**
+ * Links written inside a line as "[words](https://full-url)". Returns the
+ * line's plain text (each link replaced by its words) and spans: where each
+ * link's words sit in that text ({ from, to, label, url }).
+ */
+export function textLinks(line) {
+  const text = String(line ?? "");
+  const spans = [];
+  let plain = "";
+  let at = 0;
+  for (const m of text.matchAll(textLinkRe)) {
+    plain += text.slice(at, m.index);
+    const label = m[1].trim();
+    spans.push({ from: plain.length, to: plain.length + label.length, label, url: m[2] });
+    plain += label;
+    at = m.index + m[0].length;
+  }
+  return { text: plain + text.slice(at), spans };
 }
 
 /** Classify one trimmed line of a section body. */
@@ -279,11 +305,15 @@ export function classify(line) {
   const link = line.match(linkRe);
   if (link) return { type: "link", label: link[1] || hostOf(link[2]) || link[2], url: link[2] };
   if (/^QL:/i.test(line)) return { type: "ql", text: line.replace(/^QL:\s*/i, "") };
-  if (/^\[.*\]$/.test(line)) return { type: "note", text: line.slice(1, -1) };
-  if (/^(Next week|Next):/i.test(line)) return { type: "next", text: line };
-  if (/^Now:/i.test(line)) return { type: "now", text: line };
-  if (/^[-*]\s+/.test(line)) return { type: "bullet", text: line.replace(/^[-*]\s+/, "") };
-  return { type: "say", text: line };
+  // A [reminder] line; one that starts with a [words](https://…) link is spoken.
+  if (/^\[.*\]$/.test(line) && !/^\[[^[\]]*\]\(https?:\/\//i.test(line)) return { type: "note", text: line.slice(1, -1) };
+  let entry;
+  if (/^(Next week|Next):/i.test(line)) entry = { type: "next", text: line };
+  else if (/^Now:/i.test(line)) entry = { type: "now", text: line };
+  else if (/^[-*]\s+/.test(line)) entry = { type: "bullet", text: line.replace(/^[-*]\s+/, "") };
+  else entry = { type: "say", text: line };
+  const { text, spans } = textLinks(entry.text);
+  return spans.length ? { ...entry, text, spans } : entry;
 }
 
 /**
@@ -294,6 +324,11 @@ export function classify(line) {
  * does not count) is a top link; one after such a line is inline
  * (`inline: true`) and `at` is its place among the section's items: it sits
  * just before items[at].
+ * A spoken line may also hold links as "[words](https://full-url)": its text
+ * keeps only the words, and `spans` say where each link's words are
+ * ({ from, to, label, url, l }, `l` its index in the section's links). Those
+ * links join `links` in reading order as inline links with `inText: true`;
+ * their `at` is the index of the item that holds them.
  */
 export function parse(md) {
   const text = String(md ?? "").replace(/\r/g, "");
@@ -323,7 +358,13 @@ export function parse(md) {
     if (/^#{1}\s|^#{4,}\s/.test(line)) entry.heading = true;
     cur.entries.push(entry);
     if (entry.type === "link") cur.links.push({ ...entry, inline: cur.items.some((it) => it.type !== "ql" && it.type !== "gap"), at: cur.items.length });
-    else cur.items.push(entry);
+    else {
+      for (const span of entry.spans || []) {
+        span.l = cur.links.length;
+        cur.links.push({ type: "link", label: span.label, url: span.url, line: lineNo, inline: true, inText: true, at: cur.items.length });
+      }
+      cur.items.push(entry);
+    }
   });
   return out;
 }
@@ -418,6 +459,7 @@ export function check(md, presetName) {
     // Links: first under the title, or inline where they are talked about.
     for (const e of s.entries) {
       if (e.type === "link" && !hostOf(e.url)) add("error", "bad-link", s, i, e.line, `${where}: "${e.url}" is not a valid web address.`);
+      for (const span of e.spans || []) if (!hostOf(span.url)) add("error", "bad-link", s, i, e.line, `${where}: "${span.url}" is not a valid web address.`);
       if (e.type === "bullet" && bareAddressRe.test(e.text)) add("warning", "link-no-url", s, i, e.line, `${where}: "${e.text}" looks like a link but never opens; write the full address, like "- Label: https://example.com".`);
     }
     if (s.links.length > 9) add("warning", "too-many-links", s, i, s.links[9].line, `${where} has ${s.links.length} links; only the first 9 have number keys.`);

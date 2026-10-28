@@ -82,6 +82,33 @@ The docs explain it all.
 - Handbook: https://docs.example.com
 `;
 
+// Links written inside a line as [words](https://full-url), next to the same
+// words without a link, so the two lines can be compared.
+const TEXT_LINK_SCRIPT = `### **INTRO · 00:00**
+
+- Intro: https://example.com/intro
+- Guide: https://example.com/guide
+
+QL: Where do links go?
+
+First a short story.
+A plugin had a hole.
+Someone found it fast.
+Read the docs first.
+Read [the docs](https://developer.mozilla.org/en-US/) first.
+Then we move on.
+- See [the firewall](https://www.wordfence.com) too.
+More words after.
+Owners fix them quickly.
+Everyone stays safer.
+
+### **1 · MORE · 03:00**
+
+QL: Anything else?
+
+Nothing else here.
+`;
+
 const NO_SPEECH = () => { delete window.SpeechRecognition; delete window.webkitSpeechRecognition; };
 const NIGHT = "oklch(0.16 0.06 282)"; // --bg, #0b0826
 
@@ -346,7 +373,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await page.waitForTimeout(150);
   assert.equal(await page.locator(".section.active").getAttribute("data-i"), "2");
   await shot(page, "ql-section-desktop");
-  ok("link opens the example: 5 sections, QL first, 4 link chips, &p=lex kept; arrow keys and the bar's previous/next move sections");
+  ok("link opens the example: 5 sections, QL first, 4 links in the top rows, &p=lex kept; arrow keys and the bar's previous/next move sections");
 
   // Play is the orange primary button; it toggles auto-scroll like Space.
   await (await dock(page, ".auto")).click();
@@ -468,8 +495,9 @@ export async function run({ browser, base, mode, dist, out }) {
   await calmPage.locator(".section").first().waitFor();
   const duration = await calmPage.locator(".section p").first().evaluate((el) => getComputedStyle(el).transitionDuration);
   assert.equal(duration, "0s");
+  assert.equal(await calmPage.locator(".link").first().evaluate((el) => getComputedStyle(el).transitionDuration), "0s", "links change state without a fade");
   await calm.close();
-  ok("prefers-reduced-motion removes the section fade");
+  ok("prefers-reduced-motion removes the section fade and the link fades");
 
   // ---- Follow my voice (stubbed speech recognition) ----
   const voiced = await browser.newContext(DESKTOP);
@@ -531,10 +559,11 @@ export async function run({ browser, base, mode, dist, out }) {
   await L.goto(inlineLink);
   await L.locator(".section").first().waitFor();
   const intro = L.locator(".section").nth(1);
-  assert.deepEqual(await intro.locator(".links .link").allTextContents(), ["↗1 · Introexample.com", "↗2 · Patchstackpatchstack.com"], "every link still gets a numbered chip at the top");
-  assert.equal(await intro.locator(".links .link .arrow").first().evaluate((el) => getComputedStyle(el).color), "oklch(0.65 0.227 32.3)", "orange arrow");
+  assert.deepEqual(await intro.locator(".links .link").allTextContents(), ["↗Intro1", "↗Patchstack2"], "every link is still listed and numbered at the top");
+  assert.deepEqual(await intro.locator(".links .link").evaluateAll((els) => els.map((el) => el.title)), ["example.com · key 1", "patchstack.com · key 2"], "the address only in the tooltip");
   const markEl = intro.locator(".mark");
-  assert.equal(await markEl.textContent(), "↗ Patchstack · opens here");
+  assert.equal(await markEl.textContent(), "↗Patchstack", "a quiet marker: no \"opens here\" text");
+  assert.equal(await markEl.getAttribute("title"), "patchstack.com · opens on the main screen when it reaches the reading line");
   assert.equal(await markEl.getAttribute("data-k"), null, "the marker is not a spoken line");
   assert.equal(await L.evaluate(() => document.querySelector(".section:nth-child(2) .mark").previousElementSibling.textContent), "Patchstack finds the holes.");
   await (await dock(L, ".screen")).click();
@@ -556,6 +585,8 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await lastVisit(), "https://example.com/intro", "waits for the settle delay");
   await L.waitForFunction(() => window.__screen.visits.at(-1) === "https://patchstack.com", null, { timeout: 2000 });
   assert.equal(await markEl.getAttribute("data-shown"), "true");
+  await L.waitForTimeout(300); // let the border fade in
+  assert.deepEqual(await markEl.evaluate((el) => { const cs = getComputedStyle(el, "::after"); return [getComputedStyle(el).borderTopColor, cs.content]; }), ["oklch(0.65 0.227 32.3)", "none"], "thin orange border, no extra text");
   assert.match(await L.locator(".status").textContent(), /On main screen: Patchstack/);
   await shot(L, "inline-link-desktop");
   // Back above the marker: the link above the reading line (Intro) returns.
@@ -609,12 +640,109 @@ export async function run({ browser, base, mode, dist, out }) {
   await (await dock(D, ".screen")).click();
   const demoMark = D.locator(".section .mark");
   assert.equal(await demoMark.count(), 1, "the demo shows one inline link");
-  assert.equal(await demoMark.textContent(), "↗ Teleprompter · opens here");
+  assert.equal(await demoMark.textContent(), "↗Teleprompter");
+  assert.deepEqual(await D.locator(".section .inlink").allTextContents(), ["mid-sentence, like this"], "and one link inside a sentence");
   await passMark(D, ".section .mark", 2);
   await D.waitForFunction(() => window.__screen.visits.at(-1) === "https://en.wikipedia.org/wiki/Teleprompter", null, { timeout: 2000 });
   await shot(D, "inline-link-demo-desktop");
   ok("the demo (better speaking with a prompter) opens its inline Teleprompter link when the reading line passes it");
   await demoLinked.close();
+
+  // A link inside a sentence reads like the words around it: same font and
+  // colour, a faint dotted orange underline; hover tints it orange; on the
+  // main screen it gets a thin orange border. Nothing moves between states.
+  const textLink = await makeLink(TEXT_LINK_SCRIPT, "lex", base);
+  const textCtx = await browser.newContext(DESKTOP);
+  await textCtx.addInitScript(SCREEN_STUB);
+  const X = await textCtx.newPage();
+  watch(X, "link inside a sentence");
+  await X.goto(textLink);
+  await X.locator(".section").first().waitFor();
+  await (await dock(X, ".screen")).click();
+  await X.mouse.move(40, 40);
+  await X.waitForFunction(() => window.__screen.visits.at(-1) === "https://example.com/intro", null, { timeout: 2000 });
+  const inlink = X.locator(".inlink").first();
+  assert.equal(await X.locator(".inlink").count(), 2);
+  assert.equal(await inlink.textContent(), "the docs");
+  assert.equal(await inlink.getAttribute("title"), "developer.mozilla.org · opens on the main screen when it reaches the reading line");
+  assert.equal(await inlink.evaluate((el) => el.parentElement.textContent), "Read the docs first.", "no address, brackets, arrow or number in the line");
+  assert.notEqual(await inlink.evaluate((el) => el.parentElement.dataset.k), undefined, "the line is still a spoken line");
+  assert.equal(await X.locator(".section .mark").count(), 0, "no marker for a link inside a line");
+  const linkLooks = () => inlink.evaluate((el) => {
+    const cs = getComputedStyle(el);
+    const p = getComputedStyle(el.parentElement);
+    const r = el.getBoundingClientRect();
+    return {
+      same: ["fontFamily", "fontSize", "fontWeight", "letterSpacing", "color"].filter((k) => cs[k] !== p[k]),
+      color: cs.color, background: cs.backgroundColor, border: cs.borderTopColor,
+      line: cs.textDecorationLine, style: cs.textDecorationStyle, underline: cs.textDecorationColor,
+      box: [r.x, r.y, r.width, r.height].map((v) => Math.round(v * 10) / 10),
+    };
+  });
+  // The words after the link sit exactly where they sit in the same line without a link.
+  const after = (sel) => X.evaluate((q) => {
+    const p = [...document.querySelectorAll(".section p")].find((el) => el.textContent === "Read the docs first." && el.matches(q));
+    const range = document.createRange();
+    range.selectNodeContents(p.lastChild);
+    return range.getBoundingClientRect().right - p.getBoundingClientRect().left;
+  }, sel);
+  const plainRight = await after(":not(:has(.inlink))");
+  const linkedRight = await after(":has(.inlink)");
+  assert.ok(Math.abs(plainRight - linkedRight) <= 1, `the line keeps its width: ${plainRight} vs ${linkedRight}`);
+  // In view, a little below the reading line, so hovering scrolls nothing.
+  await X.evaluate(() => {
+    const el = document.querySelector(".inlink");
+    window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - window.innerHeight * 0.34 - 150);
+  });
+  await X.waitForTimeout(300);
+  const normal = await linkLooks();
+  assert.deepEqual(normal.same, [], "same font, size, weight and colour as the line");
+  assert.equal(normal.color, "oklch(0.975 0.012 282)", "active line colour");
+  assert.deepEqual([normal.line, normal.style, normal.underline], ["underline", "dotted", "oklch(0.65 0.227 32.3 / 0.55)"], "faint dotted orange underline");
+  assert.deepEqual([normal.background, normal.border], ["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)"]);
+  await shot(X, "text-link-desktop");
+  await inlink.hover();
+  await X.waitForTimeout(300);
+  const hovered = await linkLooks();
+  assert.deepEqual([hovered.color, hovered.background], ["oklch(0.65 0.227 32.3)", "oklch(0.23 0.06 32)"], "hover: orange text on a soft orange tint");
+  assert.deepEqual(hovered.box, normal.box, "hover moves nothing");
+  await shot(X, "text-link-hover-desktop");
+  await X.mouse.move(40, 40);
+  // The reading line reaches the line with the link: it opens on the main screen.
+  await X.evaluate(() => {
+    const el = document.querySelector(".inlink");
+    window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - window.innerHeight * 0.34 - 2);
+  });
+  await X.waitForFunction(() => window.__screen.visits.at(-1) === "https://developer.mozilla.org/en-US/", null, { timeout: 2000 });
+  assert.equal(await inlink.getAttribute("data-shown"), "true");
+  await X.waitForTimeout(300);
+  const shown = await linkLooks();
+  assert.deepEqual([shown.border, shown.background, shown.line], ["oklch(0.65 0.227 32.3)", "rgba(0, 0, 0, 0)", "none"], "on the main screen: thin orange border, no fill, no underline");
+  assert.deepEqual(shown.box.slice(2), normal.box.slice(2), "the shown state is the same size");
+  assert.deepEqual(await inlink.evaluate((el) => getComputedStyle(el, "::after").content), "none", "no extra text");
+  await shot(X, "text-link-shown-desktop");
+  // Clicking a link inside a line shows it at once; the top row stays quiet.
+  await X.locator(".inlink").nth(1).click();
+  assert.equal(await X.evaluate(() => window.__screen.visits.at(-1)), "https://www.wordfence.com");
+  assert.match(await X.locator(".status").textContent(), /On main screen: the firewall/);
+  assert.equal(await X.evaluate(() => location.hash.startsWith("#s=")), true, "clicking does not follow the link in the prompter");
+  // Its section no longer active: the link takes the dim colour of the line.
+  await X.keyboard.press("ArrowRight");
+  await X.waitForTimeout(350);
+  const dimmed = await linkLooks();
+  assert.deepEqual(dimmed.same, [], "inactive section: still the line's own colour");
+  assert.equal(dimmed.color, "oklch(0.64 0.04 282)");
+  await X.evaluate(() => window.scrollTo(0, 0));
+  await X.waitForTimeout(350);
+  const row = X.locator(".section").first().locator(".links .link").first();
+  assert.deepEqual(await row.evaluate((el) => { const cs = getComputedStyle(el); return [cs.backgroundColor, cs.color, el.querySelector("small"), parseFloat(cs.fontSize) < 20]; }),
+    ["rgba(0, 0, 0, 0)", "oklch(0.763 0.027 282)", null, true], "the top row is small and muted, with no pill and no address");
+  assert.deepEqual(await X.locator(".section").first().locator(".links .link").allTextContents(), ["↗Intro1", "↗Guide2", "↗the docs3", "↗the firewall4"], "number keys follow reading order");
+  await shot(X, "link-row-desktop");
+  await X.keyboard.press("4");
+  assert.equal(await X.evaluate(() => window.__screen.visits.at(-1)), "https://www.wordfence.com");
+  await textCtx.close();
+  ok("a link inside a sentence: the line shows only its words in the line's own font and colour (also dimmed), a faint dotted orange underline; hover turns it orange on a soft tint; at the reading line it opens and gets a thin orange border without underline; no layout shift; click and number keys open it; the top row is small and muted");
 
   // The control bar tucks away when scrolling down and returns on scrolling up or near the bottom edge.
   const tuckCtx = await browser.newContext(DESKTOP);
@@ -787,6 +915,29 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.ok(hintBox.y > 844 * 0.34 + 40, `mobile hint at ${Math.round(hintBox.y)}px stays clear of the reading line`);
   assert.ok(hintBox.y + hintBox.height <= (await m.locator(".dock").boundingBox()).y, "mobile hint fits above the control bar");
   await shot(m, "inline-link-mobile");
+  await m.locator('.screen-hint [data-action="hint-ok"]').click();
+  await m.addInitScript(SCREEN_STUB);
+  await m.goto(textLink);
+  await m.reload();
+  await m.locator(".section").first().waitFor();
+  // The section start has settled (no main screen yet: the hint), so nothing replaces the tapped link.
+  await m.locator(".screen-hint:not([hidden])").waitFor({ timeout: 2000 });
+  await m.locator('.screen-hint [data-action="hint-ok"]').click();
+  await noOverflow(m, "mobile link row");
+  const mRow = await m.locator(".section").first().locator(".links .link").evaluateAll((els) => els.map((el) => el.getBoundingClientRect().height));
+  assert.ok(mRow.every((h) => h >= 24), `top row links are at least 24px tall: ${mRow}`);
+  await shot(m, "link-row-mobile");
+  await m.locator(".inlink").first().tap();
+  assert.equal(await m.locator(".inlink").first().getAttribute("data-shown"), "true", "a tap shows it on the main screen");
+  assert.equal(await m.evaluate(() => window.__screen.visits.at(-1)), "https://developer.mozilla.org/en-US/");
+  await m.evaluate(() => {
+    const el = document.querySelector(".inlink");
+    window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - window.innerHeight * 0.34 - 40);
+  });
+  await m.waitForTimeout(1000);
+  assert.equal(await m.locator(".inlink").first().getAttribute("data-shown"), "true", "still on the main screen after settling");
+  await noOverflow(m, "mobile link inside a sentence");
+  await shot(m, "text-link-shown-mobile");
   ok("mobile 390px: start screen card and AI dialog fit; the demo; a one-row centred control bar of eight icons with 44px-tall targets; Open and Settings popovers above their buttons and on screen (tap outside closes); no sideways scroll; voice notice and hint fit", `bar ${Math.round(mobileDock.width)}px`);
   await mobile.close();
 

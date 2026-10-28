@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { check, countWords, describeProblems, EXAMPLE_SCRIPT, formatGuide, linkAt, parse, PRESETS, toSeconds, youtubeSeconds } from "../src/core.mjs";
+import { check, classify, countWords, describeProblems, EXAMPLE_SCRIPT, formatGuide, linkAt, parse, PRESETS, textLinks, toSeconds, youtubeSeconds } from "../src/core.mjs";
 
 // The parser from the original single-file prompter, kept to prove compatibility.
 function legacyParse(md) {
@@ -211,6 +211,85 @@ test("inline links are fine in both presets; a link without https:// is flagged"
   assert.ok(codes(check("### **A**\nHi\n- Bad: https://[x", "lex")).includes("bad-link"), "an inline link still needs a valid address");
 });
 
+// Links written inside spoken lines as [words](https://full-url).
+const IN_TEXT = `### **INTRO · 00:00**
+
+- Top: https://example.com/top
+
+QL: Where do links go?
+
+Read [the docs](https://developer.mozilla.org/) first.
+- Both [one](https://a.test) and [two](https://en.wikipedia.org/wiki/Foo_(bar))
+- Own: https://own.test
+Next: [the wiki](https://w.test).
+Now: we go.
+[stage note]
+`;
+
+test("a link inside a line keeps only its words in the text and joins the links in reading order", () => {
+  const [s] = parse(IN_TEXT);
+  const lineOf = (needle) => IN_TEXT.split("\n").findIndex((l) => l.includes(needle)) + 1;
+  assert.deepEqual(s.links.map(({ label, url, inline, inText, at, line }) => ({ label, url, inline, inText, at, line })), [
+    { label: "Top", url: "https://example.com/top", inline: false, inText: undefined, at: 0, line: lineOf("- Top:") },
+    { label: "the docs", url: "https://developer.mozilla.org/", inline: true, inText: true, at: 2, line: lineOf("Read [") },
+    { label: "one", url: "https://a.test", inline: true, inText: true, at: 3, line: lineOf("- Both") },
+    { label: "two", url: "https://en.wikipedia.org/wiki/Foo_(bar)", inline: true, inText: true, at: 3, line: lineOf("- Both") },
+    { label: "Own", url: "https://own.test", inline: true, inText: undefined, at: 4, line: lineOf("- Own:") },
+    { label: "the wiki", url: "https://w.test", inline: true, inText: true, at: 4, line: lineOf("Next: [") },
+  ]);
+  // `at` of a link inside a line is the item that holds it.
+  assert.equal(s.items[2].text, "Read the docs first.");
+  assert.deepEqual(s.items[2].spans.map(({ from, to, l }) => [s.items[2].text.slice(from, to), l]), [["the docs", 1]]);
+  assert.equal(s.items[3].type, "bullet");
+  assert.equal(s.items[3].text, "Both one and two");
+  assert.deepEqual(s.items[3].spans.map((sp) => sp.l), [2, 3]);
+  assert.equal(s.items[4].type, "next");
+  assert.equal(s.items[4].text, "Next: the wiki.");
+  assert.equal(s.items[5].text, "Now: we go.");
+  assert.equal(s.items[5].spans, undefined, "lines without links stay as they were");
+  assert.deepEqual(s.items[6], { type: "note", text: "stage note", line: lineOf("[stage note]") }, "a bare [note] stays a note");
+});
+
+test("links inside a line work only in spoken lines, bullets and Next:/Now:", () => {
+  assert.deepEqual(classify("QL: Why [this](https://x.test)?"), { type: "ql", text: "Why [this](https://x.test)?" });
+  assert.deepEqual(classify("[see [this](https://x.test)]"), { type: "note", text: "see [this](https://x.test)" });
+  const [s] = parse("### **A [b](https://x.test) · 01:00**\nHi");
+  assert.equal(s.title, "A [b](https://x.test)");
+  assert.equal(s.links.length, 0, "not in titles");
+  const start = classify("[Docs](https://d.test) and [smile]");
+  assert.equal(start.type, "say", "a line that starts with a link is spoken, not a reminder");
+  assert.equal(start.text, "Docs and [smile]");
+  assert.equal(classify("Just [brackets] here").spans, undefined);
+  assert.equal(classify("Not a [link](ftp://x.test)").spans, undefined);
+  assert.equal(classify("Empty [ ](https://x.test)").spans, undefined, "a link needs words");
+  assert.deepEqual(textLinks("a [ b c ](https://x.test/p?q=1) d"), { text: "a b c d", spans: [{ from: 2, to: 5, label: "b c", url: "https://x.test/p?q=1" }] });
+});
+
+test("linkAt treats a link inside a line like any inline link", () => {
+  const sections = parse(`### **A**\n- Top: https://top.test\nQL: Q?\nRead [the docs](https://d.test) now.\nMore.\n### **B**\nNo links.`);
+  assert.deepEqual(linkAt(sections, 0, -1), { s: 0, l: 0 }, "section start: the top link");
+  assert.deepEqual(linkAt(sections, 0, 1), { s: 0, l: 1 }, "passed the line with the link");
+  assert.deepEqual(linkAt(sections, 1, -1), { s: 0, l: 1 }, "the next section keeps it");
+  const first = parse("### **A**\nSee [this](https://x.test).");
+  assert.equal(first[0].links[0].inline, true, "a link in the first line is inline, not a top link");
+  assert.equal(linkAt(first, 0, -1), null);
+});
+
+test("checker counts a link's words, not its address, and checks the address", () => {
+  const long = "Read [the docs](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/a) now.";
+  assert.deepEqual(check(`### **PREP**\n- Water\n### **INTRO · 00:00**\nQL: Why?\n${long}`, "lex").problems, []);
+  const tooLong = check("### **INTRO · 00:00**\nQL: Why?\nOne [two three four five](https://x.test) six.", "lex");
+  const p = tooLong.problems.find((x) => x.code === "line-too-long");
+  assert.match(p.message, /"One two three four five six\." has 6 words/);
+  const bad = check("### **A**\nHi [bad](https://[x) there", "default").problems.filter((x) => x.code === "bad-link");
+  assert.deepEqual(bad.map((x) => x.line), [2]);
+  assert.ok(codes(check(`### **A**\n${Array.from({ length: 10 }, (_, i) => `Say [l${i}](https://x.test/${i})`).join("\n")}`, "default")).includes("too-many-links"));
+  for (const name of Object.keys(PRESETS)) {
+    const r = check(`### **PREP**\n- Water\n### **INTRO · 00:00**\n${IN_TEXT.split("\n").slice(1).join("\n")}`, name);
+    assert.deepEqual(r.problems, [], `${name}: ${describeProblems(r)}`);
+  }
+});
+
 test("lex preset flags long lines, missing QL, titles and transitions", () => {
   const md = `### **PREP**
 
@@ -307,6 +386,9 @@ test("format guide carries the format, the preset rules and the example", () => 
   assert.match(lex, /five words or fewer/);
   assert.match(lex, /Livestreams/);
   assert.match(lex, /opens automatically when you reach that line/);
+  assert.match(lex, /`\[words\]\(https:\/\/full-url\)`: A link inside a spoken line/);
+  assert.match(lex, /for a link inside a line only its words count/);
+  assert.match(formatGuide("default"), /inside the spoken line as \[words\]\(https:\/\/full-url\)/);
   assert.match(lex, /links either first \(the first link under the title opens when the section starts; the others are on number keys\) or on the line where you talk about them/);
   assert.ok(lex.includes(EXAMPLE_SCRIPT.trim()));
   assert.match(formatGuide("default"), /Preset: default/);
@@ -325,6 +407,7 @@ test("the demo script follows the lex preset and starts with a PREP checklist", 
   const types = new Set(parse(DEMO_SCRIPT).flatMap((s) => s.entries.map((e) => e.type)));
   for (const t of ["link", "ql", "say", "next", "now", "note", "bullet"]) assert.ok(types.has(t), `demo shows ${t}`);
   const links = parse(DEMO_SCRIPT).flatMap((s) => s.links);
-  assert.equal(links.filter((l) => l.inline).length, 1, "the demo shows one inline link");
+  assert.equal(links.filter((l) => l.inline && !l.inText).length, 1, "the demo shows one inline link on its own line");
+  assert.equal(links.filter((l) => l.inText).length, 1, "and one inside a sentence");
   assert.ok(links.some((l) => !l.inline), "and a top link");
 });

@@ -96,3 +96,14 @@ test("heardLink: the label said last wins; old words fall out of the tail", () =
   const twice = [{ label: "Docs", id: "a" }, { label: "docs", id: "b" }];
   assert.equal(heardLink(twice, "open the docs")?.id, "a", "a tie goes to the earlier candidate (current section first)");
 });
+
+test("a link inside a line: voice follow hears only its words, never the address", () => {
+  const [s] = parse("### **A**\nRead [the docs](https://developer.mozilla.org/en-US/) now.\nNext: [Plugin Check](https://wordpress.org/plugins/plugin-check/).");
+  const spoken = s.items.map((it) => speechWords(it.text));
+  assert.deepEqual(spoken, [["read", "the", "docs", "now"], ["plugin", "check"]]);
+  assert.equal(followLine(spoken, 0, "read the docs now plugin check"), 1);
+  const candidates = s.links.map((l, li) => ({ label: l.label, s: 0, l: li }));
+  assert.deepEqual(candidates.map((c) => c.label), ["the docs", "Plugin Check"]);
+  assert.equal(heardLink(candidates, "and now run plugin check")?.l, 1);
+  assert.equal(heardLink(candidates, "developer mozilla org"), null, "the address is not a label");
+});
