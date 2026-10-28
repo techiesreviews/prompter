@@ -342,6 +342,16 @@ export async function run({ browser, base, mode, dist, out }) {
   const mcpItem = page.locator("#open-menu .mcp-action");
   assert.deepEqual([await mcpItem.getAttribute("data-state"), await mcpItem.locator(".i-copy").isVisible(), await mcpItem.locator(".mcp-label").getAttribute("aria-live")], ["off", true, "polite"], "Wait for MCP with a copy icon, announced politely");
   assert.equal(await page.locator(".copy-dialog, .ai-dialog, .copy-mcp").count(), 0, "one copy flow: no Copy MCP item or dialog any more");
+  // Copy link confirms on its item (Copied and a check, the menu stays open); no status pops up.
+  await clip(page);
+  const linkItem = page.locator('#open-menu [data-action="copy-link"]');
+  await linkItem.click();
+  await page.waitForFunction(() => window.__copied.length === 1);
+  assert.match(await page.evaluate(() => window.__copied[0]), /#s=/, "the link carries the script");
+  assert.deepEqual([await linkItem.textContent(), await linkItem.locator(".i-check").isVisible(), await page.locator("#open-menu:popover-open").count()], ["Copied", true, 1], "Copied with a check, in the open menu");
+  assert.deepEqual(await page.locator(".status").evaluate((el) => { const r = el.getBoundingClientRect(); return [r.width <= 1 && r.height <= 1, getComputedStyle(el).clipPath]; }), [true, "inset(50%)"], "status messages are for screen readers only: nothing shows on screen");
+  await page.waitForFunction(() => !document.querySelector('#open-menu [data-action="copy-link"][data-copied]'), null, { timeout: 3000 });
+  assert.equal(await linkItem.textContent(), "Copy link");
   await page.keyboard.press("Escape");
   const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
   // A scripted agent: one JSON-RPC POST per message with the copied token, as the message says (curl).

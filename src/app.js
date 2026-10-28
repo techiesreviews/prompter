@@ -736,7 +736,8 @@ function showLink(si, li, fromUser) {
   setStatus(`On main screen: ${s.links[li].label}`);
 }
 
-function setStatus(t) { statusEl.textContent = t; statusEl.title = t; }
+// Status messages are for screen readers only (the line is visually hidden): nothing pops up on screen.
+function setStatus(t) { statusEl.textContent = t; }
 
 /** A message that must not be missed (errors). Empty text hides it. */
 function showAlert(t) {
@@ -975,14 +976,23 @@ async function copyText(text, done, ask) {
   try {
     await navigator.clipboard.writeText(text);
     setStatus(done);
+    return true;
   } catch {
     window.prompt(ask, text);
+    return false;
   }
 }
 
-async function copyLink() {
+// Copy link confirms on its own menu item, like Wait for MCP: Copied and a check for 2 seconds.
+let linkCopiedTimer = 0;
+async function copyLink(button) {
   const link = `${publicBase()}#s=${await encodeScript(scriptText)}${preset === "default" ? "" : `&p=${preset}`}`;
-  await copyText(link, "Link copied. The script is inside the link.", "Copy this link. The script is inside it:");
+  if (!(await copyText(link, "Link copied. The script is inside the link.", "Copy this link. The script is inside it:"))) return;
+  const label = button.querySelector(".share-label");
+  button.toggleAttribute("data-copied", true);
+  label.textContent = "Copied";
+  clearTimeout(linkCopiedTimer);
+  linkCopiedTimer = setTimeout(() => { button.removeAttribute("data-copied"); label.textContent = "Copy link"; }, 2000);
 }
 
 function openPaste() {
@@ -1068,7 +1078,7 @@ main.addEventListener("click", (e) => {
   }
   showLink(Number(b.dataset.s), Number(b.dataset.l), true);
 });
-const KEEP_OPEN = new Set(["mcp", "agent-stop", "connect"]);
+const KEEP_OPEN = new Set(["mcp", "agent-stop", "connect", "copy-link"]);
 document.addEventListener("click", (e) => {
   const button = e.target.closest("[data-action]");
   const action = button?.dataset.action;
@@ -1078,7 +1088,7 @@ document.addEventListener("click", (e) => {
   else if (action === "paste") openPaste();
   else if (action === "open-paste") submitPaste();
   else if (action === "close-dialog") button.closest("dialog").close();
-  else if (action === "copy-link") copyLink();
+  else if (action === "copy-link") copyLink(button);
   else if (action === "start") { showAlert(""); history.pushState(null, "", plainAddress()); showStart(); }
   else if (action === "demo") { showAlert(""); openDemo(); }
   else if (action === "continue") { showAlert(""); openScript(store.get(LAST_KEY) || "", { label: "Your last script" }); }
