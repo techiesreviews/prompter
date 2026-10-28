@@ -310,7 +310,8 @@ function openAi() {
 // :root as --line in px; the page's CSS and every check here use that one value.
 const handle = $(".line-handle");
 const LINE_STEPS = { ArrowUp: -1, ArrowDown: 1, PageUp: -10, PageDown: 10 }; // percent
-const TAP_SLOP = 8; // px a finger may drift and still tap (a mouse or pen: 2px)
+const TAP_SLOP = 8; // px a finger or pen may drift and still tap
+const CLICK_SLOP = 2; // the same for a mouse, so it can still move the line a few px
 const LINE_KEYS = [...Object.keys(LINE_STEPS), "Home", "End"];
 let lineFrac = LINE_DEFAULT;
 let lineY = 0;
@@ -358,7 +359,7 @@ handle.addEventListener("pointerdown", (e) => {
   if (e.button !== 0) return;
   e.preventDefault();
   handle.setPointerCapture(e.pointerId);
-  lineDrag = { id: e.pointerId, offset: e.clientY - lineY, from: e.clientY, start: lineFrac, slop: e.pointerType === "touch" ? TAP_SLOP : 2, moved: false };
+  lineDrag = { id: e.pointerId, offset: e.clientY - lineY, from: e.clientY, start: lineFrac, slop: e.pointerType === "mouse" ? CLICK_SLOP : TAP_SLOP, moved: false };
   handle.dataset.dragging = "true";
 });
 handle.addEventListener("pointermove", (e) => {

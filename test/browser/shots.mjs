@@ -1182,7 +1182,7 @@ export async function run({ browser, base, mode, dist, out }) {
   // Two quick taps on the tab put the line back at 34%.
   const th2 = await TL.locator(".line-handle").boundingBox();
   for (let i = 0; i < 2; i++) {
-    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: th2.x + 22, y: th2.y + 22 }] });
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: th2.x + th2.width / 2, y: th2.y + th2.height / 2 }] });
     await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
   }
   await settle(TL);
@@ -1206,7 +1206,11 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal((await lineOf(TL)).stored, dragged, "a drag then a quick tap does not reset");
   await TL.waitForTimeout(450);
   const beforeTap = await lineOf(TL);
-  await touch([[hx, hy2], [hx, hy2 + 7]]);
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: hx, y: hy2 }] });
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: hx, y: hy2 + 7 }] });
+  await TL.evaluate(() => new Promise(requestAnimationFrame));
+  assert.deepEqual(await lineOf(TL), beforeTap, "a finger drifting 7px does not nudge the line while it is down");
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
   await settle(TL);
   assert.deepEqual(await lineOf(TL), beforeTap, "a single tap (7px drift) keeps the line, on screen too");
   await TL.waitForTimeout(450);
@@ -1218,7 +1222,7 @@ export async function run({ browser, base, mode, dist, out }) {
   const barBefore = await TL.evaluate(() => [window.scrollY, getComputedStyle(document.documentElement).getPropertyValue("--line")]);
   await TL.evaluate(() => { Object.defineProperty(window, "innerHeight", { value: window.innerHeight + 56, configurable: true }); window.dispatchEvent(new Event("resize")); });
   await settle(TL);
-  assert.deepEqual(await TL.evaluate(() => [window.scrollY, getComputedStyle(document.documentElement).getPropertyValue("--line")]), barBefore, "an address-bar height change does not move the line");
+  assert.deepEqual(await TL.evaluate(() => [window.scrollY, getComputedStyle(document.documentElement).getPropertyValue("--line")]), barBefore, "an address-bar height change moves neither the line nor the script");
   await touchCtx.close();
   ok("phone: a finger drags the reading line (touch pointer, 44px target) to 15%; the script does not move under it and nothing scrolls sideways; a resize keeps its share of the window; a single tap keeps it, a double tap (also with drift) resets it to 34%; an address-bar height change moves nothing");
 
