@@ -16,6 +16,7 @@ export class Relay extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     this.pending = new Map();
+    this.earlyAgent = null; // an agent that said hello before any tab: kept in memory until one connects
     // Keepalive pings from the tab are answered without waking the object.
     this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('{"type":"ping"}', '{"type":"pong"}'));
   }
@@ -54,7 +55,8 @@ export class Relay extends DurableObject {
       server.close(4003, meta?.revoked ? "revoked" : "expired");
     } else {
       if (!meta) {
-        meta = { createdAt: born, expiresAt: born + MAX_AGE_MS, revoked: false, agent: null };
+        meta = { createdAt: born, expiresAt: born + MAX_AGE_MS, revoked: false, agent: this.earlyAgent ?? null };
+        this.earlyAgent = null;
         await this.save(meta);
       }
       // Only the newest tab receives calls; the others hear 4001 and offer "Use this tab".
@@ -104,13 +106,15 @@ export class Relay extends DurableObject {
   // Answers { status: "ok" | "unauthorized" | "no-tab" | "timeout", result?, error? }.
   async op(message) {
     if (!(message.born > 0) || this.now() - message.born >= MAX_AGE_MS) return { status: "unauthorized" };
-    let meta = await this.meta();
+    const meta = await this.meta();
     // No note yet: the tab has not reached the relay (still connecting, or its socket is blocked).
-    // The token is young and was never revoked (a revoked note stays until its alarm), so the
-    // note starts here as fetch() would start it; calls then wait for the tab ("no-tab").
+    // A young token without a note was never revoked (a revoked note stays until its alarm), so
+    // the agent is told to wait for the tab ("no-tab") instead of a 401. Nothing is written here:
+    // tokens are not signed, so only a tab (through /api/relay and its guard) starts a note. The
+    // agent's name waits in memory and goes into the note the tab starts.
     if (!meta) {
-      meta = { createdAt: message.born, expiresAt: message.born + MAX_AGE_MS, revoked: false, agent: null };
-      await this.save(meta);
+      if (message.op === "agent") this.earlyAgent = { name: String(message.name ?? "").slice(0, 60), version: String(message.version ?? "").slice(0, 30) };
+      return { status: message.op === "call" ? "no-tab" : "ok" };
     }
     if (!this.valid(meta)) return { status: "unauthorized" };
     if (message.op === "auth") return { status: "ok" };

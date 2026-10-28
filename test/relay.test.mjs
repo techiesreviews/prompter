@@ -296,9 +296,11 @@ test("relay: an agent that calls before the tab has connected waits for it, inst
   assert.deepEqual(await relay.op({ op: "auth", born: T0 }), { status: "ok" }, "a young token with no note yet is fine");
   assert.deepEqual(await relay.op({ op: "agent", name: "codex", version: "1", born: T0 }), { status: "ok" });
   assert.deepEqual(await relay.op({ op: "call", tool: "get_open_script", args: {}, born: T0 }), { status: "no-tab" }, "the prompter is not open yet");
-  assert.deepEqual(ctx.storage.data.get("meta"), { createdAt: T0, expiresAt: T0 + MAX_AGE_MS, revoked: false, agent: { name: "codex", version: "1" } });
-  assert.equal(ctx.alarm, T0 + MAX_AGE_MS + ALARM_SLACK_MS, "the note starts with its alarm");
+  assert.equal(ctx.storage.data.size, 0, "nothing is written before a tab connects (tokens are not signed)");
+  assert.ok(!ctx.alarm, "and no alarm is set");
   const ws = await tab();
+  assert.deepEqual(ctx.storage.data.get("meta"), { createdAt: T0, expiresAt: T0 + MAX_AGE_MS, revoked: false, agent: { name: "codex", version: "1" } }, "the tab starts the note, with the early agent's name");
+  assert.equal(ctx.alarm, T0 + MAX_AGE_MS + ALARM_SLACK_MS, "the note starts with its alarm");
   assert.deepEqual(ws.sent.map((m) => m.type), ["ready", "agent"], "the tab hears who is connected when it arrives");
   assert.deepEqual(await relay.op({ op: "auth", born: T0 - MAX_AGE_MS }), { status: "unauthorized" }, "an old token is still refused");
 });
