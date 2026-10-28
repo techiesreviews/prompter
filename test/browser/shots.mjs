@@ -891,6 +891,8 @@ export async function run({ browser, base, mode, dist, out }) {
   await R.mouse.down();
   await R.mouse.move(300, hb.y + hb.height / 2 - 171, { steps: 8 });
   assert.equal(await handle.getAttribute("data-dragging"), "true");
+  await R.waitForTimeout(250);
+  assert.equal(await R.locator(".reading-line").evaluate((el) => getComputedStyle(el).borderTopColor), "oklch(0.65 0.227 32.3)", "full orange while dragging");
   await R.mouse.up();
   await settle(R);
   assert.deepEqual(await lineOf(R), { top: 135, css: "135px", now: "15", text: "15% from the top", stored: "0.1500" }, "dragged to 15%, remembered");
@@ -927,7 +929,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await scrollToSection(R, 3);
   await R.evaluate(() => window.scrollBy(0, 300));
   await shot(R, "fade-read-text-desktop");
-  ok("reading line: the whole line is the handle (a 20px slider band, no tab or tooltip, full orange on hover); a mouse drag from anywhere along it moves only the line (the script stays put), updates --line and aria-valuenow, is remembered and restored after a reload; tooltip on hover; the veil fades the text above the line and ends at it, the text below is unchanged (pixel compare)");
+  ok("reading line: the whole line is the handle (a 20px slider band, no tab or tooltip, full orange on hover); a mouse drag from anywhere along it moves only the line (the script stays put), updates --line and aria-valuenow, is remembered and restored after a reload; the veil fades the text above the line and ends at it, the text below is unchanged (pixel compare)");
 
   // A small, deliberate mouse drag (4px) is kept, not taken for a click.
   const fb = await handle.boundingBox();
@@ -973,8 +975,22 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await activeIs(R), "1", "away from the handle the arrow keys still jump sections");
   await R.keyboard.press("PageDown");
   assert.equal(await activeIs(R), "2", "and so does Page Down");
+  // A link lying under the line still opens with a click; the line stays where it is.
+  await R.evaluate(() => { window.__opened = []; window.open = (u) => { window.__opened.push(u); return { closed: false, location: {}, focus() {} }; }; });
+  const lineNow = await lineOf(R);
+  await R.evaluate((y) => { const r = document.querySelector(".links .link").getBoundingClientRect(); window.scrollBy(0, r.top + r.height / 2 - y); }, lineNow.top + 1);
+  await settle(R);
+  const lb = await R.locator(".links .link").first().boundingBox();
+  const under = [lb.x + lb.width / 2, lb.y + lb.height / 2];
+  assert.equal(await R.evaluate(([x, y]) => document.elementFromPoint(x, y).className, under), "line-handle", "the link sits under the line's band");
+  await R.mouse.move(...under);
+  assert.equal(await handle.evaluate((el) => getComputedStyle(el).cursor), "pointer", "over a link the line shows a pointer");
+  await R.mouse.click(...under);
+  await settle(R);
+  assert.equal((await R.evaluate(() => window.__opened)).length, 1, "the click opened the link under the line");
+  assert.deepEqual(await lineOf(R), lineNow, "and did not move or reset the line");
   await lineCtx.close();
-  ok("keyboard: the focused handle moves the line 1% with ↑ ↓, 10% with Page Up/Down, to 8% and 75% with Home/End (bounds kept), without jumping sections; elsewhere ← → and Page Down still jump; double-click resets to 34%; at 8% the last line still reaches the line");
+  ok("keyboard: the focused handle moves the line 1% with ↑ ↓, 10% with Page Up/Down, to 8% and 75% with Home/End (bounds kept), without jumping sections; elsewhere ← → and Page Down still jump; double-click resets to 34%; a link under the line opens with a click and leaves the line; at 8% the last line still reaches the line");
 
   // With the line moved (high at 15%, low at 60%) everything that uses it follows.
   for (const frac of [0.15, 0.6]) {

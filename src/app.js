@@ -364,8 +364,11 @@ handle.addEventListener("pointerdown", (e) => {
   lineDrag = { id: e.pointerId, offset: e.clientY - lineY, from: e.clientY, start: lineFrac, slop: e.pointerType === "mouse" ? CLICK_SLOP : TAP_SLOP, moved: false };
   handle.dataset.dragging = "true";
 });
+// The line lies over the script: a link under it still opens with a click or tap.
+const linkUnder = (e) => document.elementsFromPoint(e.clientX, e.clientY).map((el) => el.closest(".link, .mark, .inlink")).find(Boolean);
 handle.addEventListener("pointermove", (e) => {
-  if (lineDrag?.id !== e.pointerId) return;
+  if (!lineDrag) { handle.classList.toggle("over-link", Boolean(linkUnder(e))); return; }
+  if (lineDrag.id !== e.pointerId) return;
   // The line stays put until the pointer has really moved, so a tap never nudges it.
   if (!lineDrag.moved && Math.abs(e.clientY - lineDrag.from) < lineDrag.slop) return;
   lineDrag.moved = true;
@@ -380,6 +383,8 @@ function endLineDrag(e) {
   lineDrag = null;
   delete handle.dataset.dragging;
   if (e.type === "pointerup" && moved) { lastTap = -Infinity; moveLine((e.clientY - offset) / viewHeight(), true); return; }
+  const link = e.type === "pointerup" && linkUnder(e);
+  if (link) { lastTap = -Infinity; moveLine(start, true); link.click(); return; }
   // A tap or click keeps the line where it was, unless it is the second one in
   // a row. A cancelled touch (the system took it over) puts it back too.
   const reset = e.type === "pointerup" && e.timeStamp - lastTap < 400;

@@ -120,7 +120,10 @@
     pointer-events: auto; touch-action: none; cursor: ns-resize; user-select: none; -webkit-user-select: none;
   }
   @media (pointer: coarse) { .line-handle { --band: 32px; } }
-  .line-handle:focus-visible { outline: 0; }
+  .line-handle.over-link { cursor: pointer; }
+  /* Focused, the whole line turns solid; without :has() the band shows its own ring. */
+  .line-handle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  @supports selector(:has(*)) { .line-handle:focus-visible { outline: 0; } }
   @media (prefers-reduced-motion: no-preference) {
     .reading-line { transition: border-color 160ms var(--ease-out); }
   }
