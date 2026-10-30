@@ -15,7 +15,7 @@ const read = (file) => readFileSync(join(root, file), "utf8");
 export const FONTS = ["inter-latin.woff2", "roboto-mono-latin.woff2", "OFL.txt"];
 
 /** Shared modules inlined into the page, in this order, without `export`. */
-export const INLINED = ["src/core.mjs", "src/follow.mjs", "src/agent.mjs", "src/camframe.mjs", "src/ui/range-field.mjs"];
+export const INLINED = ["src/core.mjs", "src/follow.mjs", "src/speech.mjs", "src/agent.mjs", "src/camframe.mjs", "src/ui/range-field.mjs"];
 
 /** Shared component styles inlined into the page's style at its marker. */
 export const UI_CSS = ["src/ui/range-field.css"];

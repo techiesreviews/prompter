@@ -16,14 +16,20 @@ const DEMO_SECTIONS = parse(DEMO_SCRIPT).length;
 // window.__speech.say("words") delivers a final result to the running
 // instance; say("wor", true) an interim one, replaced by the next result.
 // fail("network") fires error and then end, as browsers do. Like a real one,
-// start() while running throws InvalidStateError (counted in doubleStarts),
-// and each start is a new session whose results number from 0.
+// start() while running (or a second time) throws InvalidStateError (counted
+// in doubleStarts), and each start is a new session whose results number
+// from 0. On-device recognition answers window.__speechOnDevice (unset:
+// "unavailable"); install() resolves true.
 const SPEECH_STUB = () => {
-  const state = { started: 0, aborted: 0, doubleStarts: 0, startedAt: [], instance: null, results: [] };
+  const state = { started: 0, made: 0, aborted: 0, doubleStarts: 0, reused: 0, installs: 0, startedAt: [], instance: null, results: [] };
   class FakeRecognition {
+    constructor() { state.made++; }
+    static async available() { return window.__speechOnDevice || "unavailable"; }
+    static async install() { state.installs++; return true; }
     start() {
-      if (this.running) { state.doubleStarts++; throw new DOMException("already started", "InvalidStateError"); }
+      if (this.running || this.used) { state.doubleStarts++; if (this.used && !this.running) state.reused++; throw new DOMException("already started", "InvalidStateError"); }
       this.running = true;
+      this.used = true;
       state.started++;
       state.startedAt.push(performance.now());
       state.results = [];
@@ -46,6 +52,7 @@ const SPEECH_STUB = () => {
     r.running = false;
     r.onend?.();
   };
+  FakeRecognition.prototype.processLocally = false;
   window.__speech = state;
   window.SpeechRecognition = FakeRecognition;
   delete window.webkitSpeechRecognition;
@@ -916,34 +923,26 @@ export async function run({ browser, base, mode, dist, out }) {
   await viaSettings(v, ".voice");
   assert.equal(await v.locator(".voice-notice").isHidden(), true);
   assert.equal(await v.evaluate(() => window.__speech.started), 1);
-  // Edge's speech service drops now and then: a network error keeps Follow my voice on, says
-  // Reconnecting to speech by the reading line (read out once) and starts again after a short wait.
+  // Speech drops now and then (Edge's service, Chrome after a minute): a fresh recognizer starts
+  // at once, and one blip shows nothing.
   const voiceNote = () => v.locator(".toast").evaluate((el) => el.dataset.show === "true" && el.querySelector(".toast-text").textContent);
-  const failAndRestart = async () => {
-    const n = await v.evaluate(() => { window.__speech.fail("network"); return window.__speech.started; });
-    await v.waitForFunction((k) => window.__speech.started === k + 1, n, { timeout: 10_000 });
-    return v.evaluate(() => { const t = window.__speech.startedAt; return t.at(-1) - t.at(-2); });
+  const started = () => v.evaluate(() => window.__speech.started);
+  const failAndRestart = async (error = "network") => {
+    const n = await v.evaluate((e) => { window.__failedAt = performance.now(); window.__speech.fail(e); return window.__speech.started; }, error);
+    await v.waitForFunction((k) => window.__speech.started === k + 1, n, { timeout: 5000 });
+    return v.evaluate(() => window.__speech.startedAt.at(-1) - window.__failedAt); // the wait after the failure
   };
-  await v.evaluate(() => window.__speech.fail("network"));
+  await v.evaluate(() => window.__speech.say("hi"));
+  const blip = await failAndRestart();
+  assert.ok(blip < 300, `started again at once (${Math.round(blip)} ms)`);
   assert.equal(await v.locator(".voice").getAttribute("aria-pressed"), "true", "a network error keeps Follow my voice on");
-  assert.equal(await voiceNote(), "Reconnecting to speech…");
-  assert.equal(await v.locator(".status").textContent(), "Reconnecting to speech…");
-  assert.equal(await v.locator(".note-row.alert").isHidden(), true, "no error message yet");
-  assert.equal(await v.locator(".toast svg").isVisible(), true, "with a microphone mark");
-  await shot(v, "voice-reconnecting-desktop");
-  await v.waitForFunction(() => window.__speech.started === 2, null, { timeout: 2000 });
-  const firstWait = await v.evaluate(() => window.__speech.startedAt[1] - window.__speech.startedAt[0]);
-  assert.ok(firstWait >= 450 && firstWait < 1000, `started again after about half a second (${Math.round(firstWait)} ms)`);
+  assert.equal(await voiceNote(), false, "one blip: no note");
+  // Chrome's session ending after a minute (an end with no error): the same, at once.
   await v.evaluate(() => window.__speech.say("hi"));
-  assert.equal(await voiceNote(), false, "words heard again: the note goes");
-  // Words reset the count: three errors in a row wait longer each time; after words the next wait is short again.
-  const waits = [];
-  for (let i = 0; i < 3; i++) waits.push(await failAndRestart());
-  assert.ok(waits[0] < waits[1] && waits[1] < waits[2] && waits[2] >= 1900, `growing waits: ${waits.map(Math.round).join(", ")} ms`);
-  await v.evaluate(() => window.__speech.say("hi"));
-  const afterWords = await failAndRestart();
-  assert.ok(afterWords < 1000, `after words the wait starts short again (${Math.round(afterWords)} ms)`);
-  // A browser that never reaches its speech service (Vivaldi, Brave) still gives up, with the message.
+  const ended = await v.evaluate(() => { const r = window.__speech.instance; r.running = false; r.onend?.(); return window.__speech.started; });
+  await v.waitForFunction((k) => window.__speech.started === k + 1, ended, { timeout: 1000 });
+  // It keeps failing: Reconnecting to speech by the reading line (read out once), and it tries
+  // again a little apart (never more than 2 s), never two at once, each time a fresh recognizer.
   await v.evaluate(() => {
     window.__reconnectSaid = 0;
     let last = document.querySelector(".status").textContent;
@@ -953,19 +952,50 @@ export async function run({ browser, base, mode, dist, out }) {
       last = now;
     }).observe(document.querySelector(".status"), { childList: true, characterData: true, subtree: true });
   });
-  for (let i = 0; i < 4; i++) await failAndRestart();
-  assert.equal(await v.locator(".voice").getAttribute("aria-pressed"), "true", "still on after five network errors in a row");
-  await v.evaluate(() => window.__speech.fail("network"));
+  const waits = [];
+  for (let i = 0; i < 5; i++) waits.push(await failAndRestart(i % 2 ? "no-speech" : "network"));
+  assert.ok(waits.every((w) => w < 2600) && waits.at(-1) >= 900, `short, growing waits: ${waits.map(Math.round).join(", ")} ms`);
+  assert.equal(await voiceNote(), "Reconnecting to speech…");
+  assert.equal(await v.evaluate(() => window.__reconnectSaid), 1, "read out once, not on every try");
+  assert.equal(await v.locator(".note-row.alert").isHidden(), true, "no error message");
+  assert.equal(await v.locator(".toast svg").isVisible(), true, "with a microphone mark");
+  await shot(v, "voice-reconnecting-desktop");
+  await v.evaluate(() => window.__speech.say("hi"));
+  assert.equal(await voiceNote(), false, "words heard again: the note goes");
+  const afterWords = await failAndRestart();
+  assert.ok(afterWords < 300, `after words it starts again at once (${Math.round(afterWords)} ms)`);
+  // A session that goes quiet with no error and no end (a silent stall) is replaced by a fresh one.
+  const beforeStall = await started();
+  await v.waitForFunction((k) => window.__speech.started > k, beforeStall, { timeout: 13_000 });
+  assert.equal(await v.locator(".voice").getAttribute("aria-pressed"), "true");
+  assert.deepEqual(await v.evaluate(() => [window.__speech.doubleStarts, window.__speech.reused, window.__speech.made === window.__speech.started]), [0, 0, true], "never two starts at once, never an ended recognizer started again: one new object per start");
+  await viaSettings(v, ".voice");
+  // A browser that never reaches its speech service (Vivaldi, Brave) still gives up, with the
+  // message, after about 15 s of trying with no word heard.
+  await viaSettings(v, ".voice");
+  const firstTry = await v.evaluate(() => performance.now());
+  for (let i = 0; i < 40 && (await v.locator(".voice").getAttribute("aria-pressed")) === "true"; i++) {
+    await v.evaluate(() => { if (window.__speech.instance?.running) window.__speech.fail("network"); });
+    await v.waitForTimeout(500);
+  }
   await v.locator(".note-row.alert:not([hidden])").waitFor();
+  const gaveUpAfter = (await v.evaluate(() => performance.now())) - firstTry;
+  assert.ok(gaveUpAfter >= 14_000, `kept trying for about 15 s first (${Math.round(gaveUpAfter)} ms)`);
   assert.match(await v.locator(".alert-text").textContent(), /could not reach its speech service\. Some browsers \(like Vivaldi or Brave\) cannot use it; try Chrome or Edge\./);
   assert.equal(await v.locator(".voice").getAttribute("aria-pressed"), "false");
   assert.equal(await voiceNote(), false, "the reconnecting note goes with it");
-  assert.equal(await v.evaluate(() => window.__reconnectSaid), 0, "Reconnecting is not read out again on every try");
-  await v.waitForTimeout(1200);
-  assert.deepEqual(await v.evaluate(() => [window.__speech.started, window.__speech.doubleStarts]), [10, 0], "no start after giving up, and never two at once");
+  const afterGiveUp = await started();
+  await v.waitForTimeout(1500);
+  assert.deepEqual(await v.evaluate(() => [window.__speech.started, window.__speech.doubleStarts]), [afterGiveUp, 0], "no start after giving up, and never two at once");
   await v.locator('.note-row.alert [data-action="dismiss"]').click();
+  // Where the browser can recognise speech on this device, it does (installing the language pack
+  // from the click); a running session switches to it at once.
+  await v.evaluate(() => { window.__speechOnDevice = "downloadable"; });
+  await viaSettings(v, ".voice");
+  await v.waitForFunction(() => window.__speech.instance?.processLocally === true && window.__speech.instance.running);
+  assert.equal(await v.evaluate(() => window.__speech.installs), 1, "the language pack is installed once");
   await voiced.close();
-  ok("Follow my voice: a big mic button in Settings (orange when on) with the API, notice before first use, follows line by line to the reading line (white current line, dimmer lines after it), interim and later-line words never jump, skips QL, picks up after scrolling by hand, pauses auto-scroll, handles a blocked mic, keeps going through a network error (Reconnecting to speech by the reading line, read out once; started again after 0.5, 1, 2 s…, never two starts at once; heard words reset the count) and gives up with the message only after five in a row (a browser without the speech service), remembers consent");
+  ok("Follow my voice: a big mic button in Settings (orange when on) with the API, notice before first use, follows line by line to the reading line (white current line, dimmer lines after it), interim and later-line words never jump, skips QL, picks up after scrolling by hand, pauses auto-scroll, handles a blocked mic, keeps going when speech drops (a fresh recognizer at once after a blip or a session end, no note for one blip; Reconnecting to speech by the reading line, read out once, only while it keeps failing, tries a little apart and never two at once; heard words hide it; a silent stall replaced by a fresh recognizer) and gives up with the message only after about 15 s of failing with no word heard (a browser without the speech service), uses on-device recognition where the browser has it, remembers consent");
 
   // ---- Links open at the point where they are talked about ----
   const inlineLink = await makeLink(INLINE_SCRIPT, "lex", base);

@@ -188,17 +188,3 @@ export function heardLink(links, heard, { tailWords = 8 } = {}) {
   }
   return pick;
 }
-
-/** Waits before starting speech recognition again after a network error, one per try in a row (about 15 s in all). */
-export const SPEECH_RETRY_MS = [500, 1000, 2000, 4000, 8000];
-
-/**
- * After a speech recognition error: how long to wait before starting again
- * (ms), or -1 to give up. Only a network error is retried: Edge's speech
- * service drops now and then in normal use. `fails` counts the network
- * errors in a row with no words recognised between them, this one not
- * included, so a browser that never reaches its service still gives up.
- */
-export function speechRetryWait(error, fails) {
-  return error === "network" && fails < SPEECH_RETRY_MS.length ? SPEECH_RETRY_MS[fails] : -1;
-}

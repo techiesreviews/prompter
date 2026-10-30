@@ -1,8 +1,9 @@
 // Page logic. scripts/build.mjs inlines src/core.mjs, src/follow.mjs,
-// src/agent.mjs, src/camframe.mjs and src/ui/range-field.mjs above this file
-// inside one function, so parse, PRESETS, DEMO_SCRIPT, encodeScript,
-// followWords, heardLink, linkAt, speechWords, connectionPrompt, agentName,
-// camframeCall, cueCrossing, rangeField … are in scope here.
+// src/speech.mjs, src/agent.mjs, src/camframe.mjs and src/ui/range-field.mjs
+// above this file inside one function, so parse, PRESETS, DEMO_SCRIPT,
+// encodeScript, followWords, heardLink, linkAt, speechWords, speechKeeper,
+// connectionPrompt, agentName, camframeCall, cueCrossing, rangeField … are in
+// scope here.
 
 // ---------- Player view ----------
 // The main-screen window shows a YouTube video full size via this same page.
@@ -102,11 +103,7 @@ let voiceLines = []; // speechWords of each spoken line, by data-k
 let voiceOn = false;
 let voiceState = followStart(-1); // where the voice is, after the final results so far (followWords)
 let voiceFinal = 0; // speech results already final and followed
-let recognition = null;
-let voiceRestarts = 0;
-let voiceNetFails = 0; // network errors in a row with no words recognised between them
-let voiceWait = -1; // set by a network error: how long onend waits before starting again
-let voiceRetryTimer = 0; // that wait, while it runs
+let voiceLocal = false; // this browser recognises speech on this device (no network needed)
 let resumeAuto = false;
 let cues = []; // camera cues ({ size, position?, scene? }) by data-cue
 let cueAbove = null; // cue numbers above the reading line; null until the first look after render
@@ -988,7 +985,8 @@ function goSection(delta) {
 
 // ---------- Follow my voice ----------
 // The browser's speech recognition turns the voice into words (Chrome sends
-// the audio to Google for that); the script itself never leaves the page.
+// the audio to Google for that, unless it can do it on this device); the
+// script itself never leaves the page.
 function lineAtReadingLine() {
   const y = readingLineY();
   let k = -1;
@@ -1039,27 +1037,34 @@ function toggleVoice() {
   startVoice();
 }
 
+// Each start is a fresh recognition object (src/speech.mjs keeps them going).
+const voiceLang = () => navigator.language || "en-US";
+function newRecognition(local) {
+  const r = new Recognition();
+  r.continuous = true;
+  r.interimResults = true;
+  r.lang = voiceLang();
+  if (local) r.processLocally = true;
+  return r;
+}
+const voiceKeeper = Recognition && speechKeeper({
+  make: newRecognition,
+  onSession() { voiceLinkAt = -1; voiceFinal = 0; }, // a new session numbers its results from 0 again
+  onResult: onVoiceResult,
+  onReconnecting(on) { if (on) showToast(RECONNECTING); else hideToast(); },
+  onFatal(error) { stopVoice(VOICE_ERRORS[error] || "Follow my voice stopped. Turn it on again to retry."); },
+});
+
 function startVoice() {
   voiceNotice.hidden = true;
   showAlert("");
-  try {
-    recognition = new Recognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = navigator.language || "en-US";
-    recognition.onresult = onVoiceResult;
-    recognition.onerror = onVoiceError;
-    recognition.onend = onVoiceEnd;
-    recognition.start();
-  } catch {
-    recognition = null;
-    showAlert("Follow my voice could not start in this browser.");
-    return;
-  }
   voiceOn = true;
-  voiceRestarts = 0;
-  voiceNetFails = 0;
-  voiceWait = -1;
+  voiceKeeper.start();
+  // On this device where the browser can (no network, so steadier); asked during the
+  // click, as installing its language pack needs one. Until then, and otherwise, the
+  // browser's own speech service.
+  if (!voiceLocal) speechOnDevice(Recognition, voiceLang()).then((local) => { voiceLocal = local; if (voiceOn) voiceKeeper.useLocal(local); });
+  else voiceKeeper.useLocal(true);
   voiceLinkKey = "";
   voiceLinkAt = -1;
   voiceFinal = 0;
@@ -1071,18 +1076,9 @@ function startVoice() {
 }
 
 function stopVoice(message = "") {
-  const r = recognition;
-  recognition = null;
   voiceOn = false;
-  clearTimeout(voiceRetryTimer);
-  voiceRetryTimer = 0;
-  voiceWait = -1;
-  voiceNetFails = 0;
+  voiceKeeper?.stop();
   hideToast();
-  if (r) {
-    r.onresult = r.onerror = r.onend = null;
-    try { r.abort(); } catch { /* already stopped */ }
-  }
   setVoiceButton();
   main.querySelector("p.cur")?.classList.remove("cur");
   if (message) showAlert(message);
@@ -1092,8 +1088,6 @@ function stopVoice(message = "") {
 // Each final result is followed once, in order; the interim words after them
 // are tried from there each time and dropped, so no word counts twice.
 function onVoiceResult(e) {
-  voiceRestarts = 0;
-  if (voiceNetFails) { voiceNetFails = 0; hideToast(); } // back: the speech service heard words
   const words = (i) => speechWords(e.results[i][0].transcript);
   for (; voiceFinal < e.results.length && e.results[voiceFinal].isFinal; voiceFinal++) {
     voiceState = followWords(voiceLines, voiceState, words(voiceFinal));
@@ -1136,37 +1130,6 @@ const VOICE_ERRORS = {
   network: "Your browser could not reach its speech service. Some browsers (like Vivaldi or Brave) cannot use it; try Chrome or Edge. Follow my voice is off.",
   "language-not-supported": "The browser's speech service does not support your language. Follow my voice is off.",
 };
-
-// A network error (Edge's speech service drops now and then) keeps Follow my
-// voice on: onend starts again after a short, growing wait. Only several in a
-// row with no words between them turn it off, with the message.
-function onVoiceError(e) {
-  if (e.error === "no-speech" || e.error === "aborted") return; // onend restarts
-  const wait = speechRetryWait(e.error, voiceNetFails);
-  if (wait < 0) { stopVoice(VOICE_ERRORS[e.error] || "Follow my voice stopped. Turn it on again to retry."); return; }
-  if (!voiceNetFails++) showToast(RECONNECTING); // read out once, not on every try
-  voiceWait = wait;
-}
-
-// Chrome ends a continuous session after a pause; start again while it is on.
-// After a network error the start waits; one start at a time, never two.
-function onVoiceEnd() {
-  if (!voiceOn || !recognition || voiceRetryTimer) return;
-  if (voiceWait >= 0) {
-    voiceRetryTimer = setTimeout(() => { voiceRetryTimer = 0; restartVoice(); }, voiceWait);
-    voiceWait = -1;
-    return;
-  }
-  if (++voiceRestarts > 5) { stopVoice("Follow my voice stopped hearing you. Turn it on again to retry."); return; }
-  restartVoice();
-}
-
-function restartVoice() {
-  if (!voiceOn || !recognition) return;
-  voiceLinkAt = -1; // a new session numbers its results from 0 again
-  voiceFinal = 0;
-  try { recognition.start(); } catch { stopVoice("Follow my voice stopped. Turn it on again to retry."); }
-}
 
 // ---------- Link, paste and copy ----------
 function publicBase() {
