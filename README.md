@@ -86,7 +86,7 @@ If you use CamFrame (the camera window app), the prompter can switch its view fo
 **Turn it on (once, in both apps)**
 
 1. In CamFrame: open its controls, choose **Scenes**, and switch on **Prompter link**.
-2. In the prompter: open **Settings** (the gear) and tick **CamFrame link**. You should see "Connected to CamFrame" and your CamFrame Scene names. A green dot means it is connected, orange means CamFrame was not found.
+2. In the prompter: open **Settings** (the gear) and tick **CamFrame link**. You should see "Connected to CamFrame" and your CamFrame Scene names. A green dot means it is connected, amber means it missed CamFrame for a moment and is reconnecting by itself, orange means CamFrame was not found.
 3. Chrome may ask once whether this page may reach apps on this device. Allow it. Use Chrome or Edge; Safari may not reach apps on your computer.
 
 **Cheat-sheet** (a reminder line in square brackets; capitals don't matter; the cue is its own sentence starting with "Face")
@@ -104,7 +104,7 @@ If you use CamFrame (the camera window app), the prompter can switch its view fo
 - The checker warns about a cue it can't read, such as `[Face small, middle]` or `[Face big]`. A reminder that starts with "Face" but isn't a cue (like `[Face the camera]`) gets the same warning; reword it if you see one.
 - A cue line shows a small camera mark and what the camera does, like **Camera: face small · Share screen.**, so you can see where a switch happens, with the link on or off.
 - With the link on, a short note appears for a few seconds just above the reading line, at the right, each time a cue goes out: "CamFrame switched to face small.", CamFrame's reason if it refused (for example a Scene it doesn't have), or "Could not reach CamFrame" if it isn't open or your browser blocked the call. With the link off there is no note.
-- If CamFrame isn't running, scrolling never waits, and Settings shows "CamFrame not found".
+- A single missed answer (Edge sometimes drops a call) does not break the link: it says "Reconnecting to CamFrame…" and tries again, and a cue that does not get through is sent once more. If CamFrame isn't running, scrolling never waits, and after a few seconds Settings shows "CamFrame not found"; it connects again by itself when CamFrame is back.
 
 The full format, the two style presets (`lex`, strict, and `default`, softer) and the checker live in [`src/core.mjs`](src/core.mjs). The page, the checker and the MCP server all use that one file. The `get_format` tool shows the same rules, and the page's demo ("Try the demo") teaches them by example.
 

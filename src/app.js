@@ -119,8 +119,9 @@ let cueAbove = null; // cue numbers above the reading line; null until the first
 // (by the agent, say, while auto-scroll runs) sends its cues as usual.
 let cueArmed = false;
 let cueTimer = 0;
-// CamFrame link: off unless turned on in Settings. state: off, looking, on (CamFrame answered) or lost.
-const camframe = { on: store.get(CAMFRAME_KEY) === "on", state: "off", scenes: [], note: "", timer: 0, seq: 0 };
+// CamFrame link: off unless turned on in Settings. state: off, looking, on (CamFrame answered),
+// reconnecting (a check or two missed after it answered) or lost (several missed in a row).
+const camframe = { on: store.get(CAMFRAME_KEY) === "on", state: "off", scenes: [], note: "", timer: 0, retry: 0, seq: 0, misses: 0 };
 
 // ---------- Opening scripts ----------
 const isEmpty = () => root.dataset.view === "empty";
@@ -711,35 +712,51 @@ function updateCues(y) {
 }
 
 // Each cue sent shows a short note by the reading line: switched, refused or not reached.
+// A cue that does not get through is sent once more before that.
 async function sendCue(cue) {
-  try {
-    const { ok, body } = await camframeCall("cue", cue);
+  let answer = null;
+  for (let tries = 0; tries < 2 && !answer; tries++) {
+    if (tries) await new Promise((done) => { setTimeout(done, CUE_RETRY_MS); });
     if (!camframe.on) return;
-    const note = ok ? "" : String(body.error || "");
-    showToast(cueReport(ok ? "sent" : "refused", cue, note), ok ? "ok" : "problem");
-    // Not connected yet (looking, or back after "not found"): the status check says Connected
-    // once it has the Scenes, instead of "No saved Scenes" first.
-    if (camframe.state !== "on") { camframe.note = note; checkCamframe(); return; }
-    setCamframe({ state: "on", note });
-  } catch {
-    // A failed cue is news whatever status check is still running.
-    if (!camframe.on) return;
-    setCamframe({ state: "lost" });
-    showToast(cueReport("unreached", cue), "problem");
+    try { answer = await camframeCall("cue", cue); } catch { /* not through: once more, then a miss */ }
   }
+  if (!camframe.on) return;
+  if (!answer) {
+    // A miss like a status check's, news whatever check is still running.
+    camframe.seq++;
+    afterCheck(null);
+    showToast(cueReport("unreached", cue), "problem");
+    return;
+  }
+  const { ok, body } = answer;
+  const note = ok ? "" : String(body.error || "");
+  showToast(cueReport(ok ? "sent" : "refused", cue, note), ok ? "ok" : "problem");
+  // Not connected yet (looking, or back after "not found"): the status check says Connected
+  // once it has the Scenes, instead of "No saved Scenes" first.
+  if (camframe.state !== "on") { camframe.note = note; checkCamframe(); return; }
+  setCamframe({ state: "on", note, misses: 0 });
 }
 
 // Only the newest check counts: an older answer (from before the box was
 // turned off and on again, say) landing late is dropped.
 async function checkCamframe() {
   if (!camframe.on) return;
+  clearTimeout(camframe.retry);
   const n = ++camframe.seq;
-  try {
-    const { body } = await camframeCall("status");
-    if (camframe.on && n === camframe.seq) setCamframe({ state: "on", scenes: Array.isArray(body.scenes) ? body.scenes.map(String) : [] });
-  } catch {
-    if (camframe.on && n === camframe.seq) setCamframe({ state: "lost", scenes: [] });
-  }
+  let body = null;
+  try { ({ body } = await camframeCall("status")); } catch { /* a miss */ }
+  if (camframe.on && n === camframe.seq) afterCheck(body);
+}
+
+// A missed check or two only say reconnecting and check again soon; several in a row say not found.
+function afterCheck(body) {
+  clearTimeout(camframe.retry);
+  const next = camframeAfterCheck(camframe.state, camframe.misses, Boolean(body));
+  const patch = { state: next.state, misses: next.misses };
+  if (body) patch.scenes = Array.isArray(body.scenes) ? body.scenes.map(String) : [];
+  else if (next.state === "lost") patch.scenes = [];
+  setCamframe(patch);
+  if (next.retry >= 0) camframe.retry = setTimeout(checkCamframe, next.retry);
 }
 
 function setCamframeOn(on) {
@@ -747,8 +764,9 @@ function setCamframeOn(on) {
   camframe.seq++;
   if (on) store.set(CAMFRAME_KEY, "on"); else store.del(CAMFRAME_KEY);
   clearInterval(camframe.timer);
-  if (!on) { hideToast("ok"); hideToast("problem"); setCamframe({ state: "off", scenes: [], note: "" }); return; }
-  setCamframe({ state: "looking", note: "" });
+  clearTimeout(camframe.retry);
+  if (!on) { hideToast("ok"); hideToast("problem"); setCamframe({ state: "off", scenes: [], note: "", misses: 0 }); return; }
+  setCamframe({ state: "looking", note: "", misses: 0 });
   checkCamframe();
   camframe.timer = setInterval(() => { if (document.visibilityState === "visible") checkCamframe(); }, CAMFRAME_CHECK_MS);
 }
@@ -761,6 +779,7 @@ function setCamframe(patch) {
   const text = {
     off: "Switches your camera view in CamFrame at [Face …] cue lines.",
     looking: "Looking for CamFrame on this computer…",
+    reconnecting: "Reconnecting to CamFrame…",
     on: `Connected to CamFrame.${scenes}${camframe.note ? ` Last cue: ${camframe.note}` : ""}`,
     lost: "CamFrame not found. Open CamFrame and turn on Prompter link in its Scenes settings.",
   }[camframe.state];

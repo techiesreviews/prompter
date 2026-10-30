@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CAMFRAME_ORIGIN, camframeCall, cueCrossing, cueReport, cueRest, cueWords } from "../src/camframe.mjs";
+import { CAMFRAME_MISSES, CAMFRAME_ORIGIN, CAMFRAME_RETRY_MS, camframeAfterCheck, camframeCall, cueCrossing, cueReport, cueRest, cueWords } from "../src/camframe.mjs";
 import { check, classify, faceCue, FACE_SPOTS, formatGuide, parse } from "../src/core.mjs";
 
 test("faceCue: Lex's existing cue lines still work", () => {
@@ -120,4 +120,23 @@ test("cueReport says what happened to a cue at the reading line", () => {
   assert.equal(cueReport("refused", { size: "small", scene: "Demo" }, 'CamFrame has no Scene named "Demo".'), 'CamFrame did not switch to Scene “Demo”: CamFrame has no Scene named "Demo".');
   assert.equal(cueReport("refused", { size: "full" }), "CamFrame did not switch to face full: it refused the cue.");
   assert.match(cueReport("unreached", cue), /^Could not reach CamFrame to switch to face small, bottom right\. .*browser may have blocked it/);
+});
+
+test("camframeAfterCheck: one missed check is not \"not found\"; several in a row are; an answer reconnects", () => {
+  assert.equal(CAMFRAME_MISSES, 3);
+  assert.deepEqual(CAMFRAME_RETRY_MS, [1000, 2000]);
+  let s = camframeAfterCheck("on", 0, false);
+  assert.deepEqual(s, { state: "reconnecting", misses: 1, retry: 1000 }, "one miss while connected: reconnecting, check again in a second");
+  s = camframeAfterCheck(s.state, s.misses, true);
+  assert.deepEqual(s, { state: "on", misses: 0, retry: -1 }, "the next answer: connected again, count reset");
+  s = camframeAfterCheck("on", 0, false);
+  s = camframeAfterCheck(s.state, s.misses, false);
+  assert.deepEqual(s, { state: "reconnecting", misses: 2, retry: 2000 }, "a second miss waits a little longer");
+  s = camframeAfterCheck(s.state, s.misses, false);
+  assert.deepEqual(s, { state: "lost", misses: 3, retry: -1 }, "three in a row: not found, back to the usual checks");
+  s = camframeAfterCheck(s.state, s.misses, false);
+  assert.equal(s.state, "lost", "stays not found while CamFrame is gone");
+  assert.deepEqual(camframeAfterCheck(s.state, s.misses, true), { state: "on", misses: 0, retry: -1 }, "CamFrame back: connected by itself");
+  assert.deepEqual(camframeAfterCheck("looking", 0, false), { state: "looking", misses: 1, retry: 1000 }, "a first look that misses keeps looking");
+  assert.equal(camframeAfterCheck("looking", 2, false).state, "lost");
 });

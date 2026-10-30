@@ -7,7 +7,13 @@
 // it import-free and use only `export function`/`export const` forms.
 
 export const CAMFRAME_ORIGIN = "http://127.0.0.1:47833";
-export const CAMFRAME_WAIT_MS = 1500;
+export const CAMFRAME_WAIT_MS = 3000; // Edge's calls to this computer are sometimes slow
+/** Status checks missed in a row before CamFrame counts as not found. */
+export const CAMFRAME_MISSES = 3;
+/** The wait before checking again after the first and the second miss in a row. */
+export const CAMFRAME_RETRY_MS = [1000, 2000];
+/** The wait before a cue that did not get through is sent once more. */
+export const CUE_RETRY_MS = 400;
 
 /**
  * Ask CamFrame: `camframeCall("status")` for { app, version, scenes }, or
@@ -62,4 +68,19 @@ export function cueReport(kind, cue, reason = "") {
   if (kind === "sent") return `CamFrame switched to ${what}.`;
   if (kind === "refused") return `CamFrame did not switch to ${what}: ${reason || "it refused the cue."}`;
   return `Could not reach CamFrame to switch to ${what}. Is it open? Your browser may have blocked it; see Settings.`;
+}
+
+/**
+ * After a status check (or a cue that did not get through twice): the link's
+ * next state, the misses in a row and how soon to check again (ms; -1 for the
+ * usual interval). One miss is not "not found": calls to this computer fail
+ * now and then (in Edge especially), so a link that was on says
+ * `reconnecting` and one still `looking` keeps looking, while it checks again
+ * soon; only CAMFRAME_MISSES in a row make it `lost`. An answer is `on`.
+ */
+export function camframeAfterCheck(state, misses, answered) {
+  if (answered) return { state: "on", misses: 0, retry: -1 };
+  const n = misses + 1;
+  if (n >= CAMFRAME_MISSES) return { state: "lost", misses: n, retry: -1 };
+  return { state: state === "looking" ? "looking" : "reconnecting", misses: n, retry: CAMFRAME_RETRY_MS[n - 1] };
 }
