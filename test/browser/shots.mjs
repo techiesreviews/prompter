@@ -783,8 +783,8 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await L.evaluate(() => document.querySelector(".section:nth-child(2) .mark").previousElementSibling.textContent), "Patchstack finds the holes.");
   await viaSettings(L, ".screen");
   assert.equal(await L.locator("#settings .screen").getAttribute("data-on"), "true");
-  assert.deepEqual([await L.locator("#settings .screen").getAttribute("aria-label"), await L.locator(".screen-state").textContent(), await L.locator(".settings-btn").getAttribute("data-dot"), await L.locator(".settings-btn").getAttribute("aria-label")],
-    ["Main screen connected, reconnect", "Connected", "on", "Settings · main screen connected"], "Settings shows the main screen connected, with a dot on its button");
+  assert.deepEqual([await L.locator("#settings .screen").evaluate((b) => [...b.querySelectorAll("span")].map((s) => s.textContent).join(" ")), await L.locator(".screen-state").textContent(), await L.locator(".settings-btn").getAttribute("data-dot"), await L.locator(".settings-btn").getAttribute("aria-label")],
+    ["Main screen Connected · Reconnect", "Connected · Reconnect", "on", "Settings · main screen connected"], "Settings shows the main screen connected, with a dot on its button");
   assert.deepEqual(await L.locator("#settings .screen").evaluate((el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).color]), ["oklch(0.65 0.227 32.3)", "oklch(0.16 0.06 282)"], "connected: orange with dark text");
   const visits = () => L.evaluate(() => window.__screen.visits.slice());
   const lastVisit = async () => (await visits()).at(-1);
@@ -1064,7 +1064,7 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await HC.locator(".settings-btn").getAttribute("data-hint"), null);
   assert.equal(await HC.evaluate(() => window.__screen.visits.at(-1)), "https://example.com/intro");
   assert.equal(await HC.locator("#settings .screen").getAttribute("data-on"), "true");
-  assert.equal(await HC.locator("#settings .screen").getAttribute("aria-label"), "Main screen connected, reconnect");
+  assert.equal(await HC.locator(".screen-state").textContent(), "Connected · Reconnect");
   await hintConnect.close();
   ok("without a main screen nothing opens; a one-time hint above the control bar; its Connect button hides it, clears the highlight and shows the current link");
 

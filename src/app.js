@@ -662,8 +662,7 @@ function connected() { return mainWin && !mainWin.closed; }
 // The main screen's button in Settings (orange while connected); the Settings button shows a dot then.
 function setConnected(on) {
   connectBtn.dataset.on = String(on);
-  connectBtn.setAttribute("aria-label", on ? "Main screen connected, reconnect" : "Connect main screen");
-  $(".screen-state").textContent = on ? "Connected" : "Not connected";
+  $(".screen-state").textContent = on ? "Connected · Reconnect" : "Not connected"; // its name, too
   updateSettingsBtn();
 }
 
@@ -877,12 +876,14 @@ function lineAtReadingLine() {
 // line, the place in it is kept.
 function voiceFromReadingLine() {
   const k = lineAtReadingLine();
-  if (k !== voiceState.line) voiceState = followStart(k);
+  if (Math.max(0, k) !== voiceState.line) voiceState = followStart(k);
   markLine(k, false);
 }
 
 // The line being read is bright; the lines after it a little dimmer (CSS).
+// The prompter's own scroll is over at its "scrollend" (or after 2 s if none comes).
 let voiceScrolling = false;
+let voiceScrollTimer = 0;
 function markLine(k, scroll = true) {
   main.querySelector("p.cur")?.classList.remove("cur");
   const el = main.querySelector(`[data-k="${k}"]`);
@@ -891,8 +892,9 @@ function markLine(k, scroll = true) {
   if (!scroll) return;
   const top = el.getBoundingClientRect().top + window.scrollY - readingLineY() + 2;
   voiceScrolling = true;
+  clearTimeout(voiceScrollTimer);
+  voiceScrollTimer = setTimeout(() => { voiceScrolling = false; }, 2000);
   window.scrollTo({ top, behavior: reducedMotion.matches ? "auto" : "smooth" });
-  setTimeout(() => { voiceScrolling = false; }, 800);
 }
 
 function setVoiceButton() {
@@ -1106,6 +1108,7 @@ window.addEventListener("resize", () => { setLine(lineFrac); updateActive(); });
 // scrolling is ignored.
 for (const type of ["wheel", "touchmove", "scrollend"]) {
   window.addEventListener(type, () => {
+    if (type === "scrollend" && voiceScrolling) { voiceScrolling = false; clearTimeout(voiceScrollTimer); return; }
     if (voiceOn && !voiceScrolling) requestAnimationFrame(voiceFromReadingLine);
   }, { passive: true });
 }
