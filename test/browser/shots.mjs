@@ -600,8 +600,12 @@ export async function run({ browser, base, mode, dist, out }) {
   const pressed = [await page.locator(".size").inputValue(), await page.locator(".size-val").inputValue()];
   assert.ok(pressed[0] === pressed[1] && Number(pressed[0]) < 70, `a press on the name moves the fill there: ${pressed}`);
   const valueBox = await page.locator("#settings .size-field .range-value").boundingBox();
-  await page.mouse.click(valueBox.x + valueBox.width - 3, valueBox.y + 3);
-  assert.deepEqual([await page.evaluate(() => document.activeElement.className), await page.locator(".size").inputValue()], ["size-val", pressed[0]], "a press at the value's corner focuses it for typing; the slider stays");
+  for (const [x, y] of [[valueBox.width - 3, valueBox.height / 2], [valueBox.width - 5, 3]]) {
+    await page.locator("#settings legend").click();
+    await page.mouse.click(valueBox.x + x, valueBox.y + y);
+    assert.deepEqual([await page.evaluate(() => document.activeElement.className), await page.locator(".size").inputValue()], ["size-val", pressed[0]], `a press on the value's clear border (${x}, ${y}) focuses it for typing; the slider stays`);
+  }
+  // Back to 70, not focused, for the grip checks.
   await page.locator(".size").fill("70");
   await page.locator(".size").evaluate((el) => el.blur());
   const grip = (p) => p.locator("#settings .size-field").evaluate((el) => [getComputedStyle(el).getPropertyValue("--rf-grip-size").trim(), getComputedStyle(el).getPropertyValue("--rf-grip-now").includes("color-mix")]);
@@ -1461,6 +1465,17 @@ export async function run({ browser, base, mode, dist, out }) {
   await m.locator("#settings").screenshot({ path: join(out, "range-field-ends-mobile.png") });
   await m.locator(".size").fill(mobileValues[0]);
   await m.locator(".speed").fill(mobileValues[1]);
+  // On a phone too: a tap on the name moves the fill there; a tap on the value is for typing.
+  await m.locator(".size").fill("80");
+  const mName = await m.locator("#settings .size-field label:first-child").boundingBox();
+  await m.touchscreen.tap(mName.x + mName.width / 2, mName.y + mName.height / 2);
+  const nameTap = [await m.locator(".size").inputValue(), await m.locator(".size-val").inputValue()];
+  assert.ok(nameTap[0] === nameTap[1] && Number(nameTap[0]) < 80, `a tap on the name moves the fill there: ${nameTap}`);
+  const mValue = await m.locator("#settings .size-field .range-value").boundingBox();
+  await m.touchscreen.tap(mValue.x + mValue.width / 2, mValue.y + mValue.height / 2);
+  assert.equal(await m.evaluate(() => document.activeElement.className), "size-val", "a tap on the value focuses it for typing");
+  await m.locator(".size-val").fill(mobileValues[0]);
+  await m.locator(".size-val").press("Enter");
   await m.mouse.click(195, 120);
   assert.equal(await m.locator("#settings:popover-open").count(), 0, "tapping the page closes Settings");
   await viaSettings(m, ".voice");
