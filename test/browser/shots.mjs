@@ -621,6 +621,14 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.deepEqual(await typed(), ["47px", "48", "47"], "the value was selected, so typing replaces it; it applies at once and keeps the exact number; the slider sits nearest");
   await page.keyboard.press("Enter");
   assert.deepEqual(await typed(), ["47px", "48", "47"]);
+  await page.locator(".size-val").fill("60");
+  assert.equal(await page.locator(".size").getAttribute("aria-valuetext"), "60 px", "screen readers hear the value with its unit");
+  await page.locator(".size").focus();
+  await page.keyboard.press("ArrowRight");
+  assert.deepEqual([...(await typed()), await page.locator(".size").getAttribute("aria-valuetext")], ["62px", "62", "62", "62 px"], "also after a key move");
+  await page.locator(".size-val").fill("999");
+  await page.locator(".size-val").press("Tab");
+  assert.deepEqual([...(await typed()), await page.evaluate(() => localStorage.getItem("prompter-size"))], ["300px", "110", "300", "300"], "Tab with a value above the maximum: the largest allowed, like Enter");
   await page.locator(".size-val").fill("150");
   assert.deepEqual(await typed(), ["150px", "110", "150"], "past the slider's end: the slider stops there");
   assert.equal(await page.locator(".size").getAttribute("aria-valuetext"), "150 px", "and names the exact value for screen readers");

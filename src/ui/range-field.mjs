@@ -2,9 +2,9 @@
 // Dragging the slider shows its value in the box; typing any value between the
 // box's own min and max (which may reach past the slider's ends) moves the
 // slider, which stops at its ends, and keeps the exact number (screen readers
-// hear it too, with the unit). Enter or leaving the box tidies the text into
-// range and onto the box's step, except that leaving with a value still being
-// typed (below the minimum) or an empty box (Tab, Escape, a click elsewhere)
+// hear it too, with the unit). Enter or leaving the box (Tab, Escape, a click
+// elsewhere) tidies the text into range and onto the box's step, except that
+// leaving with a value still being typed (below the minimum) or an empty box
 // goes back to the last value. onValue(number) hears every new
 // value. Returns a setter for values that change elsewhere (a shortcut key, a
 // saved setting); it does not call onValue. Import-free so a page can inline it.
@@ -25,7 +25,8 @@ export function rangeField(field, onValue = () => {}) {
     sync(v);
     if (box.valueAsNumber !== v) box.value = String(v);
   };
-  // The slider stops at its ends and on its step; then it names the exact value.
+  // The slider stops at its ends and on its step; then, or always when there is a
+  // unit, it names the exact value.
   function sync(v) {
     range.value = String(v);
     if (range.valueAsNumber === v && !unit) range.removeAttribute("aria-valuetext");
@@ -35,6 +36,7 @@ export function rangeField(field, onValue = () => {}) {
     const v = box.valueAsNumber;
     const next = Number.isFinite(v) && (enter || v >= lo) ? tidy(v) : value;
     if (next === value && v === value) return; // already done (Enter, then change)
+    // Going back also reports the last value, so the page shows and keeps it.
     show(next);
     onValue(value);
   };
