@@ -1945,13 +1945,17 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.deepEqual(cam.cues().slice(sentBeforeVoice), [{ size: "small", position: "bottom-right" }], "Follow my voice sends the cue it passes, once");
   await voiceCtx.close();
   // CamFrame gone: the status says so, with the one-time permission hint; scrolling carries on.
+  await C.evaluate(() => {
+    const row = document.querySelector(".camframe");
+    window.__camStates = [];
+    new MutationObserver(() => { if (window.__camStates.at(-1) !== row.dataset.state) window.__camStates.push(row.dataset.state); })
+      .observe(row, { attributes: true, attributeFilter: ["data-state"] });
+  });
   await cam.stop();
   await (await dock(C, ".settings-btn")).click();
   await C.locator("#settings:popover-open").waitFor();
-  await C.waitForFunction(() => document.querySelector(".camframe").dataset.state === "reconnecting", null, { timeout: 5000 });
-  const lostAt = Date.now();
   await C.waitForFunction(() => document.querySelector(".camframe").dataset.state === "lost", null, { timeout: 15_000 });
-  assert.ok(Date.now() - lostAt > 2000, "not found only after several missed checks in a row (about 3 s), not at the first");
+  assert.deepEqual(await C.evaluate(() => window.__camStates), ["reconnecting", "lost"], "reconnecting first; not found only after several missed checks in a row");
   assert.equal(await C.locator("#settings .camframe-status").textContent(), "CamFrame not found. Open CamFrame and turn on Prompter link in its Scenes settings.");
   assert.equal(await C.locator("#settings .camframe-hint").isVisible(), true);
   await shot(C, "camframe-lost-desktop");
