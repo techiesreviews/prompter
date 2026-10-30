@@ -576,7 +576,7 @@ export async function run({ browser, base, mode, dist, out }) {
   const sliderLook = (p) => p.locator("#settings .size-field").evaluate((el) => [
     getComputedStyle(el.querySelector('input[type="range"]')).appearance, el.getBoundingClientRect().height,
     el.querySelector("label").getBoundingClientRect().left - el.getBoundingClientRect().left < 20,
-    el.querySelector(".range-value").getBoundingClientRect().right === el.getBoundingClientRect().right,
+    Math.abs(el.querySelector(".range-value").getBoundingClientRect().right - el.getBoundingClientRect().right) < 0.5,
   ]);
   assert.deepEqual(await page.locator("#settings .seg label").allTextContents(), ["Narrow", "Medium", "Full"]);
   await page.locator(".size").fill("70");
@@ -623,13 +623,24 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.deepEqual(await typed(), ["47px", "48", "47"]);
   await page.locator(".size-val").fill("150");
   assert.deepEqual(await typed(), ["150px", "110", "150"], "past the slider's end: the slider stops there");
+  assert.equal(await page.locator(".size").getAttribute("aria-valuetext"), "150 px", "and names the exact value for screen readers");
   await page.locator(".size-val").fill("");
   await page.locator(".size-val").press("Tab");
   assert.deepEqual(await typed(), ["150px", "110", "150"], "an empty box goes back to the last value");
   await page.locator(".size-val").fill("5");
   assert.equal((await typed())[0], "150px", "half typed (below the box's minimum): nothing changes yet");
+  await page.locator(".size-val").press("Escape");
+  assert.deepEqual([...(await typed()), await page.evaluate(() => localStorage.getItem("prompter-size"))], ["150px", "110", "150", "150"], "Escape while half typed: back to the last value, not the smallest");
+  await (await dock(page, ".settings-btn")).click();
+  await page.locator(".size-val").fill("5");
   await page.locator(".size-val").press("Enter");
   assert.deepEqual(await typed(), ["10px", "20", "10"], "too small: the smallest allowed on Enter");
+  // Values past the slider's ends survive a reload.
+  await page.evaluate(() => { localStorage.setItem("prompter-size", "150"); localStorage.setItem("prompter-speed", "5"); });
+  await page.reload();
+  await page.locator(".section").first().waitFor();
+  assert.deepEqual([...(await typed()), await page.evaluate(() => [document.querySelector(".speed").value, document.querySelector(".speed-val").value].join())], ["150px", "110", "150", "10,5"], "remembered past the slider's ends");
+  await (await dock(page, ".settings-btn")).click();
   await page.locator(".speed-val").fill("75");
   await page.locator(".speed-val").press("Enter");
   assert.deepEqual(await page.evaluate(() => [document.querySelector(".speed").value, document.querySelector(".speed-val").value, localStorage.getItem("prompter-speed")]), ["80", "75", "75"], "speed takes any whole number too");

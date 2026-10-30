@@ -3,13 +3,7 @@
    a slim grip, faint ticks for the rest, the value on the right. CSS draws all of it, the fill too: the
    thumb's shadow in Blink and WebKit (clipped by the slider), its
    ::-moz-range-progress in Firefox. range-field.mjs only keeps the slider and
-   the typed value in step. Restyle it with the --rf-* properties.
-
-   <div class="range-field">
-     <label for="size">Text size</label>
-     <input id="size" type="range" min="20" max="110" step="2" value="52">
-     <label class="range-value"><input type="number" min="10" max="300" value="52" aria-label="Text size in pixels"><span aria-hidden="true">px</span></label>
-   </div> */
+   the typed value in step. Markup and the --rf-* properties: README.md. */
 .range-field {
   --rf-height: 44px;
   --rf-radius: 10px;

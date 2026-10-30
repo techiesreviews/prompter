@@ -19,6 +19,8 @@ test("the page is one self-contained file: no external scripts, styles or fetche
   assert.ok(html.includes('`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/relay`'), "the relay is on this site");
   assert.doesNotMatch(html, /^export /m);
   assert.ok(html.includes("function parse(md)"));
+  assert.ok(html.includes("function rangeField(field"), "the range field's script is inlined");
+  assert.ok(html.includes('.range-field > input[type="range"]::-webkit-slider-thumb') && !html.includes("/*@UI-CSS@*/"), "and its styles, at the marker");
   assert.ok(html.includes("<!--SCRIPT-START-->") && html.includes("<!--SCRIPT-END-->"));
 });
 

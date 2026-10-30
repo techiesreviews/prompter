@@ -822,19 +822,20 @@ function toggleAuto() {
 }
 
 // The sliders in Settings: drag them, or type an exact value into their box,
-// also past the slider's ends (speed 1 to 999, text size 10 to 300 px).
+// also past the slider's ends, within the box's own min and max.
 const showSpeed = rangeField($(".speed-field"), (v) => setSpeed(v));
 const showSize = rangeField($(".size-field"), (v) => setSize(v));
+const limit = (box, v, fallback) => Math.min(Number(box.max), Math.max(Number(box.min), Math.round(v) || fallback));
 
 function setSpeed(v) {
-  speed = Math.min(999, Math.max(1, Math.round(v) || 40));
+  speed = limit($(".speed-val"), v, 40);
   showSpeed(speed);
   store.set("prompter-speed", speed);
 }
 
 // ---------- Text size and column ----------
 function setSize(px) {
-  px = Math.min(300, Math.max(10, Math.round(px) || 52));
+  px = limit($(".size-val"), px, 52);
   root.style.setProperty("--size", px + "px");
   showSize(px);
   store.set("prompter-size", px);
