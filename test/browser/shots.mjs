@@ -570,20 +570,27 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.ok(screenBox.height >= dockHeight && screenBox.height <= dockHeight + 24, `about as tall as the control bar: ${screenBox.height} vs ${dockHeight}`);
   assert.deepEqual(await page.locator("#settings .screen").evaluate((el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).color]), ["oklch(0.33 0.096 282)", "oklch(0.763 0.027 282)"], "not connected: quiet indigo");
   assert.equal(await page.locator("#settings .screen rect").evaluate((r) => getComputedStyle(r).fill), "none", "not connected: an outline icon");
-  // Sliders: range fields (src/ui/range-field.css: one 44px box, the name inside on the left,
-  // an indigo fill up to a white grip, ticks, the value on the right; see the screenshot).
+  // Sliders: range fields (src/ui/range-field.css: one 44px box that is all slider, the name
+  // on the left and the value on the right on top of it; see the screenshots).
   // Slider parts cannot be read with getComputedStyle.
   const sliderLook = (p) => p.locator("#settings .size-field").evaluate((el) => [
     getComputedStyle(el.querySelector('input[type="range"]')).appearance, el.getBoundingClientRect().height,
+    el.querySelector('input[type="range"]').getBoundingClientRect().width === el.getBoundingClientRect().width,
     el.querySelector("label").getBoundingClientRect().left - el.getBoundingClientRect().left < 20,
-    Math.abs(el.querySelector(".range-value").getBoundingClientRect().right - el.getBoundingClientRect().right) < 0.5,
+    Math.abs(el.querySelector(".range-value").getBoundingClientRect().right - el.getBoundingClientRect().right) < 8,
   ]);
   assert.deepEqual(await page.locator("#settings .seg label").allTextContents(), ["Narrow", "Medium", "Full"]);
   await page.locator(".size").fill("70");
   await page.locator(".speed").fill("120");
   await page.locator('#settings .seg label:has-text("Narrow")').click();
   assert.deepEqual([await page.locator(".size-val").inputValue(), await page.locator(".speed-val").inputValue()], ["70", "120"], "the boxes show the sliders' values");
-  assert.deepEqual(await sliderLook(page), ["none", 44, true, true], "the page's own slider: the name inside on the left, the value on the right");
+  assert.deepEqual(await sliderLook(page), ["none", 44, true, true, true], "the page's own slider across the whole box: the name on the left, the value on the right");
+  // The fill reaches both ends, passing under the name and the value.
+  await page.locator(".size").fill("20");
+  await page.locator(".speed").fill("300");
+  await page.locator("#settings").screenshot({ path: join(out, "range-field-ends-desktop.png") });
+  await page.locator(".size").fill("70");
+  await page.locator(".speed").fill("120");
   await page.locator(".size").hover();
   await shot(page, "settings-popover-desktop");
   await page.locator(".size").focus();

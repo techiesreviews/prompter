@@ -1,13 +1,15 @@
 /* Range field: a slider with its name inside and an exact value you can type.
-   One box: the name on the left, always on the fill, which grows from there to
-   a slim grip, faint ticks for the rest, the value on the right. CSS draws all of it, the fill too: the
-   thumb's shadow in Blink and WebKit (clipped by the slider), its
-   ::-moz-range-progress in Firefox. range-field.mjs only keeps the slider and
-   the typed value in step. Markup and the --rf-* properties: README.md. */
+   One box that is all slider: the fill grows from the very start to the very
+   end, under the name (left) and the value (right), with a slim grip at its
+   end (faint at rest, bright on hover, while dragging and when focused) and
+   faint ticks beyond it. CSS draws all of it, the fill too: the thumb's shadow
+   in Blink and WebKit (clipped by the slider), its ::-moz-range-progress in
+   Firefox. range-field.mjs only keeps the slider and the typed value in step.
+   Markup and the --rf-* properties: README.md. */
 .range-field {
   --rf-height: 44px;
   --rf-radius: 10px;
-  --rf-thumb: 16px; /* the end of the fill that carries the grip */
+  --rf-thumb: 12px; /* the end of the fill that carries the grip */
   --rf-ticks: 10;
   --rf-bg: oklch(22% 0.01 280);
   --rf-fill: oklch(32% 0.012 280);
@@ -15,22 +17,27 @@
   --rf-tick: oklch(98% 0 0 / 0.16);
   --rf-muted: oklch(75% 0.01 280);
   --rf-focus: currentColor;
-  --rf-grip-mark: linear-gradient(var(--rf-grip) 0 0) 50% 50% / 3px 45% no-repeat;
-  --rf-tick-marks: repeating-linear-gradient(to right, transparent 0 calc(100% / var(--rf-ticks) - 1px), var(--rf-tick) 0 calc(100% / var(--rf-ticks)))
-    50% 50% / calc(100% - var(--rf-thumb)) 28% no-repeat;
+  --rf-grip-now: color-mix(in oklch, var(--rf-grip) 40%, transparent);
+  --rf-grip-size: 3px 34%;
+  --rf-grip-mark: linear-gradient(var(--rf-grip-now) 0 0) 50% 50% / var(--rf-grip-size) no-repeat;
+  /* --rf-ticks steps: a tick between each two, none at the ends. */
+  --rf-tick-marks: repeating-linear-gradient(to right, transparent 0 calc(100% / (var(--rf-ticks) - 1) - 1px), var(--rf-tick) 0 calc(100% / (var(--rf-ticks) - 1)))
+    calc(var(--rf-thumb) / 2) 50% / calc((100% - var(--rf-thumb)) * (var(--rf-ticks) - 1) / var(--rf-ticks)) 8px no-repeat;
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;
   block-size: var(--rf-height); border-radius: var(--rf-radius); background: var(--rf-bg);
   container-type: inline-size; font-weight: 600;
 }
-/* The start of the fill; the slider takes the rest of the row. */
-.range-field > label:first-child {
-  max-inline-size: 60cqi; padding-inline: 14px 4px; line-height: var(--rf-height);
-  border-radius: var(--rf-radius) 0 0 var(--rf-radius); background: var(--rf-fill);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
+@media (hover: hover) and (pointer: fine) { .range-field:hover { --rf-grip-now: var(--rf-grip); --rf-grip-size: 3px 50%; } }
+.range-field:has(> input[type="range"]:is(:active, :focus-visible)) { --rf-grip-now: var(--rf-grip); --rf-grip-size: 3px 50%; }
+/* The slider spans the whole box; the name and the value sit on top of it. */
 .range-field > input[type="range"] {
-  inline-size: 100%; block-size: 100%; margin: 0; padding: 0;
-  appearance: none; -webkit-appearance: none; background: transparent; cursor: pointer; overflow: hidden;
+  grid-area: 1 / 1 / 2 / -1; inline-size: 100%; block-size: 100%; margin: 0; padding: 0;
+  appearance: none; -webkit-appearance: none; background: transparent; cursor: pointer;
+  overflow: hidden; border-radius: var(--rf-radius);
+}
+.range-field > label:first-child {
+  grid-area: 1 / 1; z-index: 1; max-inline-size: 60cqi; padding-inline: 14px 4px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none;
 }
 .range-field > input[type="range"]:focus-visible { outline: 0; }
 .range-field > input[type="range"]::-webkit-slider-runnable-track { block-size: 100%; background: var(--rf-tick-marks); }
@@ -49,8 +56,9 @@
 }
 /* The value: click or tab to it and type. 16px so phones do not zoom in. */
 .range-field > .range-value {
-  display: flex; align-items: center; gap: 3px; block-size: 100%;
-  padding-inline: 10px 14px; border-radius: 0 var(--rf-radius) var(--rf-radius) 0; cursor: text;
+  grid-area: 1 / 3; z-index: 1; display: flex; align-items: center; gap: 3px;
+  block-size: calc(100% - 12px); margin-inline-end: 6px; padding-inline: 8px;
+  border-radius: calc(var(--rf-radius) - 4px); cursor: text;
 }
 .range-value > input {
   inline-size: 3ch; margin: 0; padding: 0; border: 0; background: transparent; color: inherit;
@@ -61,7 +69,8 @@
 .range-value > input::-webkit-inner-spin-button, .range-value > input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .range-value > input:focus { outline: 0; }
 .range-value > span { color: var(--rf-muted); font-size: 13px; font-weight: 500; }
-@media (hover: hover) and (pointer: fine) { .range-field > .range-value:hover { background: var(--rf-fill); } }
-.range-field > .range-value:focus-within { background: var(--rf-fill); }
+/* A soft patch behind the value while hovered or typing in, so it reads as editable. */
+@media (hover: hover) and (pointer: fine) { .range-field > .range-value:hover { background: color-mix(in oklch, var(--rf-grip) 10%, transparent); } }
+.range-field > .range-value:focus-within { background: color-mix(in oklch, var(--rf-grip) 10%, transparent); }
 .range-field:has(input:focus-visible) { outline: 2px solid var(--rf-focus); outline-offset: 2px; }
 .range-field:has(input:disabled) { opacity: 0.5; pointer-events: none; }
