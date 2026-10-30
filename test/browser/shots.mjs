@@ -585,6 +585,24 @@ export async function run({ browser, base, mode, dist, out }) {
   await page.locator('#settings .seg label:has-text("Narrow")').click();
   assert.deepEqual([await page.locator(".size-val").inputValue(), await page.locator(".speed-val").inputValue()], ["70", "120"], "the boxes show the sliders' values");
   assert.deepEqual(await sliderLook(page), ["none", 44, true, true, true], "the page's own slider across the whole box: the name on the left, the value on the right");
+  // The whole box is the slider: a press on the name reaches it; the value sits on top
+  // for typing, to the box's end. The grip is faint at rest and bright on hover and focus.
+  const hitAt = (p, sel) => p.locator(`#settings .size-field ${sel}`).evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    const edge = document.elementFromPoint(r.right - 2, r.top + r.height / 2);
+    return [hit.closest(".range-value") ? "value" : hit.id, edge.closest(".range-value") !== null];
+  });
+  assert.deepEqual(await hitAt(page, "label:first-child"), ["size", false], "a press on the name lands on the slider");
+  assert.deepEqual((await hitAt(page, ".range-value")), ["value", true], "the value (to the box's edge) takes presses for typing");
+  const grip = (p) => p.locator("#settings .size-field").evaluate((el) => [getComputedStyle(el).getPropertyValue("--rf-grip-size").trim(), getComputedStyle(el).getPropertyValue("--rf-grip-now").includes("color-mix")]);
+  await page.locator("#settings legend").hover();
+  assert.deepEqual(await grip(page), ["3px 34%", true], "faint grip at rest");
+  await page.locator(".size").hover();
+  assert.deepEqual(await grip(page), ["3px 50%", false], "bright on hover");
+  await page.locator("#settings legend").hover();
+  await page.locator(".size").focus();
+  assert.deepEqual(await grip(page), ["3px 50%", false], "and when focused");
   // The fill reaches both ends, passing under the name and the value.
   await page.locator(".size").fill("20");
   await page.locator(".speed").fill("300");
@@ -1428,6 +1446,12 @@ export async function run({ browser, base, mode, dist, out }) {
     assert.ok(box.height >= 44 && box.x >= 0 && box.x + box.width <= 390, `${sel} fits a phone as a 44px target: ${JSON.stringify(box)}`);
   }
   await shot(m, "settings-popover-mobile");
+  const mobileValues = [await m.locator(".size").inputValue(), await m.locator(".speed").inputValue()];
+  await m.locator(".size").fill("20");
+  await m.locator(".speed").fill("300");
+  await m.locator("#settings").screenshot({ path: join(out, "range-field-ends-mobile.png") });
+  await m.locator(".size").fill(mobileValues[0]);
+  await m.locator(".speed").fill(mobileValues[1]);
   await m.mouse.click(195, 120);
   assert.equal(await m.locator("#settings:popover-open").count(), 0, "tapping the page closes Settings");
   await viaSettings(m, ".voice");

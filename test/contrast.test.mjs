@@ -111,6 +111,24 @@ const veil = root.match(/--read-veil:\s*oklch\(([\d.]+)%\s+([\d.]+)\s+([\d.]+)\s
 const gamma = (t) => linear(t).map((v) => (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055));
 const fromGamma = (rgb) => rgb.map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)).reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
 
+// Range fields (src/ui/range-field.css): the value sits on top of the slider, so
+// its patch (--rf-value-patch, the page colour at some alpha) may lie over the
+// fill (--chip) or the empty track (--bg). Text and the muted unit stay AA there.
+test("a range field's value stays AA on its patch, over the fill or the track", () => {
+  const ui = readFileSync(new URL("../src/ui/range-field.css", import.meta.url), "utf8");
+  const mix = ui.match(/--rf-value-patch:\s*color-mix\(in oklch, var\(--rf-bg\) ([\d.]+)%, transparent\)/);
+  assert.ok(mix, "--rf-value-patch is the page colour (--rf-bg) at some alpha");
+  const alpha = Number(mix[1]) / 100;
+  const patch = gamma(tokens.bg);
+  for (const under of ["chip", "bg"]) {
+    const back = fromGamma(gamma(tokens[under]).map((v, i) => v * (1 - alpha) + patch[i] * alpha));
+    for (const fg of ["text", "muted"]) {
+      const ratio = (luminance(tokens[fg]) + 0.05) / (back + 0.05);
+      assert.ok(ratio >= 4.5, `--${fg} on the value patch over --${under} is ${ratio.toFixed(2)}:1`);
+    }
+  }
+});
+
 test("read text above the reading line is deliberately faded below AA (the one exception)", () => {
   assert.ok(veil, "--read-veil (oklch with an alpha) is missing from :root: read text would no longer fade");
   const [L, C, h, alpha] = veil.slice(1).map(Number);
