@@ -11,6 +11,7 @@ A free teleprompter for talking to camera, plus an MCP server so your AI assista
 - A start screen to open a file, paste a script, connect your AI agent (Wait for MCP) or try the demo. It offers your last script ("Continue") but never opens it by itself.
 - One floating control bar: Open, previous and next section, auto-scroll, the clock (press again to restart it from 00:00) and Settings. A small dot on Open shows your AI agent is waiting or connected; a dot on Settings shows Follow my voice is on or a main screen is connected.
 - Settings kept simple: text size, scroll speed, a narrow, medium or full column (narrow keeps your eyes near the camera), Follow my voice and the main screen.
+- CamFrame link (optional, off until you turn it on in Settings): camera cue lines like `[Face full]` or `[Face small, bottom right]` switch your camera view in [CamFrame](https://github.com/techiesreviews/camframe) when you reach them. See [Camera cues](#camera-cues-camframe-link).
 - Your own AI agent can open the script it wrote straight in your prompter (Wait for MCP, in the Open menu and on the start screen), as in the script editor.
 - A checker (through the MCP server) that points out long lines, a missing main question, a link without its full address and similar problems.
 - Works offline: the page is one self-contained HTML file.
@@ -20,6 +21,8 @@ Keys: Space play/pause · ← → previous/next section · [ ] scroll speed · �
 ## Your script stays with you
 
 There are no accounts and no server storage. A shared prompter link carries the whole script inside the link itself, in the part after `#` (`#s=`, deflate-raw + base64url), which browsers never send to a server. The page remembers your last script in your own browser only, and offers it on the start screen.
+
+The CamFrame link (off unless you turn it on) is the one other call: when a camera cue line reaches the reading line, the page sends just that cue (for example "small, bottom right") to CamFrame on your own computer (`http://127.0.0.1:47833`). Nothing goes to a server, and the script itself never leaves the page.
 
 The MCP server works the same way: it reads the script from the request, checks it or packs it into a link, and sends the answer back. It keeps nothing. The only thing it holds, briefly and in memory, is a request count per client for the rate limit (see [Limits](#limits)).
 
@@ -76,6 +79,31 @@ Now: links on screen.
 - `QL: question` is the one main question: read it silently and answer it; it is not read aloud. Shown at the top of the section.
 - Plain lines are spoken. `Next: …` / `Now: …` are transitions. `[text]` is a private reminder. `- text` is a bullet.
 
+## Camera cues (CamFrame link)
+
+If you use CamFrame (the camera window app), the prompter can switch its view for you when you reach a cue line, so you don't have to press shortcuts mid-sentence.
+
+**Turn it on (once, in both apps)**
+
+1. In CamFrame: open its controls, choose **Scenes**, and switch on **Prompter link**.
+2. In the prompter: open **Settings** (the gear) and tick **CamFrame link**. You should see "Connected to CamFrame" and your CamFrame Scene names. A green dot means it is connected, orange means CamFrame was not found.
+3. Chrome may ask once whether this page may reach apps on this device. Allow it. Use Chrome or Edge; Safari may not reach apps on your computer.
+
+**Cheat-sheet** (a reminder line in square brackets; capitals don't matter; the cue is its own sentence starting with "Face")
+
+| Write | CamFrame does |
+| --- | --- |
+| `[Face full]` | Full screen (or the Scene you picked for "Face full" in CamFrame) |
+| `[Face small]` | The small camera, back where it was (or the place or Scene you picked in CamFrame) |
+| `[Face small, bottom right]` | The small camera in that spot: top left, top right, bottom left, bottom right, left, right or center |
+| `[Face: Demo]` | Your CamFrame Scene called "Demo" (its size, place and look) |
+| `[Share screen. Face small.]` | Other words first are fine; the cue is the sentence starting with Face |
+
+- The cue goes to CamFrame when its line reaches the reading line, whether you scroll by hand, use auto-scroll, Follow my voice or jump sections. It goes once per pass: scroll back above it and read it again, and it goes again. Jumping past several cues sends only the last one.
+- Cue lines count towards the line length, so with the "lex" preset keep them to five words: `[Face small, bottom right]` or `[Share screen. Face small.]`, not `[Share screen. Face small, bottom right.]`.
+- The checker warns about a cue it can't read, such as `[Face small, middle]` or `[Face big]`. A reminder that starts with "Face" but isn't a cue (like `[Face the camera]`) gets the same warning; reword it if you see one.
+- If CamFrame isn't running, nothing happens: scrolling never waits, and Settings shows "CamFrame not found".
+
 The full format, the two style presets (`lex`, strict, and `default`, softer) and the checker live in [`src/core.mjs`](src/core.mjs). The page, the checker and the MCP server all use that one file. The `get_format` tool shows the same rules, and the page's demo ("Try the demo") teaches them by example.
 
 ## Limits
@@ -96,7 +124,7 @@ node --test test/*.test.mjs      # runs the tests
 npx wrangler dev                 # page, /mcp and the live relay at http://localhost:8787
 ```
 
-Opening `dist/index.html` directly also works (everything except `/mcp` and Wait for MCP; it uses your system fonts). To make an offline copy with a script built in: `node scripts/embed.mjs script.md out.html`.
+Opening `dist/index.html` directly also works (everything except `/mcp` and Wait for MCP; it uses your system fonts; the CamFrame link works there too). To make an offline copy with a script built in: `node scripts/embed.mjs script.md out.html`.
 
 ## Deploy your own copy
 
@@ -106,7 +134,7 @@ It runs on the Cloudflare Workers **free plan**: one Worker serves the page as s
 2. In `wrangler.jsonc`, change `"name"` if you like, and replace the `routes` entry `prompter.techies.tools` with your own domain (it must be a zone in your Cloudflare account). No domain? Remove `routes` and set `"workers_dev": true` to get a `*.workers.dev` address.
 3. Deploy: `node scripts/build.mjs && npx wrangler deploy`. The first deploy creates the Durable Object classes from the `migrations` entries.
 
-Links made by your copy, and the server address in its demo script, follow your own address automatically. A few places still name `prompter.techies.tools`; change them to yours: `SITE` in `src/core.mjs` (used by offline copies opened from a file), the `make_prompter_link` description and both `instructions` texts in `src/mcp.mjs`, and the `wss://` address in the `connect-src` line of `scripts/build.mjs`.
+Links made by your copy, and the server address in its demo script, follow your own address automatically. A few places still name `prompter.techies.tools`; change them to yours: `SITE` in `src/core.mjs` (used by offline copies opened from a file), the `make_prompter_link` description and both `instructions` texts in `src/mcp.mjs`, and the `wss://` address in the `connect-src` line of `scripts/build.mjs` (keep its `http://127.0.0.1:47833` for the CamFrame link).
 
 ## Contributing
 

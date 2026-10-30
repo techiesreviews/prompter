@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { DEMO_SCRIPT, EXAMPLE_SCRIPT, makeLink, parse } from "../../src/core.mjs";
@@ -113,6 +114,55 @@ QL: Anything else?
 Nothing else here.
 `;
 
+// Camera cues for the CamFrame link (a fake CamFrame answers on 127.0.0.1:47833).
+const CUE_FILL = Array.from({ length: 8 }, (_, i) => `Filler line ${i + 1} here.`).join("\n");
+const CUE_SCRIPT = `### **PREP**
+
+- Water within reach
+
+### **INTRO · 00:00**
+
+QL: Why cues?
+
+Welcome to the show.
+[Share screen. Face small.]
+${CUE_FILL}
+[Face small, bottom right]
+${CUE_FILL}
+[Stop share. Face full.]
+${CUE_FILL}
+
+### **1 · SCENES · 01:00**
+
+QL: Which Scene?
+
+${CUE_FILL}
+[Face: Demo]
+${CUE_FILL}
+`;
+function fakeCamFrame() {
+  const seen = [];
+  const server = createServer((req, res) => {
+    const cors = { "Access-Control-Allow-Origin": req.headers.origin || "*", Vary: "Origin" };
+    if (req.method === "OPTIONS") {
+      res.writeHead(204, { ...cors, "Access-Control-Allow-Methods": "GET, POST", "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Allow-Private-Network": "true" }).end();
+      return;
+    }
+    let body = "";
+    req.on("data", (c) => { body += c; });
+    req.on("end", () => {
+      seen.push({ method: req.method, path: req.url, origin: req.headers.origin, body: body ? JSON.parse(body) : undefined });
+      const reply = req.url === "/camframe/status" ? { app: "camframe", version: "test", scenes: ["Demo", "Talking head"] } : { ok: true };
+      res.writeHead(200, { ...cors, "Content-Type": "application/json" }).end(JSON.stringify(reply));
+    });
+  });
+  return {
+    seen,
+    cues: () => seen.filter((r) => r.path === "/camframe/cue").map((r) => r.body),
+    start: () => new Promise((ok, fail) => { server.once("error", fail); server.listen(47833, "127.0.0.1", ok); }),
+    stop: () => new Promise((ok) => { server.close(ok); server.closeAllConnections(); }),
+  };
+}
 const NO_SPEECH = () => { delete window.SpeechRecognition; delete window.webkitSpeechRecognition; };
 const NIGHT = "oklch(0.16 0.06 282)"; // --bg, #0b0826
 
@@ -554,15 +604,16 @@ export async function run({ browser, base, mode, dist, out }) {
   ok("play (orange) toggles auto-scroll, Space on it toggles once; the clock starts on the first press and restarts from 00:00 on the next (tooltip says so), and still turns late; tooltips on hover");
 
   // Settings: text size, scroll speed and width (remembered after a reload), then Follow my
-  // voice (only with the speech API) and the main screen.
+  // voice (only with the speech API) and the main screen, then the CamFrame link (off).
   await (await dock(page, ".settings-btn")).click();
   await popAbove(page, "#settings", ".settings-btn", "desktop Settings");
   assert.deepEqual(await page.locator("#settings").evaluate((el) => [...el.querySelectorAll(".setting")].map((row) => row.querySelector("legend, label").textContent.trim())),
-    ["Text size", "Scroll speed", "Width"]);
+    ["Text size", "Scroll speed", "Width", "CamFrame link"]);
+  assert.equal(await page.locator("#settings .camframe-on").isChecked(), false, "the CamFrame link is off by default");
   // Follow my voice and the main screen: two big buttons side by side (icons only).
   const bigButtons = (p) => p.locator("#settings .big-toggle:not([hidden])").evaluateAll((els) => els.map((el) => [el.getAttribute("aria-label"), el.innerText.trim()]));
   assert.deepEqual(await bigButtons(page), [["Connect main screen", ""]], "icons only; no Follow my voice without the speech API; the main screen's button");
-  assert.equal(await page.locator("#settings").locator("input, select, button, textarea").count(), 9, "two sliders with their value boxes, three width choices, the voice and main screen buttons, nothing else");
+  assert.equal(await page.locator("#settings").locator("input, select, button, textarea").count(), 10, "two sliders with their value boxes, three width choices, the voice and main screen buttons, the CamFrame link switch, nothing else");
   const screenBox = await page.locator("#settings .screen").boundingBox();
   const rowBox = await page.locator("#settings .big-toggles").boundingBox();
   assert.ok(Math.abs(screenBox.width - rowBox.width) < 1, "alone, the main screen's button takes the whole row");
@@ -1562,6 +1613,87 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.deepEqual(await TL.evaluate(() => [window.scrollY, getComputedStyle(document.documentElement).getPropertyValue("--line")]), barBefore, "an address-bar height change moves neither the line nor the script");
   await touchCtx.close();
   ok("phone: a finger drags the reading line (touch pointer, a 32px band along it) to 15%; the script does not move under it and nothing scrolls sideways; a resize keeps its share of the window; a single tap keeps it, a double tap (also with drift) resets it to 34%; an address-bar height change moves nothing");
+
+  // ---- CamFrame link: camera cues reach CamFrame on this computer, once per pass ----
+  const cam = fakeCamFrame();
+  await cam.start();
+  const camCtx = await browser.newContext(DESKTOP);
+  const C = await camCtx.newPage();
+  C.on("pageerror", (e) => errors.push(`camframe pageerror: ${e.message}`));
+  C.on("console", (m) => {
+    // Turned off or closed, CamFrame refuses the connection: expected while it is "not found".
+    if (m.type() === "error" && !/ERR_CONNECTION_REFUSED/.test(m.text())) errors.push(`camframe console: ${m.text()}`);
+  });
+  await C.goto(await makeLink(CUE_SCRIPT, "lex", base));
+  await C.locator(".section").first().waitFor();
+  assert.equal(await C.locator("[data-cue]").count(), 4, "each cue line is marked");
+  assert.deepEqual(await C.locator("[data-cue]").allTextContents(), ["Share screen. Face small.", "Face small, bottom right", "Stop share. Face full.", "Face: Demo"], "cue lines look like any reminder");
+  const passCue = (n, dy = 0) => C.evaluate(([k, d]) => {
+    const el = document.querySelector(`[data-cue="${k}"]`);
+    window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - document.querySelector(".reading-line").getBoundingClientRect().top - 2 + d);
+  }, [n, dy]);
+  await passCue(0);
+  await C.waitForTimeout(700);
+  assert.deepEqual(cam.seen, [], "off by default: nothing is sent, not even a status check");
+  assert.equal(await C.evaluate(() => localStorage.getItem("prompter-camframe")), null);
+  await C.evaluate(() => window.scrollTo(0, 0));
+  await (await dock(C, ".settings-btn")).click();
+  await C.locator("#settings:popover-open").waitFor();
+  assert.equal(await C.locator("#settings .camframe-status").textContent(), "Switches your camera view in CamFrame at [Face …] cue lines.");
+  assert.equal(await C.locator("#settings .camframe-hint").isVisible(), false);
+  await C.locator("#settings .camframe-on").check();
+  await C.waitForFunction(() => document.querySelector(".camframe").dataset.state === "on");
+  assert.equal(await C.locator("#settings .camframe-status").textContent(), "Connected to CamFrame. Scenes: Demo, Talking head.");
+  assert.equal(await C.locator(".settings-btn").getAttribute("aria-label"), "Settings · CamFrame connected");
+  assert.equal(await C.locator("#settings .camframe .status-dot").evaluate((el) => getComputedStyle(el).backgroundColor), "oklch(0.8 0.15 155)", "a green dot when connected");
+  await shot(C, "camframe-on-desktop");
+  await C.keyboard.press("Escape");
+  assert.equal(await C.evaluate(() => localStorage.getItem("prompter-camframe")), "on", "remembered on this device");
+  // Down past the first cue: sent once, after a short settle.
+  await passCue(0);
+  await C.waitForTimeout(700);
+  assert.deepEqual(cam.cues(), [{ size: "small" }]);
+  await passCue(0, 40);
+  await C.waitForTimeout(500);
+  assert.deepEqual(cam.cues(), [{ size: "small" }], "reading on past it sends nothing again");
+  // Back above it, then down again: the next pass sends it once more.
+  await passCue(0, -120);
+  await C.waitForTimeout(500);
+  assert.deepEqual(cam.cues(), [{ size: "small" }], "scrolling back up sends nothing");
+  await passCue(0);
+  await C.waitForTimeout(700);
+  assert.deepEqual(cam.cues(), [{ size: "small" }, { size: "small" }]);
+  // Next section (→): past two cues at once, only the last one goes.
+  await C.keyboard.press("ArrowRight");
+  await C.waitForTimeout(700);
+  assert.deepEqual(cam.cues().slice(2), [{ size: "full" }], "a section jump past several cues sends only the last");
+  await passCue(3);
+  await C.waitForTimeout(700);
+  assert.deepEqual(cam.cues().slice(3), [{ size: "small", scene: "Demo" }]);
+  assert.ok(cam.seen.every((r) => r.origin === new URL(base).origin), "the page's own origin, nothing else");
+  assert.ok(cam.seen.every((r) => !r.body || Object.keys(r.body).every((k) => ["size", "position", "scene"].includes(k))), "only the cue is sent, never script text");
+  // Auto-scroll reaches a cue too.
+  await passCue(1, -60);
+  await C.waitForTimeout(400);
+  const sentBefore = cam.cues().length;
+  await C.evaluate(() => { window.scrollBy(0, 30); });
+  await C.locator(".dock .auto").evaluate((b) => b.click());
+  await C.waitForTimeout(3500);
+  await C.locator(".dock .auto").evaluate((b) => b.click());
+  assert.deepEqual(cam.cues().slice(sentBefore, sentBefore + 1), [{ size: "small", position: "bottom-right" }], "auto-scroll sends the cue it passes");
+  // CamFrame gone: the status says so, with the one-time permission hint; scrolling carries on.
+  await cam.stop();
+  await (await dock(C, ".settings-btn")).click();
+  await C.locator("#settings:popover-open").waitFor();
+  await C.waitForFunction(() => document.querySelector(".camframe").dataset.state === "lost");
+  assert.equal(await C.locator("#settings .camframe-status").textContent(), "CamFrame not found. Open CamFrame and turn on Prompter link in its Scenes settings.");
+  assert.equal(await C.locator("#settings .camframe-hint").isVisible(), true);
+  await shot(C, "camframe-lost-desktop");
+  await C.locator("#settings .camframe-on").uncheck();
+  assert.equal(await C.locator("#settings .camframe-hint").isVisible(), false);
+  assert.equal(await C.evaluate(() => localStorage.getItem("prompter-camframe")), null);
+  await camCtx.close();
+  ok("CamFrame link: off by default (no calls at all); on in Settings it shows CamFrame's Scenes and a dot on Settings; a cue line sends its cue to 127.0.0.1:47833 once per pass down (by hand, a section jump sending only the last cue it passed, and auto-scroll), again after scrolling back above it, never the script; CamFrame gone shows not found with the permission hint");
 
   // ---- Offline (file://) ----
   const offline = await browser.newContext(DESKTOP);

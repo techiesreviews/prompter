@@ -16,6 +16,7 @@ export const FORMAT = [
   { syntax: "Plain line", meaning: "A spoken line." },
   { syntax: "Next: … / Now: …", meaning: "A transition: where you are going, then what you do now." },
   { syntax: "[text]", meaning: "A private reminder, shown small." },
+  { syntax: "[Face full] · [Face small, bottom right] · [Face: Scene name]", meaning: "A camera cue inside a reminder, as its own sentence starting with Face. With the CamFrame link on, the prompter tells CamFrame (the camera window on this computer) when the cue reaches the reading line: Face full fills the screen, Face small goes back to the small view (optionally at top left, top right, bottom left, bottom right, left, right or center), Face: Name applies that saved CamFrame Scene. It counts towards the line's words, so keep it short, like [Share screen. Face small.]." },
   { syntax: "- text", meaning: "A bullet point." },
   { syntax: "---", meaning: "A divider. Ignored, so use it freely." },
 ];
@@ -265,6 +266,39 @@ export function formatGuide(presetName) {
   ].join("\n");
 }
 
+// ---------- Camera cues ----------
+
+/** Where "Face small, …" can put the camera view (CamFrame's names). */
+export const FACE_SPOTS = ["top-left", "top-right", "bottom-left", "bottom-right", "left", "right", "center"];
+
+/**
+ * The camera cue in a [reminder]'s text: a sentence that starts with "Face"
+ * ("Face full", "Face small", "Face small, bottom right", "Face: Demo").
+ * Returns null (no cue), { cue: { size, position?, scene? } } or
+ * { problem } for a sentence that starts with Face but is no cue.
+ */
+export function faceCue(note) {
+  const sentences = String(note ?? "").split(/[.;!?]+/).map((t) => t.trim()).filter((t) => /^face\b/i.test(t));
+  if (!sentences.length) return null;
+  const said = sentences[0];
+  if (sentences.length > 1) return { problem: `"${sentences.join(". ")}": one camera cue per line.` };
+  const scene = said.match(/^face\s*:\s*(.*)$/i);
+  if (scene) {
+    const name = scene[1].trim();
+    if (!name) return { problem: `"${said}": name a CamFrame Scene after "Face:", like "Face: Demo".` };
+    if (name.length > 40) return { problem: `"${said}": CamFrame Scene names have at most 40 characters.` };
+    return { cue: { size: "small", scene: name } };
+  }
+  const size = said.match(/^face\s+(full|small)\b\s*,?\s*(.*)$/i);
+  if (!size) return { problem: `"${said}" is not a camera cue: use "Face full", "Face small" (with a place, like "Face small, bottom right") or "Face: Scene name".` };
+  const full = size[1].toLowerCase() === "full";
+  const place = size[2].trim().toLowerCase().replace(/^centre$/, "center").replace(/[\s-]+/g, "-");
+  if (!place) return { cue: { size: full ? "full" : "small" } };
+  if (!FACE_SPOTS.includes(place)) return { problem: `"${said}": "${size[2].trim()}" is not a place; use top left, top right, bottom left, bottom right, left, right or center.` };
+  if (full) return { problem: `"${said}": Face full fills the screen; a place goes only with Face small.` };
+  return { cue: { size: "small", position: place } };
+}
+
 // ---------- Parsing ----------
 
 const timeRe = /^(.*?)\s*·\s*(\d{1,3}:\d{2})\s*$/;
@@ -306,7 +340,11 @@ export function classify(line) {
   if (link) return { type: "link", label: link[1] || hostOf(link[2]) || link[2], url: link[2] };
   if (/^QL:/i.test(line)) return { type: "ql", text: line.replace(/^QL:\s*/i, "") };
   // A [reminder] line; one that starts with a [words](https://…) link is spoken.
-  if (/^\[.*\]$/.test(line) && !/^\[[^[\]]*\]\(https?:\/\//i.test(line)) return { type: "note", text: line.slice(1, -1) };
+  if (/^\[.*\]$/.test(line) && !/^\[[^[\]]*\]\(https?:\/\//i.test(line)) {
+    const note = { type: "note", text: line.slice(1, -1) };
+    const face = faceCue(note.text);
+    return face ? { ...note, ...face } : note;
+  }
   let entry;
   if (/^(Next week|Next):/i.test(line)) entry = { type: "next", text: line };
   else if (/^Now:/i.test(line)) entry = { type: "now", text: line };
@@ -461,6 +499,7 @@ export function check(md, presetName) {
       if (e.type === "link" && !hostOf(e.url)) add("error", "bad-link", s, i, e.line, `${where}: "${e.url}" is not a valid web address.`);
       for (const span of e.spans || []) if (!hostOf(span.url)) add("error", "bad-link", s, i, e.line, `${where}: "${span.url}" is not a valid web address.`);
       if (e.type === "bullet" && bareAddressRe.test(e.text)) add("warning", "link-no-url", s, i, e.line, `${where}: "${e.text}" looks like a link but never opens; write the full address, like "- Label: https://example.com".`);
+      if (e.problem) add("warning", "camera-cue", s, i, e.line, `${where}: ${e.problem}`);
     }
     if (s.links.length > 9) add("warning", "too-many-links", s, i, s.links[9].line, `${where} has ${s.links.length} links; only the first 9 have number keys.`);
 

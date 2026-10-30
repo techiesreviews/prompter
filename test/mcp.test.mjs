@@ -78,6 +78,18 @@ test("check_script lists problems with section and line", async () => {
   assert.match(bad.content[0].text, /error line 3/);
 });
 
+test("check_script accepts camera cue lines and warns on an unknown place or a malformed cue", async () => {
+  const markdown = "### **INTRO · 00:00**\n\nQL: Why?\n\n[Share screen. Face small.]\n[Face small, bottom right]\n[Face: Demo]\n[Face small, middle]\n[Face big]\n[Stop share. Face full.]";
+  const result = await call("check_script", { markdown, preset: "lex" });
+  assert.equal(result.structuredContent.ok, true, "cue warnings never block");
+  const cues = result.structuredContent.problems.filter((x) => x.code === "camera-cue");
+  assert.deepEqual(cues.map((x) => [x.line, x.severity]), [[8, "warning"], [9, "warning"]]);
+  assert.match(cues[0].message, /"middle" is not a place/);
+  assert.match(result.content[0].text, /warning line 9: .*"Face big" is not a camera cue/);
+  const format = await call("get_format", { preset: "lex" });
+  assert.match(format.content[0].text, /\[Face small, bottom right\]/);
+});
+
 test("make_prompter_link returns a #s= link that decodes to the script", async () => {
   const r = await call("make_prompter_link", { markdown: EXAMPLE_SCRIPT, preset: "lex" });
   const { link } = r.structuredContent;

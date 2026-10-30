@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Builds dist/: one self-contained index.html (core, follow, agent, the range field + app
+// Builds dist/: one self-contained index.html (core, follow, agent, camframe, the range field + app
 // inlined, and the range field's styles), the _headers file whose
 // Content-Security-Policy pins that inline script's hash, and the two font files
 // (the page falls back to system fonts without them).
@@ -15,7 +15,7 @@ const read = (file) => readFileSync(join(root, file), "utf8");
 export const FONTS = ["inter-latin.woff2", "roboto-mono-latin.woff2", "OFL.txt"];
 
 /** Shared modules inlined into the page, in this order, without `export`. */
-export const INLINED = ["src/core.mjs", "src/follow.mjs", "src/agent.mjs", "src/ui/range-field.mjs"];
+export const INLINED = ["src/core.mjs", "src/follow.mjs", "src/agent.mjs", "src/camframe.mjs", "src/ui/range-field.mjs"];
 
 /** Shared component styles inlined into the page's style at its marker. */
 export const UI_CSS = ["src/ui/range-field.css"];
@@ -50,8 +50,8 @@ export function build(dir = join(root, "dist")) {
     "img-src data:",
     "font-src 'self'",
     // Only the page's own calls: a token for Wait for MCP and the relay's WebSocket (wss: spelled out for
-    // browsers whose 'self' does not cover it).
-    "connect-src 'self' wss://prompter.techies.tools",
+    // browsers whose 'self' does not cover it), plus CamFrame on this computer once the user turns on its link.
+    "connect-src 'self' wss://prompter.techies.tools http://127.0.0.1:47833",
     "frame-src https://www.youtube.com",
     "base-uri 'none'",
     "form-action 'none'",

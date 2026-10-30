@@ -308,6 +308,18 @@
   .seg label:has(input:checked) { color: var(--text); background: var(--chip); }
   .seg label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
 
+  /* CamFrame link: a switch with a status dot (grey off or looking, green
+     connected, orange not found) and one line of status; the dot is never
+     the only sign. */
+  .camframe { margin-block-start: 10px; }
+  .check-row { display: flex; align-items: center; gap: 10px; min-block-size: 36px; font-weight: 600; font-size: 15px; cursor: pointer; }
+  .check-row input { inline-size: 20px; block-size: 20px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+  .check-row .status-dot { margin-inline-start: auto; }
+  .camframe[data-state="on"] .status-dot { background: var(--ok); }
+  .camframe[data-state="lost"] .status-dot { background: var(--accent); }
+  .camframe-status, .camframe-hint { margin: 2px 0 0; font-size: 13px; line-height: 1.4; color: var(--muted); }
+  .camframe-hint[hidden] { display: none; }
+
   /* Dialogs: paste */
   .dialog { inline-size: min(720px, 94vw); max-block-size: 90dvh; color: var(--text); background: var(--panel); border: 0; border-radius: 16px; padding: 18px 22px; box-shadow: var(--shadow); }
   .dialog::backdrop { background: oklch(4% 0.06 282 / 0.7); }
@@ -487,6 +499,11 @@
     <button class="big-toggle screen" type="button" data-action="connect" data-on="false" aria-label="Connect main screen" title="Connect main screen">
       <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
     </button>
+  </div>
+  <div class="setting camframe" data-state="off">
+    <label class="check-row"><input class="camframe-on" type="checkbox" aria-describedby="camframe-status camframe-hint"><span>CamFrame link</span><span class="status-dot" aria-hidden="true"></span></label>
+    <p class="camframe-status" id="camframe-status" aria-live="polite">Switches your camera view in CamFrame at [Face …] cue lines.</p>
+    <p class="camframe-hint" id="camframe-hint" hidden>Chrome may ask once to let this page reach apps on this device. Allow it.</p>
   </div>
 </div>
 

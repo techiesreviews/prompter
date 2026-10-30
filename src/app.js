@@ -1,7 +1,8 @@
 // Page logic. scripts/build.mjs inlines src/core.mjs, src/follow.mjs,
-// src/agent.mjs and src/ui/range-field.mjs above this file inside one function,
-// so parse, PRESETS, DEMO_SCRIPT, encodeScript, followWords, heardLink, linkAt,
-// speechWords, connectionPrompt, agentName, rangeField … are in scope here.
+// src/agent.mjs, src/camframe.mjs and src/ui/range-field.mjs above this file
+// inside one function, so parse, PRESETS, DEMO_SCRIPT, encodeScript,
+// followWords, heardLink, linkAt, speechWords, connectionPrompt, agentName,
+// camframeCall, cueCrossing, rangeField … are in scope here.
 
 // ---------- Player view ----------
 // The main-screen window shows a YouTube video full size via this same page.
@@ -54,11 +55,18 @@ const pasteDialog = $(".paste-dialog");
 const fileInput = $(".file-input");
 const continueBtn = $(".continue");
 const widthInputs = document.querySelectorAll('input[name="width"]');
+const camframeRow = $(".camframe");
+const camframeBox = $(".camframe-on");
+const camframeStatus = $(".camframe-status");
+const camframeHint = $(".camframe-hint");
 const WINDOW_NAME = "prompter-main-screen";
 const SETTLE_MS = 700; // wait this long on a section before changing the main screen
 const LAST_KEY = "prompter-last-script";
 const PRESET_KEY = "prompter-preset";
 const VOICE_OK_KEY = "prompter-voice-ok";
+const CAMFRAME_KEY = "prompter-camframe";
+const CUE_SETTLE_MS = 250; // a cue waits this long at the reading line, so scrolling fast past cues sends only the last
+const CAMFRAME_CHECK_MS = 10_000;
 const LINE_KEY = "prompter-line";
 const LINE_DEFAULT = 0.34; // the reading line, as a share of the window height from the top
 const LINE_MIN = 0.08;
@@ -98,6 +106,11 @@ let voiceFinal = 0; // speech results already final and followed
 let recognition = null;
 let voiceRestarts = 0;
 let resumeAuto = false;
+let cues = []; // camera cues ({ size, position?, scene? }) by data-cue
+let cueAbove = null; // cue numbers above the reading line; null until the first look after render
+let cueTimer = 0;
+// CamFrame link: off unless turned on in Settings. state: off, looking, on (CamFrame answered) or lost.
+const camframe = { on: store.get(CAMFRAME_KEY) === "on", state: "off", scenes: [], note: "", timer: 0 };
 
 // ---------- Opening scripts ----------
 const isEmpty = () => root.dataset.view === "empty";
@@ -158,6 +171,8 @@ function showStart() {
   anchor = null;
   anchorKey = "";
   clearTimeout(settleTimer);
+  cueAbove = null;
+  clearTimeout(cueTimer);
   hideHint();
   setStatus("");
   if (location.hash) history.replaceState(null, "", plainAddress());
@@ -226,6 +241,7 @@ function lineHtml(it, i) {
 
 function render() {
   voiceLines = [];
+  cues = [];
   main.innerHTML = sections.map((s, i) => {
     const links = s.links.length
       ? `<div class="links">${s.links.map((l, j) =>
@@ -244,7 +260,8 @@ function render() {
     const items = rest.map((it) => {
       if (it.type === "gap") return `<div class="gap"></div>`;
       if (it.type === "mark") return mark(it.l, i, it.j);
-      const k = SPOKEN.has(it.type) ? ` data-k="${voiceLines.push(speechWords(it.text)) - 1}"` : "";
+      const k = SPOKEN.has(it.type) ? ` data-k="${voiceLines.push(speechWords(it.text)) - 1}"`
+        : it.cue ? ` data-cue="${cues.push(it.cue) - 1}"` : "";
       return `<p class="${it.type}"${k}>${SPOKEN.has(it.type) ? lineHtml(it, i) : esc(it.text)}</p>`;
     }).join("");
     return `<section class="section" data-i="${i}"><h2 class="title"><span>${esc(s.title)}</span><span class="time">${esc(s.time)}</span></h2>${links}${qls}${items}</section>`;
@@ -257,6 +274,8 @@ function render() {
   voiceLinkAt = -1;
   clearTimeout(settleTimer);
   voiceState = followStart(-1);
+  cueAbove = null;
+  clearTimeout(cueTimer);
   updateActive();
 }
 
@@ -634,6 +653,7 @@ handle.addEventListener("keydown", (e) => {
 function updateActive() {
   const els = main.querySelectorAll(".section");
   const y = readingLineY();
+  updateCues(y);
   let idx = 0;
   els.forEach((el, i) => { if (el.getBoundingClientRect().top <= y + 4) idx = i; });
   if (idx !== active) {
@@ -654,6 +674,67 @@ function updateActive() {
   if (at) settleTimer = setTimeout(() => showLink(at.s, at.l, false), SETTLE_MS);
 }
 
+// ---------- CamFrame link ----------
+// A camera cue line that reaches the reading line goes to CamFrame once per
+// pass down (auto-scroll, scrolling by hand, Follow my voice and section jumps
+// all scroll the page). Failures only change the status in Settings.
+function updateCues(y) {
+  if (!cues.length) return;
+  const now = [];
+  main.querySelectorAll("[data-cue]").forEach((el) => { if (el.getBoundingClientRect().top <= y + 4) now.push(Number(el.dataset.cue)); });
+  // Opening a script, or a cue already passed when the link is turned on, sends nothing.
+  if (!cueAbove) { cueAbove = new Set(now); return; }
+  const { above, send } = cueCrossing(cueAbove, now);
+  cueAbove = above;
+  if (send < 0 || !camframe.on) return;
+  clearTimeout(cueTimer);
+  cueTimer = setTimeout(() => { if (cueAbove?.has(send)) sendCue(cues[send]); }, CUE_SETTLE_MS);
+}
+
+async function sendCue(cue) {
+  try {
+    const { ok, body } = await camframeCall("cue", cue);
+    if (camframe.on) setCamframe({ state: "on", note: ok ? "" : String(body.error || "") });
+  } catch {
+    if (camframe.on) setCamframe({ state: "lost" });
+  }
+}
+
+async function checkCamframe() {
+  if (!camframe.on) return;
+  try {
+    const { body } = await camframeCall("status");
+    if (camframe.on) setCamframe({ state: "on", scenes: Array.isArray(body.scenes) ? body.scenes.map(String) : [] });
+  } catch {
+    if (camframe.on) setCamframe({ state: "lost", scenes: [] });
+  }
+}
+
+function setCamframeOn(on) {
+  camframe.on = on;
+  if (on) store.set(CAMFRAME_KEY, "on"); else store.del(CAMFRAME_KEY);
+  clearInterval(camframe.timer);
+  if (!on) { setCamframe({ state: "off", scenes: [], note: "" }); return; }
+  setCamframe({ state: "looking", note: "" });
+  checkCamframe();
+  camframe.timer = setInterval(() => { if (document.visibilityState === "visible") checkCamframe(); }, CAMFRAME_CHECK_MS);
+}
+
+function setCamframe(patch) {
+  Object.assign(camframe, patch);
+  camframeBox.checked = camframe.on;
+  camframeRow.dataset.state = camframe.state;
+  const scenes = camframe.scenes.length ? ` Scenes: ${camframe.scenes.join(", ")}.` : " No saved Scenes.";
+  camframeStatus.textContent = {
+    off: "Switches your camera view in CamFrame at [Face …] cue lines.",
+    looking: "Looking for CamFrame on this computer…",
+    on: `Connected to CamFrame.${scenes}${camframe.note ? ` Last cue: ${camframe.note}` : ""}`,
+    lost: "CamFrame not found. Open CamFrame and turn on Prompter link in its Scenes settings.",
+  }[camframe.state];
+  camframeHint.hidden = !camframe.on || camframe.state === "on";
+  updateSettingsBtn();
+}
+
 // ---------- Main screen ----------
 function connected() { return mainWin && !mainWin.closed; }
 
@@ -668,7 +749,7 @@ function setConnected(on) {
 
 // A dot on the Settings button, and its name, while Follow my voice is on or a main screen is connected.
 function updateSettingsBtn() {
-  const on = [voiceOn && "Follow my voice on", connectBtn.dataset.on === "true" && "main screen connected"].filter(Boolean);
+  const on = [voiceOn && "Follow my voice on", connectBtn.dataset.on === "true" && "main screen connected", camframe.on && camframe.state === "on" && "CamFrame connected"].filter(Boolean);
   if (on.length) settingsBtn.dataset.dot = "on"; else delete settingsBtn.dataset.dot;
   const label = ["Settings", ...on].join(" · ");
   settingsBtn.setAttribute("aria-label", label);
@@ -1115,6 +1196,8 @@ voiceBtn.addEventListener("click", toggleVoice);
 $(".prev").addEventListener("click", () => goSection(-1));
 $(".next").addEventListener("click", () => goSection(1));
 widthInputs.forEach((input) => input.addEventListener("change", () => setWidth(input.value)));
+camframeBox.addEventListener("change", () => setCamframeOn(camframeBox.checked));
+$("#settings").addEventListener("toggle", (e) => { if (e.newState === "open") checkCamframe(); });
 main.addEventListener("click", (e) => {
   const b = e.target.closest(".link, .mark, .inlink");
   if (!b) return;
@@ -1196,4 +1279,5 @@ setLine(store.get(LINE_KEY));
 setSpeed(speed);
 setSize(Number(store.get("prompter-size")) || (window.innerWidth < 640 ? 32 : 52));
 setWidth(store.get("prompter-width") || "medium");
+setCamframeOn(camframe.on);
 route();
