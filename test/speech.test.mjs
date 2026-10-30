@@ -270,7 +270,26 @@ test("a recognizer that cannot be made or started turns it off at once, without 
   FakeClass.prototype.start = origStart;
   assert.deepEqual(log.fatal, [], "not turned off");
   assert.equal(speech.running().length, 1, "running again after two failed starts");
-  keeper.stop();
+  // Starts that keep throwing: tries about every 2 s, says Reconnecting once, never turns off.
+  FakeClass.prototype.start = function () { this.starts++; throw new DOMException("busy", "InvalidStateError"); };
+  const before = speech.made.length;
+  latest().end();
+  clock.advance(60_000);
+  FakeClass.prototype.start = origStart;
+  const tries = speech.made.length - before;
+  assert.ok(tries >= 25 && tries <= 80, `not a tight loop (${tries} tries in a minute)`);
+  assert.deepEqual(log.fatal, []);
+  assert.deepEqual(log.reconnecting, [true]);
+  clock.advance(2000);
+  latest().say("back");
+  assert.deepEqual(log.reconnecting, [true, false]);
+  // A start refused as not allowed (the microphone blocked) turns it off, words or not.
+  FakeClass.prototype.start = function () { this.starts++; throw new DOMException("refused", "NotAllowedError"); };
+  latest().end();
+  clock.advance(1000);
+  FakeClass.prototype.start = origStart;
+  assert.deepEqual(log.fatal, ["not-allowed"]);
+  assert.equal(keeper.state.on, false);
 });
 
 test("on-device failing with its end event straight after: one fallback, never two running", () => {

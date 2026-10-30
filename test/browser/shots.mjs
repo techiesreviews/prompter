@@ -27,7 +27,7 @@ const SPEECH_STUB = () => {
     static async available() { return window.__speechOnDevice || "unavailable"; }
     static async install() { state.installs++; return true; }
     start() {
-      if (window.__speechBroken) throw new DOMException("refused", "NotAllowedError");
+      if (window.__speechBroken) throw new Error("this browser cannot start speech recognition");
       if (this.running || this.used) { state.doubleStarts++; if (this.used && !this.running) state.reused++; throw new DOMException("already started", "InvalidStateError"); }
       this.running = true;
       this.used = true;
@@ -1007,7 +1007,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await v.waitForTimeout(1500);
   assert.equal(await v.evaluate(() => window.__speech.made), madeBefore + 1, "one try, no retry loop");
   await voiced.close();
-  ok("Follow my voice: a big mic button in Settings (orange when on) with the API, notice before first use, follows line by line to the reading line (white current line, dimmer lines after it), interim and later-line words never jump, skips QL, picks up after scrolling by hand, pauses auto-scroll, handles a blocked mic, keeps going when speech drops (a fresh recognizer at once after a blip or a session end, no note for one blip; Reconnecting to speech by the reading line, read out once, only while it keeps failing, tries a little apart and never two at once; heard words hide it; a silent stall replaced by a fresh recognizer) and gives up with the message only after about 15 s of failing with no word heard (a browser without the speech service), uses on-device recognition where the browser has it, remembers consent");
+  ok("Follow my voice: a big mic button in Settings (orange when on) with the API, notice before first use, follows line by line to the reading line (white current line, dimmer lines after it), interim and later-line words never jump, skips QL, picks up after scrolling by hand, pauses auto-scroll, handles a blocked mic, keeps going when speech drops (a fresh recognizer at once after a blip or a session end, no note for one blip; Reconnecting to speech by the reading line, read out once, only while it keeps failing, tries a little apart and never two at once; heard words hide it; a silent stall replaced by a fresh recognizer) and gives up with the message only after about 15 s of failing with no word heard (a browser without the speech service), uses on-device recognition where the browser has it, says it could not start (off at once, one try) when the recognizer cannot start, remembers consent");
 
   // ---- Links open at the point where they are talked about ----
   const inlineLink = await makeLink(INLINE_SCRIPT, "lex", base);
