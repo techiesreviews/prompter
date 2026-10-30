@@ -110,7 +110,7 @@ let cues = []; // camera cues ({ size, position?, scene? }) by data-cue
 let cueAbove = null; // cue numbers above the reading line; null until the first look after render
 let cueTimer = 0;
 // CamFrame link: off unless turned on in Settings. state: off, looking, on (CamFrame answered) or lost.
-const camframe = { on: store.get(CAMFRAME_KEY) === "on", state: "off", scenes: [], note: "", timer: 0 };
+const camframe = { on: store.get(CAMFRAME_KEY) === "on", state: "off", scenes: [], note: "", timer: 0, seq: 0 };
 
 // ---------- Opening scripts ----------
 const isEmpty = () => root.dataset.view === "empty";
@@ -694,24 +694,32 @@ function updateCues(y) {
 async function sendCue(cue) {
   try {
     const { ok, body } = await camframeCall("cue", cue);
-    if (camframe.on) setCamframe({ state: "on", note: ok ? "" : String(body.error || "") });
+    if (!camframe.on) return;
+    // Back after "not found": the Scenes may have changed too.
+    const back = camframe.state === "lost";
+    setCamframe({ state: "on", note: ok ? "" : String(body.error || "") });
+    if (back) checkCamframe();
   } catch {
     if (camframe.on) setCamframe({ state: "lost" });
   }
 }
 
+// Only the newest check counts: an older answer (from before the box was
+// turned off and on again, say) landing late is dropped.
 async function checkCamframe() {
   if (!camframe.on) return;
+  const n = ++camframe.seq;
   try {
     const { body } = await camframeCall("status");
-    if (camframe.on) setCamframe({ state: "on", scenes: Array.isArray(body.scenes) ? body.scenes.map(String) : [] });
+    if (camframe.on && n === camframe.seq) setCamframe({ state: "on", scenes: Array.isArray(body.scenes) ? body.scenes.map(String) : [] });
   } catch {
-    if (camframe.on) setCamframe({ state: "lost", scenes: [] });
+    if (camframe.on && n === camframe.seq) setCamframe({ state: "lost", scenes: [] });
   }
 }
 
 function setCamframeOn(on) {
   camframe.on = on;
+  camframe.seq++;
   if (on) store.set(CAMFRAME_KEY, "on"); else store.del(CAMFRAME_KEY);
   clearInterval(camframe.timer);
   if (!on) { setCamframe({ state: "off", scenes: [], note: "" }); return; }
@@ -725,13 +733,16 @@ function setCamframe(patch) {
   camframeBox.checked = camframe.on;
   camframeRow.dataset.state = camframe.state;
   const scenes = camframe.scenes.length ? ` Scenes: ${camframe.scenes.join(", ")}.` : " No saved Scenes.";
-  camframeStatus.textContent = {
+  const text = {
     off: "Switches your camera view in CamFrame at [Face …] cue lines.",
     looking: "Looking for CamFrame on this computer…",
     on: `Connected to CamFrame.${scenes}${camframe.note ? ` Last cue: ${camframe.note}` : ""}`,
     lost: "CamFrame not found. Open CamFrame and turn on Prompter link in its Scenes settings.",
   }[camframe.state];
-  camframeHint.hidden = !camframe.on || camframe.state === "on";
+  // A live region: the same text set again would be read out again (every poll).
+  if (camframeStatus.textContent !== text) camframeStatus.textContent = text;
+  // The Chrome permission hint only once CamFrame was not found, not while looking.
+  camframeHint.hidden = !camframe.on || camframe.state !== "lost";
   updateSettingsBtn();
 }
 

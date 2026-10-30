@@ -140,8 +140,26 @@ ${CUE_FILL}
 [Face: Demo]
 ${CUE_FILL}
 `;
+// Distinct words around one cue, so the stubbed voice follows line by line.
+const VOICE_CUE_SCRIPT = `### **PREP**
+
+- Water within reach
+
+### **INTRO · 00:00**
+
+Welcome to the camera cue test.
+Purple elephants dance quietly tonight.
+Seven orange kites drift over hills.
+[Face small, bottom right]
+Copper trains whistle beyond rivers.
+Silver foxes nap beside lanterns.
+${CUE_FILL}
+`;
+// A stand-in for CamFrame on 127.0.0.1:47833. `answer(path, body)` may return
+// { status, body } to answer differently (a refused cue, say).
 function fakeCamFrame() {
   const seen = [];
+  const api = { answer: null };
   const server = createServer((req, res) => {
     const cors = { "Access-Control-Allow-Origin": req.headers.origin || "*", Vary: "Origin" };
     if (req.method === "OPTIONS") {
@@ -152,17 +170,25 @@ function fakeCamFrame() {
     req.on("data", (c) => { body += c; });
     req.on("end", () => {
       seen.push({ method: req.method, path: req.url, origin: req.headers.origin, body: body ? JSON.parse(body) : undefined });
-      const reply = req.url === "/camframe/status" ? { app: "camframe", version: "test", scenes: ["Demo", "Talking head"] } : { ok: true };
-      res.writeHead(200, { ...cors, "Content-Type": "application/json" }).end(JSON.stringify(reply));
+      const parsed = seen.at(-1).body;
+      const custom = api.answer?.(req.url, parsed);
+      const reply = custom?.body ?? (req.url === "/camframe/status" ? { app: "camframe", version: "test", scenes: ["Demo", "Talking head"] } : { ok: true, cue: parsed });
+      res.writeHead(custom?.status ?? 200, { ...cors, "Content-Type": "application/json" }).end(JSON.stringify(reply));
     });
   });
-  return {
+  return Object.assign(api, {
     seen,
     cues: () => seen.filter((r) => r.path === "/camframe/cue").map((r) => r.body),
-    start: () => new Promise((ok, fail) => { server.once("error", fail); server.listen(47833, "127.0.0.1", ok); }),
+    // unref: a failed check must not leave this server holding the run open.
+    start: () => new Promise((ok, fail) => { server.once("error", fail); server.listen(47833, "127.0.0.1", ok); server.unref(); }),
     stop: () => new Promise((ok) => { server.close(ok); server.closeAllConnections(); }),
-  };
+  });
 }
+// Scrolls `page` so cue line `n` sits just above the reading line (plus `dy`).
+const passCueOn = (page, n, dy = 0) => page.evaluate(([k, d]) => {
+  const el = document.querySelector(`[data-cue="${k}"]`);
+  window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - document.querySelector(".reading-line").getBoundingClientRect().top - 2 + d);
+}, [n, dy]);
 const NO_SPEECH = () => { delete window.SpeechRecognition; delete window.webkitSpeechRecognition; };
 const NIGHT = "oklch(0.16 0.06 282)"; // --bg, #0b0826
 
@@ -1622,16 +1648,14 @@ export async function run({ browser, base, mode, dist, out }) {
   C.on("pageerror", (e) => errors.push(`camframe pageerror: ${e.message}`));
   C.on("console", (m) => {
     // Turned off or closed, CamFrame refuses the connection: expected while it is "not found".
-    if (m.type() === "error" && !/ERR_CONNECTION_REFUSED/.test(m.text())) errors.push(`camframe console: ${m.text()}`);
+    // A refused cue is a 404 answer, logged by the browser as a failed resource.
+    if (m.type() === "error" && !/ERR_CONNECTION_REFUSED|status of 404/.test(m.text())) errors.push(`camframe console: ${m.text()}`);
   });
   await C.goto(await makeLink(CUE_SCRIPT, "lex", base));
   await C.locator(".section").first().waitFor();
   assert.equal(await C.locator("[data-cue]").count(), 4, "each cue line is marked");
   assert.deepEqual(await C.locator("[data-cue]").allTextContents(), ["Share screen. Face small.", "Face small, bottom right", "Stop share. Face full.", "Face: Demo"], "cue lines look like any reminder");
-  const passCue = (n, dy = 0) => C.evaluate(([k, d]) => {
-    const el = document.querySelector(`[data-cue="${k}"]`);
-    window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - document.querySelector(".reading-line").getBoundingClientRect().top - 2 + d);
-  }, [n, dy]);
+  const passCue = (n, dy = 0) => passCueOn(C, n, dy);
   await passCue(0);
   await C.waitForTimeout(700);
   assert.deepEqual(cam.seen, [], "off by default: nothing is sent, not even a status check");
@@ -1647,6 +1671,25 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await C.locator(".settings-btn").getAttribute("aria-label"), "Settings · CamFrame connected");
   assert.equal(await C.locator("#settings .camframe .status-dot").evaluate((el) => getComputedStyle(el).backgroundColor), "oklch(0.8 0.15 155)", "a green dot when connected");
   await shot(C, "camframe-on-desktop");
+  // The status line is a live region: a check with the same answer must not touch it, or a
+  // screen reader hears it again on every check.
+  await C.evaluate(() => {
+    window.__camframeMutations = 0;
+    new MutationObserver((list) => { window.__camframeMutations += list.length; })
+      .observe(document.querySelector("#settings .camframe-status"), { childList: true, characterData: true, subtree: true });
+  });
+  const statusChecks = () => cam.seen.filter((r) => r.path === "/camframe/status").length;
+  for (let i = 0; i < 2; i++) {
+    const checksBefore = statusChecks();
+    await C.keyboard.press("Escape");
+    await (await dock(C, ".settings-btn")).click();
+    await C.locator("#settings:popover-open").waitFor();
+    for (let t = 0; t < 40 && statusChecks() === checksBefore; t++) await C.waitForTimeout(50);
+    assert.ok(statusChecks() > checksBefore, "reopening Settings checks CamFrame again");
+  }
+  await C.waitForTimeout(200);
+  assert.equal(await C.evaluate(() => window.__camframeMutations), 0, "the same status text is not set again");
+  assert.equal(await C.locator("#settings .camframe-status").textContent(), "Connected to CamFrame. Scenes: Demo, Talking head.");
   await C.keyboard.press("Escape");
   assert.equal(await C.evaluate(() => localStorage.getItem("prompter-camframe")), "on", "remembered on this device");
   // Down past the first cue: sent once, after a short settle.
@@ -1670,6 +1713,19 @@ export async function run({ browser, base, mode, dist, out }) {
   await passCue(3);
   await C.waitForTimeout(700);
   assert.deepEqual(cam.cues().slice(3), [{ size: "small", scene: "Demo" }]);
+  // CamFrame refuses a cue: the reason shows in the status, the link stays on, scrolling goes on.
+  cam.answer = (path, body) => (body?.scene === "Demo" ? { status: 404, body: { ok: false, error: 'CamFrame has no Scene named "Demo".' } } : null);
+  await passCue(3, -120);
+  await C.waitForTimeout(500);
+  await passCue(3);
+  await C.waitForFunction(() => document.querySelector(".camframe-status").textContent.includes("Last cue:"));
+  assert.deepEqual(cam.cues().slice(4), [{ size: "small", scene: "Demo" }]);
+  assert.match(await C.locator("#settings .camframe-status").textContent(), /^Connected to CamFrame\. .* Last cue: CamFrame has no Scene named "Demo"\.$/);
+  assert.equal(await C.locator(".camframe").getAttribute("data-state"), "on", "a refused cue keeps the link on");
+  const yRefused = await C.evaluate(() => window.scrollY);
+  await C.evaluate(() => window.scrollBy(0, 60));
+  await C.waitForFunction((y) => window.scrollY > y, yRefused);
+  cam.answer = null;
   assert.ok(cam.seen.every((r) => r.origin === new URL(base).origin), "the page's own origin, nothing else");
   assert.ok(cam.seen.every((r) => !r.body || Object.keys(r.body).every((k) => ["size", "position", "scene"].includes(k))), "only the cue is sent, never script text");
   // Auto-scroll reaches a cue too.
@@ -1680,7 +1736,51 @@ export async function run({ browser, base, mode, dist, out }) {
   await C.locator(".dock .auto").evaluate((b) => b.click());
   await C.waitForTimeout(3500);
   await C.locator(".dock .auto").evaluate((b) => b.click());
-  assert.deepEqual(cam.cues().slice(sentBefore, sentBefore + 1), [{ size: "small", position: "bottom-right" }], "auto-scroll sends the cue it passes");
+  assert.deepEqual(cam.cues().slice(sentBefore), [{ size: "small", position: "bottom-right" }], "auto-scroll sends the cue it passes, and nothing else");
+  // A reload with the link remembered on connects by itself and sends nothing for cues already above.
+  await passCue(1, 40);
+  await C.waitForTimeout(700);
+  const sentBeforeReload = cam.cues().length;
+  const statusBeforeReload = cam.seen.filter((r) => r.path === "/camframe/status").length;
+  await C.reload();
+  await C.locator(".section").first().waitFor();
+  await C.waitForFunction(() => document.querySelector(".camframe").dataset.state === "on");
+  assert.ok(cam.seen.filter((r) => r.path === "/camframe/status").length > statusBeforeReload, "the reloaded page checks CamFrame without the box being touched");
+  assert.equal(await C.locator("#settings .camframe-on").isChecked(), true);
+  // The browser may put the page back where it was (not every server's page gets that), a little
+  // after it is drawn. Either way opening the page sends nothing; when it is back past cues 0 and 1,
+  // they stay unsent.
+  const cueAboveLine = () => document.querySelector('[data-cue="0"]').getBoundingClientRect().top < document.querySelector(".reading-line").getBoundingClientRect().top;
+  const restored = await C.waitForFunction(cueAboveLine, null, { timeout: 3000 }).then(() => true, () => false);
+  await C.waitForTimeout(900);
+  assert.equal(cam.cues().length, sentBeforeReload, restored ? "no cue for cues already above the line after a reload" : "opening the page again sends no cue");
+  const reloadNote = restored ? "the reload came back past two cues and sent neither" : "this server's reload opened at the top (no scroll restore) and sent nothing";
+  // Follow my voice moving past a cue line sends it once.
+  const voiceCtx = await browser.newContext(DESKTOP);
+  await voiceCtx.addInitScript(() => { localStorage.setItem("prompter-camframe", "on"); localStorage.setItem("prompter-voice-ok", "yes"); });
+  await voiceCtx.addInitScript(SPEECH_STUB);
+  const V = await voiceCtx.newPage();
+  watch(V, "camframe voice");
+  await V.goto(await makeLink(VOICE_CUE_SCRIPT, "lex", base));
+  await V.locator(".section").first().waitFor();
+  await V.waitForFunction(() => document.querySelector(".camframe").dataset.state === "on");
+  const sentBeforeVoice = cam.cues().length;
+  await viaSettings(V, ".voice");
+  await V.waitForFunction(() => window.__speech.started === 1);
+  const voiceTo = async (words, line) => {
+    await V.evaluate((w) => window.__speech.say(w), words);
+    await V.waitForFunction((l) => document.querySelector("p.cur")?.textContent === l, line);
+  };
+  await voiceTo("welcome to the camera cue test", "Purple elephants dance quietly tonight.");
+  await voiceTo("purple elephants dance quietly tonight", "Seven orange kites drift over hills.");
+  await V.waitForTimeout(700);
+  assert.deepEqual(cam.cues().slice(sentBeforeVoice), [], "the cue below the line is not sent yet");
+  await voiceTo("seven orange kites drift over hills", "Copper trains whistle beyond rivers.");
+  await V.waitForTimeout(900);
+  await voiceTo("copper trains whistle beyond rivers", "Silver foxes nap beside lanterns.");
+  await V.waitForTimeout(900);
+  assert.deepEqual(cam.cues().slice(sentBeforeVoice), [{ size: "small", position: "bottom-right" }], "Follow my voice sends the cue it passes, once");
+  await voiceCtx.close();
   // CamFrame gone: the status says so, with the one-time permission hint; scrolling carries on.
   await cam.stop();
   await (await dock(C, ".settings-btn")).click();
@@ -1693,7 +1793,7 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await C.locator("#settings .camframe-hint").isVisible(), false);
   assert.equal(await C.evaluate(() => localStorage.getItem("prompter-camframe")), null);
   await camCtx.close();
-  ok("CamFrame link: off by default (no calls at all); on in Settings it shows CamFrame's Scenes and a dot on Settings; a cue line sends its cue to 127.0.0.1:47833 once per pass down (by hand, a section jump sending only the last cue it passed, and auto-scroll), again after scrolling back above it, never the script; CamFrame gone shows not found with the permission hint");
+  ok("CamFrame link: off by default (no calls at all); on in Settings it shows CamFrame's Scenes and a dot on Settings; the status line is not set again when a check gives the same answer; a cue line sends its cue to 127.0.0.1:47833 once per pass down (by hand, a section jump sending only the last cue it passed, auto-scroll, and Follow my voice), again after scrolling back above it, never the script; a refused cue shows CamFrame's reason and keeps the link on; a reload with the link remembered connects by itself and sends nothing for cues already above; CamFrame gone shows not found with the permission hint", reloadNote);
 
   // ---- Offline (file://) ----
   const offline = await browser.newContext(DESKTOP);
@@ -1726,8 +1826,20 @@ export async function run({ browser, base, mode, dist, out }) {
   await o.goto(pathToFileURL(embedded).href);
   await o.locator(".section").first().waitFor();
   assert.equal(await o.locator(".section").count(), 5);
+  // The CamFrame link from a file:// copy: CamFrame sees the cue from Origin "null".
+  const fileCam = fakeCamFrame();
+  await fileCam.start();
+  await o.goto(fileUrl + new URL(await makeLink(CUE_SCRIPT, "lex", base)).hash);
+  await o.locator(".section").first().waitFor();
+  await viaSettings(o, ".camframe-on");
+  await o.waitForFunction(() => document.querySelector(".camframe").dataset.state === "on");
+  await passCueOn(o, 0);
+  await o.waitForTimeout(700);
+  assert.deepEqual(fileCam.cues(), [{ size: "small" }]);
+  assert.ok(fileCam.seen.length && fileCam.seen.every((r) => r.origin === "null"), "a file:// copy calls CamFrame from Origin null");
+  await fileCam.stop();
   await offline.close();
-  ok("offline: file:// start screen (Copy MCP copies the open server's message, no live states) and demo, file:// #s= link and an embedded offline copy all work");
+  ok("offline: file:// start screen (Copy MCP copies the open server's message, no live states) and demo, file:// #s= link and an embedded offline copy all work; the CamFrame link from a file:// copy sends its cue with Origin null");
 
   assert.deepEqual(errors, [], errors.join("\n"));
   ok("no page or console errors");
