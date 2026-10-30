@@ -27,7 +27,7 @@ A slider with its name inside and an exact value you can type: one box, the name
 
 - The slider's `min`/`max`/`step` set the drag range; the value box's `min`/`max`/`step` set what can be typed (`step="any"` for decimals). Leave the box's `min`/`max` out to use the slider's.
 - The unit `<span>` is optional. The box's `aria-label` names it for screen readers, unit included.
-- While typing, a value applies as soon as it is whole and allowed. Enter tidies it (into range, onto the step); leaving the box with a half-typed or empty value (Tab, Escape, a click elsewhere) goes back to the last value. When the typed value is past the slider's end or off its step, the slider tells screen readers the exact value (`aria-valuetext`, with the unit).
+- While typing, a value applies as soon as it is whole and allowed. Enter or leaving the box tidies it (into range, onto the step), except that leaving with a value still being typed (below the minimum) or an empty box (Tab, Escape, a click elsewhere) goes back to the last value. The slider tells screen readers the exact value (`aria-valuetext`: always with a unit, and without one when the typed value is past the slider's end or off its step).
 - Restyle with custom properties on `.range-field`: `--rf-height` (44px), `--rf-radius`, `--rf-thumb` (the fill's rounded end), `--rf-ticks` (how many), `--rf-bg`, `--rf-fill`, `--rf-grip`, `--rf-tick`, `--rf-muted` (the unit), `--rf-focus` (the ring). The font size comes from the page.
 
 The prompter's build (`scripts/build.mjs`) inlines both files into its one-file page; `src/page.html` sets the colours.

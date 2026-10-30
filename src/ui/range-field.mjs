@@ -2,9 +2,10 @@
 // Dragging the slider shows its value in the box; typing any value between the
 // box's own min and max (which may reach past the slider's ends) moves the
 // slider, which stops at its ends, and keeps the exact number (screen readers
-// hear it too). Enter tidies the text into range and onto the box's step;
-// leaving the box with a half-typed or empty value (Tab, Escape, a click
-// elsewhere) goes back to the last value. onValue(number) hears every new
+// hear it too, with the unit). Enter or leaving the box tidies the text into
+// range and onto the box's step, except that leaving with a value still being
+// typed (below the minimum) or an empty box (Tab, Escape, a click elsewhere)
+// goes back to the last value. onValue(number) hears every new
 // value. Returns a setter for values that change elsewhere (a shortcut key, a
 // saved setting); it does not call onValue. Import-free so a page can inline it.
 export function rangeField(field, onValue = () => {}) {
@@ -27,13 +28,14 @@ export function rangeField(field, onValue = () => {}) {
   // The slider stops at its ends and on its step; then it names the exact value.
   function sync(v) {
     range.value = String(v);
-    if (range.valueAsNumber === v) range.removeAttribute("aria-valuetext");
+    if (range.valueAsNumber === v && !unit) range.removeAttribute("aria-valuetext");
     else range.setAttribute("aria-valuetext", unit ? `${v} ${unit}` : String(v));
   }
   const commit = (enter) => {
     const v = box.valueAsNumber;
-    const ok = Number.isFinite(v) && (enter || v === tidy(v));
-    show(ok ? tidy(v) : value);
+    const next = Number.isFinite(v) && (enter || v >= lo) ? tidy(v) : value;
+    if (next === value && v === value) return; // already done (Enter, then change)
+    show(next);
     onValue(value);
   };
   range.addEventListener("input", () => { show(range.valueAsNumber); onValue(value); });

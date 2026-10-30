@@ -822,7 +822,7 @@ function toggleAuto() {
 }
 
 // The sliders in Settings: drag them, or type an exact value into their box,
-// also past the slider's ends, within the box's own min and max.
+// also past the slider's ends, within the box's own min and max (both boxes set them).
 const showSpeed = rangeField($(".speed-field"), (v) => setSpeed(v));
 const showSize = rangeField($(".size-field"), (v) => setSize(v));
 const limit = (box, v, fallback) => Math.min(Number(box.max), Math.max(Number(box.min), Math.round(v) || fallback));

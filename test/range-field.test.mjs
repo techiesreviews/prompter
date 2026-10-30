@@ -40,23 +40,38 @@ test("range field: typing applies whole allowed values at once and keeps the exa
   f.type("150");
   assert.deepEqual([f.r.value, f.r.attrs["aria-valuetext"]], ["110", "150 px"], "past the slider's end it stops there");
   f.type("60");
-  assert.equal(f.r.attrs["aria-valuetext"], undefined, "on the slider's own step: no extra name");
+  assert.equal(f.r.attrs["aria-valuetext"], "60 px", "with a unit it is always named");
 });
 
-test("range field: Enter tidies into range; leaving half typed or empty goes back", () => {
+test("range field: Enter or leaving tidies into range; leaving half typed or empty goes back", () => {
   const f = field({ range: { value: "52" }, box: { min: "10", max: "300" } });
   f.type("5");
   f.leave();
-  assert.deepEqual([f.b.value, f.heard.at(-1)], ["52", 52], "leaving (Tab, Escape) while half typed: the last value, not the smallest");
+  assert.deepEqual([f.b.value, f.heard.at(-1), f.r.attrs["aria-valuetext"]], ["52", 52, undefined], "leaving (Tab, Escape) while half typed: the last value, not the smallest");
+  f.type("999");
+  f.leave();
+  assert.deepEqual([f.b.value, f.heard.at(-1)], ["300", 300], "leaving above the maximum: the largest allowed");
+  f.type("52");
+  f.leave();
   f.type("");
   f.leave();
   assert.equal(f.b.value, "52", "emptied: the last value");
   f.type("5");
   f.enter();
   assert.deepEqual([f.b.value, f.r.value, f.heard.at(-1)], ["10", "20", 10], "Enter: the smallest allowed");
+  const calls = f.heard.length;
   f.type("999");
   f.enter();
-  assert.deepEqual([f.b.value, f.heard.at(-1)], ["300", 300], "Enter: the largest allowed");
+  assert.deepEqual([f.b.value, f.heard.at(-1), f.heard.length - calls], ["300", 300, 1], "Enter: the largest allowed, heard once");
+});
+
+test("range field: screen readers hear the exact value, with the unit when there is one", () => {
+  const plain = field({ range: { value: "52" }, box: { min: "1", max: "999" } });
+  plain.type("5");
+  assert.equal(plain.r.attrs["aria-valuetext"], "5");
+  const px = field({ range: { value: "52" }, box: { min: "10", max: "300" }, unit: "px" });
+  px.type("60");
+  assert.equal(px.r.attrs["aria-valuetext"], "60 px", "with a unit, always");
 });
 
 test("range field: the box's own step, step any, and the slider's limits when the box has none", () => {
@@ -65,6 +80,9 @@ test("range field: the box's own step, step any, and the slider's limits when th
   assert.deepEqual(stepped.heard, [], "off the box's step: not applied while typing");
   stepped.enter();
   assert.equal(stepped.b.value, "6", "Enter puts it on the step, counted from min");
+  stepped.type("12");
+  stepped.leave();
+  assert.equal(stepped.b.value, "11", "so does leaving");
   const any = field({ range: { min: "0", max: "100", step: "1", value: "5" }, box: { step: "any" } });
   any.type("12.5");
   assert.deepEqual([any.heard, any.r.value], [[12.5], "13"], "step any keeps decimals");
