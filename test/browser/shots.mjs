@@ -1889,8 +1889,8 @@ export async function run({ browser, base, mode, dist, out }) {
   await passCue(3, -120);
   await C.waitForTimeout(500);
   await passCue(3);
-  await C.waitForFunction(() => document.querySelector(".toast-text").textContent.startsWith("Could not reach CamFrame"), null, { timeout: 4000 });
-  assert.equal(await C.locator(".camframe").getAttribute("data-state"), "reconnecting", "one missed cue while connected: reconnecting, not lost");
+  // Both at once: the check a second later may already have found CamFrame again.
+  await C.waitForFunction(() => document.querySelector(".toast-text").textContent.startsWith("Could not reach CamFrame") && document.querySelector(".camframe").dataset.state === "reconnecting", null, { timeout: 4000 });
   cam.answer = null;
   await C.waitForFunction(() => document.querySelector(".camframe").dataset.state === "on", null, { timeout: 4000 });
   // A cue still on its way when the link is turned off and on again changes nothing for the new one.
@@ -1901,6 +1901,7 @@ export async function run({ browser, base, mode, dist, out }) {
   const sentBeforeToggle = cam.cues().length;
   await passCue(3);
   for (let t = 0; t < 40 && cam.cues().length === sentBeforeToggle; t++) await C.waitForTimeout(50);
+  assert.ok(cam.cues().length > sentBeforeToggle, "the cue is on its way before the switch");
   await (await dock(C, ".settings-btn")).click();
   await C.locator("#settings:popover-open").waitFor();
   await C.locator("#settings .camframe-on").uncheck();
