@@ -380,7 +380,7 @@
   .dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-block-end: 0; }
   /* Your agent over MCP, as in the script editor: a status dot (grey off, orange waiting,
      green connected), the action with a copy icon after it, and a check with "Copied" once
-     the message is on the clipboard. The connected agent's row sits above the action. */
+     the message is on the clipboard. Connected, it reads Disconnect MCP, with no agent row. */
   .status-dot { inline-size: 8px; block-size: 8px; margin-inline: 5px; border-radius: 50%; flex: none; background: var(--dim); }
   .mcp-action[data-state="waiting"] .status-dot { background: var(--accent); }
   .mcp-action[data-state="on"] .status-dot { background: var(--ok); }

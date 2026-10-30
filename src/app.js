@@ -121,7 +121,8 @@ let cueArmed = false;
 let cueTimer = 0;
 // CamFrame link: off unless turned on in Settings. state: off, looking, on (CamFrame answered),
 // reconnecting (a check or two missed after it answered) or lost (several missed in a row).
-const camframe = { on: store.get(CAMFRAME_KEY) === "on", state: "off", scenes: [], note: "", timer: 0, retry: 0, seq: 0, misses: 0 };
+// session counts turns on and off, so a cue sent before that is not news after it.
+const camframe = { on: store.get(CAMFRAME_KEY) === "on", state: "off", scenes: [], note: "", timer: 0, retry: 0, seq: 0, misses: 0, session: 0 };
 
 // ---------- Opening scripts ----------
 const isEmpty = () => root.dataset.view === "empty";
@@ -697,13 +698,15 @@ function updateCues(y) {
 // Each cue sent shows a short note by the reading line: switched, refused or not reached.
 // A cue that does not get through is sent once more before that.
 async function sendCue(cue) {
+  const session = camframe.session;
+  const current = () => camframe.on && camframe.session === session;
   let answer = null;
   for (let tries = 0; tries < 2 && !answer; tries++) {
     if (tries) await new Promise((done) => { setTimeout(done, CUE_RETRY_MS); });
-    if (!camframe.on) return;
+    if (!current()) return;
     try { answer = await camframeCall("cue", cue); } catch { /* not through: once more, then a miss */ }
   }
-  if (!camframe.on) return;
+  if (!current()) return;
   if (!answer) {
     // A miss like a status check's, news whatever check is still running.
     camframe.seq++;
@@ -739,12 +742,14 @@ function afterCheck(body) {
   if (body) patch.scenes = Array.isArray(body.scenes) ? body.scenes.map(String) : [];
   else if (next.state === "lost") patch.scenes = [];
   setCamframe(patch);
-  if (next.retry >= 0) camframe.retry = setTimeout(checkCamframe, next.retry);
+  // Like the usual checks, only while the page is in view; those pick it up again after.
+  if (next.retry >= 0) camframe.retry = setTimeout(() => { if (document.visibilityState === "visible") checkCamframe(); }, next.retry);
 }
 
 function setCamframeOn(on) {
   camframe.on = on;
   camframe.seq++;
+  camframe.session++;
   if (on) store.set(CAMFRAME_KEY, "on"); else store.del(CAMFRAME_KEY);
   clearInterval(camframe.timer);
   clearTimeout(camframe.retry);
@@ -873,20 +878,24 @@ function showAlert(t) {
 // reached; reconnecting to speech), read out once through the status line. It
 // fades away by itself, or with `stay` when hideToast(kind) is called.
 const TOAST_MS = 4000;
+const RECONNECTING = "Reconnecting to speech…";
 let toastTimer = 0;
-function showToast(text, kind, stay = false) {
+function showToast(text, kind, stay = false, say = true) {
   clearTimeout(toastTimer);
   toastEl.dataset.kind = kind;
   toastText.textContent = text;
   toastEl.dataset.show = "true";
-  setStatus(text);
+  if (say) setStatus(text);
   if (!stay) toastTimer = setTimeout(hideToast, TOAST_MS);
 }
-// Without `kind` any note goes; with it, only a note of that kind.
+// Without `kind` any note goes; with it, only a note of that kind. A camera
+// note shown while speech reconnects gives the place back to Reconnecting
+// (not read out again) when it goes.
 function hideToast(kind) {
   if (kind && toastEl.dataset.kind !== kind) return;
   clearTimeout(toastTimer);
   delete toastEl.dataset.show;
+  if (kind !== "voice" && voiceOn && voiceNetFails && toastEl.dataset.kind !== "voice") showToast(RECONNECTING, "voice", true, false);
 }
 
 // Once per page: a link would have opened by itself, but no main screen is connected.
@@ -1155,7 +1164,7 @@ function onVoiceError(e) {
   if (e.error === "no-speech" || e.error === "aborted") return; // onend restarts
   const wait = speechRetryWait(e.error, voiceNetFails);
   if (wait < 0) { stopVoice(VOICE_ERRORS[e.error] || "Follow my voice stopped. Turn it on again to retry."); return; }
-  if (!voiceNetFails++) showToast("Reconnecting to speech…", "voice", true); // read out once, not on every try
+  if (!voiceNetFails++) showToast(RECONNECTING, "voice", true); // read out once, not on every try
   voiceWait = wait;
 }
 
