@@ -59,18 +59,6 @@ export function cueRest(note) {
 }
 
 /**
- * What happened to a cue sent at the reading line, in plain words: `sent`
- * (CamFrame switched), `refused` (CamFrame said no, with its reason) or
- * `unreached` (CamFrame not found, or the browser blocked the call).
- */
-export function cueReport(kind, cue, reason = "") {
-  const what = cueWords(cue);
-  if (kind === "sent") return `CamFrame switched to ${what}.`;
-  if (kind === "refused") return `CamFrame did not switch to ${what}: ${reason || "it refused the cue."}`;
-  return `Could not reach CamFrame to switch to ${what}. Is it open? Your browser may have blocked it; see Settings.`;
-}
-
-/**
  * After a status check (or a cue that did not get through twice): the link's
  * next state, the misses in a row and how soon to check again (ms; -1 for the
  * usual interval). One miss is not "not found": calls to this computer fail

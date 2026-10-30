@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CAMFRAME_MISSES, CAMFRAME_ORIGIN, CAMFRAME_RETRY_MS, camframeAfterCheck, camframeCall, cueCrossing, cueReport, cueRest, cueWords } from "../src/camframe.mjs";
+import { CAMFRAME_MISSES, CAMFRAME_ORIGIN, CAMFRAME_RETRY_MS, camframeAfterCheck, camframeCall, cueCrossing, cueRest, cueWords } from "../src/camframe.mjs";
 import { check, classify, faceCue, FACE_SPOTS, formatGuide, parse } from "../src/core.mjs";
 
 test("faceCue: Lex's existing cue lines still work", () => {
@@ -112,14 +112,6 @@ test("cue lines in plain words: what the camera does, and the line's other words
   assert.equal(cueRest("Stop share. Face full."), "Stop share.");
   assert.equal(cueRest("Face small, bottom right"), "");
   assert.equal(cueRest("Show code. FACE: Demo. Then smile!"), "Show code. Then smile!");
-});
-
-test("cueReport says what happened to a cue at the reading line", () => {
-  const cue = { size: "small", position: "bottom-right" };
-  assert.equal(cueReport("sent", cue), "CamFrame switched to face small, bottom right.");
-  assert.equal(cueReport("refused", { size: "small", scene: "Demo" }, 'CamFrame has no Scene named "Demo".'), 'CamFrame did not switch to Scene “Demo”: CamFrame has no Scene named "Demo".');
-  assert.equal(cueReport("refused", { size: "full" }), "CamFrame did not switch to face full: it refused the cue.");
-  assert.match(cueReport("unreached", cue), /^Could not reach CamFrame to switch to face small, bottom right\. .*browser may have blocked it/);
 });
 
 test("camframeAfterCheck: one missed check is not \"not found\"; several in a row are; an answer reconnects", () => {

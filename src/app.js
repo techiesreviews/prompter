@@ -695,8 +695,7 @@ function updateCues(y) {
   cueTimer = setTimeout(() => { if (cueAbove?.has(send)) sendCue(cues[send]); }, CUE_SETTLE_MS);
 }
 
-// Each cue sent shows a short note by the reading line: switched, refused or not reached.
-// A cue that does not get through is sent once more before that.
+// A cue that does not get through is sent once more; then it counts as a missed check.
 async function sendCue(cue) {
   const session = camframe.session;
   const current = () => camframe.on && camframe.session === session;
@@ -711,12 +710,10 @@ async function sendCue(cue) {
     // A miss like a status check's, news whatever check is still running.
     camframe.seq++;
     afterCheck(null);
-    showToast(cueReport("unreached", cue), "problem");
     return;
   }
   const { ok, body } = answer;
   const note = ok ? "" : String(body.error || "");
-  showToast(cueReport(ok ? "sent" : "refused", cue, note), ok ? "ok" : "problem");
   // Not connected yet (looking, or back after "not found"): the status check says Connected
   // once it has the Scenes, instead of "No saved Scenes" first.
   if (camframe.state !== "on") { camframe.note = note; checkCamframe(); return; }
@@ -753,7 +750,7 @@ function setCamframeOn(on) {
   if (on) store.set(CAMFRAME_KEY, "on"); else store.del(CAMFRAME_KEY);
   clearInterval(camframe.timer);
   clearTimeout(camframe.retry);
-  if (!on) { hideToast("ok"); hideToast("problem"); setCamframe({ state: "off", scenes: [], note: "", misses: 0 }); return; }
+  if (!on) { setCamframe({ state: "off", scenes: [], note: "", misses: 0 }); return; }
   setCamframe({ state: "looking", note: "", misses: 0 });
   checkCamframe();
   camframe.timer = setInterval(() => { if (document.visibilityState === "visible") checkCamframe(); }, CAMFRAME_CHECK_MS);
@@ -874,28 +871,16 @@ function showAlert(t) {
   $(".alert-text").textContent = t;
 }
 
-// A short note by the reading line (a camera cue switched, refused or not
-// reached; reconnecting to speech), read out once through the status line. It
-// fades away by itself, or with `stay` when hideToast(kind) is called.
-const TOAST_MS = 4000;
+// Reconnecting to speech: a short note by the reading line, read out once
+// through the status line, until hideToast() or words are heard again.
 const RECONNECTING = "Reconnecting to speech…";
-let toastTimer = 0;
-function showToast(text, kind, stay = false, say = true) {
-  clearTimeout(toastTimer);
-  toastEl.dataset.kind = kind;
+function showToast(text) {
   toastText.textContent = text;
   toastEl.dataset.show = "true";
-  if (say) setStatus(text);
-  if (!stay) toastTimer = setTimeout(hideToast, TOAST_MS);
+  setStatus(text);
 }
-// Without `kind` any note goes; with it, only a note of that kind. A camera
-// note shown while speech reconnects gives the place back to Reconnecting
-// (not read out again) when it goes.
-function hideToast(kind) {
-  if (kind && toastEl.dataset.kind !== kind) return;
-  clearTimeout(toastTimer);
+function hideToast() {
   delete toastEl.dataset.show;
-  if (kind !== "voice" && voiceOn && voiceNetFails && toastEl.dataset.kind !== "voice") showToast(RECONNECTING, "voice", true, false);
 }
 
 // Once per page: a link would have opened by itself, but no main screen is connected.
@@ -1098,7 +1083,7 @@ function stopVoice(message = "") {
   voiceRetryTimer = 0;
   voiceWait = -1;
   voiceNetFails = 0;
-  hideToast("voice");
+  hideToast();
   if (r) {
     r.onresult = r.onerror = r.onend = null;
     try { r.abort(); } catch { /* already stopped */ }
@@ -1113,7 +1098,7 @@ function stopVoice(message = "") {
 // are tried from there each time and dropped, so no word counts twice.
 function onVoiceResult(e) {
   voiceRestarts = 0;
-  if (voiceNetFails) { voiceNetFails = 0; hideToast("voice"); } // back: the speech service heard words
+  if (voiceNetFails) { voiceNetFails = 0; hideToast(); } // back: the speech service heard words
   const words = (i) => speechWords(e.results[i][0].transcript);
   for (; voiceFinal < e.results.length && e.results[voiceFinal].isFinal; voiceFinal++) {
     voiceState = followWords(voiceLines, voiceState, words(voiceFinal));
@@ -1164,7 +1149,7 @@ function onVoiceError(e) {
   if (e.error === "no-speech" || e.error === "aborted") return; // onend restarts
   const wait = speechRetryWait(e.error, voiceNetFails);
   if (wait < 0) { stopVoice(VOICE_ERRORS[e.error] || "Follow my voice stopped. Turn it on again to retry."); return; }
-  if (!voiceNetFails++) showToast(RECONNECTING, "voice", true); // read out once, not on every try
+  if (!voiceNetFails++) showToast(RECONNECTING); // read out once, not on every try
   voiceWait = wait;
 }
 

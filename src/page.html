@@ -214,9 +214,8 @@
   [data-shown="true"]:is(.link, .mark, .inlink) { border-color: var(--accent); }
   .inlink[data-shown="true"] { text-decoration-line: none; }
 
-  /* What a camera cue did, or Reconnecting to speech: a short note at the
-     right, just above the reading line (over text already read), that never
-     takes clicks and fades away. */
+  /* Reconnecting to speech: a short note at the right, just above the
+     reading line (over text already read), that never takes clicks. */
   .toast {
     position: fixed; z-index: 6; inset-block-start: var(--line); inset-inline-end: 16px;
     transform: translateY(calc(-100% - 10px)); max-inline-size: min(380px, calc(100vw - 32px));
@@ -226,11 +225,7 @@
     pointer-events: none; opacity: 0; visibility: hidden;
   }
   .toast[data-show] { opacity: 1; visibility: visible; }
-  .toast[data-kind="ok"] svg { color: var(--ok); }
-  .toast[data-kind="problem"] svg { color: var(--accent); }
-  .toast[data-kind="voice"] svg { color: var(--muted); }
-  .toast .i-mic, .toast[data-kind="voice"] .i-camera { display: none; }
-  .toast[data-kind="voice"] .i-mic { display: block; }
+  .toast svg { flex: none; color: var(--muted); }
   @media (prefers-reduced-motion: no-preference) {
     .toast { translate: 0 6px; transition: opacity 400ms var(--ease-out), translate 400ms var(--ease-out), visibility 0s linear 400ms; }
     .toast[data-show] { translate: 0 0; transition: opacity 200ms var(--ease-out), translate 200ms var(--ease-out), visibility 0s; }
@@ -465,7 +460,7 @@
   </div>
   <main class="script" aria-label="Script"></main>
   <!-- Read out through the status line instead, once. -->
-  <p class="toast" aria-hidden="true"><svg class="i-camera" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6" width="13" height="12" rx="2"/><path d="m15.5 10.5 6-3.5v10l-6-3.5"/></svg><svg class="i-mic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg><span class="toast-text"></span></p>
+  <p class="toast" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg><span class="toast-text"></span></p>
 </div>
 <input class="file-input" type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" tabindex="-1" aria-hidden="true">
 
