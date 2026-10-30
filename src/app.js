@@ -108,6 +108,10 @@ let voiceRestarts = 0;
 let resumeAuto = false;
 let cues = []; // camera cues ({ size, position?, scene? }) by data-cue
 let cueAbove = null; // cue numbers above the reading line; null until the first look after render
+// False until the person does something on the page after a script opens: until then a scroll
+// (the browser putting a reloaded page back where it was, maybe after the first look) only moves
+// the starting point and sends nothing.
+let cueArmed = false;
 let cueTimer = 0;
 // CamFrame link: off unless turned on in Settings. state: off, looking, on (CamFrame answered) or lost.
 const camframe = { on: store.get(CAMFRAME_KEY) === "on", state: "off", scenes: [], note: "", timer: 0, seq: 0 };
@@ -172,6 +176,7 @@ function showStart() {
   anchorKey = "";
   clearTimeout(settleTimer);
   cueAbove = null;
+  cueArmed = false;
   clearTimeout(cueTimer);
   hideHint();
   setStatus("");
@@ -275,6 +280,7 @@ function render() {
   clearTimeout(settleTimer);
   voiceState = followStart(-1);
   cueAbove = null;
+  cueArmed = false;
   clearTimeout(cueTimer);
   updateActive();
 }
@@ -683,7 +689,7 @@ function updateCues(y) {
   const now = [];
   main.querySelectorAll("[data-cue]").forEach((el) => { if (el.getBoundingClientRect().top <= y + 4) now.push(Number(el.dataset.cue)); });
   // Opening a script, or a cue already passed when the link is turned on, sends nothing.
-  if (!cueAbove) { cueAbove = new Set(now); return; }
+  if (!cueAbove || !cueArmed) { cueAbove = new Set(now); return; }
   const { above, send } = cueCrossing(cueAbove, now);
   cueAbove = above;
   if (send < 0 || !camframe.on) return;
@@ -695,11 +701,13 @@ async function sendCue(cue) {
   try {
     const { ok, body } = await camframeCall("cue", cue);
     if (!camframe.on) return;
-    // Back after "not found": the Scenes may have changed too.
-    const back = camframe.state === "lost";
-    setCamframe({ state: "on", note: ok ? "" : String(body.error || "") });
-    if (back) checkCamframe();
+    const note = ok ? "" : String(body.error || "");
+    // Not connected yet (looking, or back after "not found"): the status check says Connected
+    // once it has the Scenes, instead of "No saved Scenes" first.
+    if (camframe.state !== "on") { camframe.note = note; checkCamframe(); return; }
+    setCamframe({ state: "on", note });
   } catch {
+    // A failed cue is news whatever status check is still running.
     if (camframe.on) setCamframe({ state: "lost" });
   }
 }
@@ -1162,6 +1170,9 @@ async function loadFile(file) {
 
 // ---------- Events ----------
 window.addEventListener("scroll", () => requestAnimationFrame(updateActive), { passive: true });
+for (const type of ["pointerdown", "keydown", "wheel", "touchstart"]) {
+  window.addEventListener(type, () => { cueArmed = true; }, { capture: true, passive: true });
+}
 
 // The control bar tucks away while scrolling down (by hand, auto-scroll or
 // voice) and comes back when scrolling up, near the bottom edge, or on focus.

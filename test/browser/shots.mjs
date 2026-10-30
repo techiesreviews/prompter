@@ -155,11 +155,11 @@ Copper trains whistle beyond rivers.
 Silver foxes nap beside lanterns.
 ${CUE_FILL}
 `;
-// A stand-in for CamFrame on 127.0.0.1:47833. `answer(path, body)` may return
-// { status, body } to answer differently (a refused cue, say).
+// A stand-in for CamFrame on 127.0.0.1:47833 with the Scenes `scenes`. `answer(path, body)`
+// may return { status, body, delay } to answer differently (a refused cue, a slow check).
 function fakeCamFrame() {
   const seen = [];
-  const api = { answer: null };
+  const api = { answer: null, scenes: ["Demo", "Talking head"] };
   const server = createServer((req, res) => {
     const cors = { "Access-Control-Allow-Origin": req.headers.origin || "*", Vary: "Origin" };
     if (req.method === "OPTIONS") {
@@ -172,8 +172,9 @@ function fakeCamFrame() {
       seen.push({ method: req.method, path: req.url, origin: req.headers.origin, body: body ? JSON.parse(body) : undefined });
       const parsed = seen.at(-1).body;
       const custom = api.answer?.(req.url, parsed);
-      const reply = custom?.body ?? (req.url === "/camframe/status" ? { app: "camframe", version: "test", scenes: ["Demo", "Talking head"] } : { ok: true, cue: parsed });
-      res.writeHead(custom?.status ?? 200, { ...cors, "Content-Type": "application/json" }).end(JSON.stringify(reply));
+      const reply = custom?.body ?? (req.url === "/camframe/status" ? { app: "camframe", version: "test", scenes: api.scenes } : { ok: true, cue: parsed });
+      const write = () => res.writeHead(custom?.status ?? 200, { ...cors, "Content-Type": "application/json" }).end(JSON.stringify(reply));
+      if (custom?.delay) setTimeout(write, custom.delay); else write();
     });
   });
   return Object.assign(api, {
@@ -1649,7 +1650,8 @@ export async function run({ browser, base, mode, dist, out }) {
   C.on("console", (m) => {
     // Turned off or closed, CamFrame refuses the connection: expected while it is "not found".
     // A refused cue is a 404 answer, logged by the browser as a failed resource.
-    if (m.type() === "error" && !/ERR_CONNECTION_REFUSED|status of 404/.test(m.text())) errors.push(`camframe console: ${m.text()}`);
+    const refusedCue = /status of 404/.test(m.text()) && m.location()?.url?.startsWith("http://127.0.0.1:47833/camframe/cue");
+    if (m.type() === "error" && !/ERR_CONNECTION_REFUSED/.test(m.text()) && !refusedCue) errors.push(`camframe console: ${m.text()}`);
   });
   await C.goto(await makeLink(CUE_SCRIPT, "lex", base));
   await C.locator(".section").first().waitFor();
@@ -1692,6 +1694,26 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await C.locator("#settings .camframe-status").textContent(), "Connected to CamFrame. Scenes: Demo, Talking head.");
   await C.keyboard.press("Escape");
   assert.equal(await C.evaluate(() => localStorage.getItem("prompter-camframe")), "on", "remembered on this device");
+  // While still looking the permission hint stays hidden; an older check answering late is dropped.
+  let slowChecks = true;
+  cam.answer = (path) => {
+    if (path !== "/camframe/status") return null;
+    return slowChecks ? { body: { app: "camframe", version: "test", scenes: ["Old"] }, delay: 1200 } : { body: { app: "camframe", version: "test", scenes: ["New"] } };
+  };
+  await (await dock(C, ".settings-btn")).click();
+  await C.locator("#settings:popover-open").waitFor();
+  await C.locator("#settings .camframe-on").uncheck();
+  await C.locator("#settings .camframe-on").check();
+  assert.equal(await C.locator(".camframe").getAttribute("data-state"), "looking");
+  assert.equal(await C.locator("#settings .camframe-hint").isVisible(), false, "no permission hint while still looking");
+  slowChecks = false;
+  await C.locator("#settings .camframe-on").uncheck();
+  await C.locator("#settings .camframe-on").check();
+  await C.waitForFunction(() => document.querySelector(".camframe-status").textContent.includes("Scenes: New."));
+  await C.waitForTimeout(1400);
+  assert.equal(await C.locator("#settings .camframe-status").textContent(), "Connected to CamFrame. Scenes: New.", "the older, slower checks are dropped");
+  cam.answer = null;
+  await C.keyboard.press("Escape");
   // Down past the first cue: sent once, after a short settle.
   await passCue(0);
   await C.waitForTimeout(700);
@@ -1722,9 +1744,6 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.deepEqual(cam.cues().slice(4), [{ size: "small", scene: "Demo" }]);
   assert.match(await C.locator("#settings .camframe-status").textContent(), /^Connected to CamFrame\. .* Last cue: CamFrame has no Scene named "Demo"\.$/);
   assert.equal(await C.locator(".camframe").getAttribute("data-state"), "on", "a refused cue keeps the link on");
-  const yRefused = await C.evaluate(() => window.scrollY);
-  await C.evaluate(() => window.scrollBy(0, 60));
-  await C.waitForFunction((y) => window.scrollY > y, yRefused);
   cam.answer = null;
   assert.ok(cam.seen.every((r) => r.origin === new URL(base).origin), "the page's own origin, nothing else");
   assert.ok(cam.seen.every((r) => !r.body || Object.keys(r.body).every((k) => ["size", "position", "scene"].includes(k))), "only the cue is sent, never script text");
@@ -1741,6 +1760,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await passCue(1, 40);
   await C.waitForTimeout(700);
   const sentBeforeReload = cam.cues().length;
+  const yBeforeReload = await C.evaluate(() => window.scrollY);
   const statusBeforeReload = cam.seen.filter((r) => r.path === "/camframe/status").length;
   await C.reload();
   await C.locator(".section").first().waitFor();
@@ -1755,6 +1775,12 @@ export async function run({ browser, base, mode, dist, out }) {
   await C.waitForTimeout(900);
   assert.equal(cam.cues().length, sentBeforeReload, restored ? "no cue for cues already above the line after a reload" : "opening the page again sends no cue");
   const reloadNote = restored ? "the reload came back past two cues and sent neither" : "this server's reload opened at the top (no scroll restore) and sent nothing";
+  // A restore after the page's first look, with no input from the person, sends nothing either.
+  await C.evaluate(() => window.scrollTo(0, 0));
+  await C.waitForTimeout(300);
+  await C.evaluate((y) => window.scrollTo(0, y), yBeforeReload);
+  await C.waitForTimeout(700);
+  assert.equal(cam.cues().length, sentBeforeReload, "a late scroll restore (no input) sends nothing");
   // Follow my voice moving past a cue line sends it once.
   const voiceCtx = await browser.newContext(DESKTOP);
   await voiceCtx.addInitScript(() => { localStorage.setItem("prompter-camframe", "on"); localStorage.setItem("prompter-voice-ok", "yes"); });
@@ -1789,6 +1815,20 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await C.locator("#settings .camframe-status").textContent(), "CamFrame not found. Open CamFrame and turn on Prompter link in its Scenes settings.");
   assert.equal(await C.locator("#settings .camframe-hint").isVisible(), true);
   await shot(C, "camframe-lost-desktop");
+  // CamFrame back with other Scenes: the next cue that gets through checks again and lists them.
+  await C.keyboard.press("Escape");
+  cam.scenes = ["Intro", "Outro"];
+  await cam.start();
+  const statusBeforeBack = cam.seen.filter((r) => r.path === "/camframe/status").length;
+  await passCue(0, -120);
+  await C.waitForTimeout(400);
+  await passCue(0);
+  await C.waitForFunction(() => document.querySelector(".camframe").dataset.state === "on");
+  assert.ok(cam.seen.filter((r) => r.path === "/camframe/status").length > statusBeforeBack, "a status check follows the cue");
+  assert.equal(await C.locator("#settings .camframe-status").textContent(), "Connected to CamFrame. Scenes: Intro, Outro.", "back after not found: the new Scenes, never No saved Scenes first");
+  await cam.stop();
+  await (await dock(C, ".settings-btn")).click();
+  await C.locator("#settings:popover-open").waitFor();
   await C.locator("#settings .camframe-on").uncheck();
   assert.equal(await C.locator("#settings .camframe-hint").isVisible(), false);
   assert.equal(await C.evaluate(() => localStorage.getItem("prompter-camframe")), null);
