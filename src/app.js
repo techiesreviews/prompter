@@ -55,6 +55,8 @@ const pasteDialog = $(".paste-dialog");
 const fileInput = $(".file-input");
 const continueBtn = $(".continue");
 const widthInputs = document.querySelectorAll('input[name="width"]');
+const toastEl = $(".toast");
+const toastText = $(".toast-text");
 const camframeRow = $(".camframe");
 const camframeBox = $(".camframe-on");
 const camframeStatus = $(".camframe-status");
@@ -178,6 +180,7 @@ function showStart() {
   clearTimeout(settleTimer);
   cueAbove = null;
   clearTimeout(cueTimer);
+  hideToast();
   hideHint();
   setStatus("");
   if (location.hash) history.replaceState(null, "", plainAddress());
@@ -244,6 +247,14 @@ function lineHtml(it, i) {
   return html + esc(t.slice(at));
 }
 
+// A camera cue line, whether or not the CamFrame link is on: a camera mark and
+// what the camera will do, then the line's other words ("Share screen.").
+const CAMERA_ICON = `<svg class="cue-icon" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="6" width="13" height="12" rx="2"/><path d="m15.5 10.5 6-3.5v10l-6-3.5"/></svg>`;
+function cueHtml(it) {
+  const rest = cueRest(it.text);
+  return `<p class="note cue" data-cue="${cues.push(it.cue) - 1}">${CAMERA_ICON}<span class="cue-what">Camera: ${esc(cueWords(it.cue))}</span>${rest ? `<span class="cue-rest"> · ${esc(rest)}</span>` : ""}</p>`;
+}
+
 function render() {
   voiceLines = [];
   cues = [];
@@ -265,8 +276,8 @@ function render() {
     const items = rest.map((it) => {
       if (it.type === "gap") return `<div class="gap"></div>`;
       if (it.type === "mark") return mark(it.l, i, it.j);
-      const k = SPOKEN.has(it.type) ? ` data-k="${voiceLines.push(speechWords(it.text)) - 1}"`
-        : it.cue ? ` data-cue="${cues.push(it.cue) - 1}"` : "";
+      if (it.cue) return cueHtml(it);
+      const k = SPOKEN.has(it.type) ? ` data-k="${voiceLines.push(speechWords(it.text)) - 1}"` : "";
       return `<p class="${it.type}"${k}>${SPOKEN.has(it.type) ? lineHtml(it, i) : esc(it.text)}</p>`;
     }).join("");
     return `<section class="section" data-i="${i}"><h2 class="title"><span>${esc(s.title)}</span><span class="time">${esc(s.time)}</span></h2>${links}${qls}${items}</section>`;
@@ -696,18 +707,22 @@ function updateCues(y) {
   cueTimer = setTimeout(() => { if (cueAbove?.has(send)) sendCue(cues[send]); }, CUE_SETTLE_MS);
 }
 
+// Each cue sent shows a short note by the reading line: switched, refused or not reached.
 async function sendCue(cue) {
   try {
     const { ok, body } = await camframeCall("cue", cue);
     if (!camframe.on) return;
     const note = ok ? "" : String(body.error || "");
+    showToast(cueReport(ok ? "sent" : "refused", cue, note), ok ? "ok" : "problem");
     // Not connected yet (looking, or back after "not found"): the status check says Connected
     // once it has the Scenes, instead of "No saved Scenes" first.
     if (camframe.state !== "on") { camframe.note = note; checkCamframe(); return; }
     setCamframe({ state: "on", note });
   } catch {
     // A failed cue is news whatever status check is still running.
-    if (camframe.on) setCamframe({ state: "lost" });
+    if (!camframe.on) return;
+    setCamframe({ state: "lost" });
+    showToast(cueReport("unreached", cue), "problem");
   }
 }
 
@@ -729,7 +744,7 @@ function setCamframeOn(on) {
   camframe.seq++;
   if (on) store.set(CAMFRAME_KEY, "on"); else store.del(CAMFRAME_KEY);
   clearInterval(camframe.timer);
-  if (!on) { setCamframe({ state: "off", scenes: [], note: "" }); return; }
+  if (!on) { hideToast(); setCamframe({ state: "off", scenes: [], note: "" }); return; }
   setCamframe({ state: "looking", note: "" });
   checkCamframe();
   camframe.timer = setInterval(() => { if (document.visibilityState === "visible") checkCamframe(); }, CAMFRAME_CHECK_MS);
@@ -847,6 +862,23 @@ function setStatus(t) {
 function showAlert(t) {
   alertEl.hidden = !t;
   $(".alert-text").textContent = t;
+}
+
+// A short note by the reading line (a camera cue switched, refused or not
+// reached), read out once through the status line. It fades away by itself.
+const TOAST_MS = 4000;
+let toastTimer = 0;
+function showToast(text, kind) {
+  clearTimeout(toastTimer);
+  toastEl.dataset.kind = kind;
+  toastText.textContent = text;
+  toastEl.dataset.show = "true";
+  setStatus(text);
+  toastTimer = setTimeout(hideToast, TOAST_MS);
+}
+function hideToast() {
+  clearTimeout(toastTimer);
+  delete toastEl.dataset.show;
 }
 
 // Once per page: a link would have opened by itself, but no main screen is connected.

@@ -102,7 +102,9 @@ If you use CamFrame (the camera window app), the prompter can switch its view fo
 - The cue goes to CamFrame when its line reaches the reading line, whether you scroll by hand, use auto-scroll, Follow my voice or jump sections. It goes once per pass: scroll back above it and read it again, and it goes again. Jumping past several cues sends only the last one.
 - Cue lines count towards the line length, so with the "lex" preset keep them to five words: `[Face small, bottom right]` or `[Share screen. Face small.]`, not `[Share screen. Face small, bottom right.]`.
 - The checker warns about a cue it can't read, such as `[Face small, middle]` or `[Face big]`. A reminder that starts with "Face" but isn't a cue (like `[Face the camera]`) gets the same warning; reword it if you see one.
-- If CamFrame isn't running, nothing happens: scrolling never waits, and Settings shows "CamFrame not found".
+- A cue line shows a small camera mark and what the camera does, like **Camera: face small · Share screen.**, so you can see where a switch happens, with the link on or off.
+- With the link on, a short note appears for a few seconds just above the reading line, at the right, each time a cue goes out: "CamFrame switched to face small.", CamFrame's reason if it refused (for example a Scene it doesn't have), or "Could not reach CamFrame" if it isn't open or your browser blocked the call. With the link off there is no note.
+- If CamFrame isn't running, scrolling never waits, and Settings shows "CamFrame not found".
 
 The full format, the two style presets (`lex`, strict, and `default`, softer) and the checker live in [`src/core.mjs`](src/core.mjs). The page, the checker and the MCP server all use that one file. The `get_format` tool shows the same rules, and the page's demo ("Try the demo") teaches them by example.
 

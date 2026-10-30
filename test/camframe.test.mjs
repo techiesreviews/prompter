@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CAMFRAME_ORIGIN, camframeCall, cueCrossing } from "../src/camframe.mjs";
+import { CAMFRAME_ORIGIN, camframeCall, cueCrossing, cueReport, cueRest, cueWords } from "../src/camframe.mjs";
 import { check, classify, faceCue, FACE_SPOTS, formatGuide, parse } from "../src/core.mjs";
 
 test("faceCue: Lex's existing cue lines still work", () => {
@@ -101,4 +101,23 @@ test("camframeCall: talks only to CamFrame on this computer and sends only the c
   await assert.rejects(camframeCall("status"), /Not CamFrame/);
   globalThis.fetch = async () => { throw new TypeError("Failed to fetch"); };
   await assert.rejects(camframeCall("cue", { size: "full" }), /Failed to fetch/);
+});
+
+test("cue lines in plain words: what the camera does, and the line's other words", () => {
+  assert.equal(cueWords({ size: "full" }), "face full");
+  assert.equal(cueWords({ size: "small" }), "face small");
+  assert.equal(cueWords({ size: "small", position: "bottom-right" }), "face small, bottom right");
+  assert.equal(cueWords({ size: "small", scene: "Talking head" }), "Scene “Talking head”");
+  assert.equal(cueRest("Share screen. Face small."), "Share screen.");
+  assert.equal(cueRest("Stop share. Face full."), "Stop share.");
+  assert.equal(cueRest("Face small, bottom right"), "");
+  assert.equal(cueRest("Show code. FACE: Demo. Then smile!"), "Show code. Then smile!");
+});
+
+test("cueReport says what happened to a cue at the reading line", () => {
+  const cue = { size: "small", position: "bottom-right" };
+  assert.equal(cueReport("sent", cue), "CamFrame switched to face small, bottom right.");
+  assert.equal(cueReport("refused", { size: "small", scene: "Demo" }, 'CamFrame has no Scene named "Demo".'), 'CamFrame did not switch to Scene “Demo”: CamFrame has no Scene named "Demo".');
+  assert.equal(cueReport("refused", { size: "full" }), "CamFrame did not switch to face full: it refused the cue.");
+  assert.match(cueReport("unreached", cue), /^Could not reach CamFrame to switch to face small, bottom right\. .*browser may have blocked it/);
 });

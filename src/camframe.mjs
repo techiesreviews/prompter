@@ -39,3 +39,27 @@ export function cueCrossing(before, now) {
   for (const k of now) if (!before.has(k) && k > send) send = k;
   return { above: new Set(now), send };
 }
+
+/** A cue in plain words: "face full", "face small, bottom right" or "Scene “Demo”". */
+export function cueWords(cue) {
+  if (cue.scene) return `Scene “${cue.scene}”`;
+  return cue.position ? `face small, ${cue.position.replace(/-/g, " ")}` : `face ${cue.size}`;
+}
+
+/** A cue line's other words, without its Face sentence: "Share screen. Face small." → "Share screen." */
+export function cueRest(note) {
+  return (String(note ?? "").match(/[^.;!?]+[.;!?]*/g) || [])
+    .filter((s) => !/^\s*face\b/i.test(s)).join("").trim();
+}
+
+/**
+ * What happened to a cue sent at the reading line, in plain words: `sent`
+ * (CamFrame switched), `refused` (CamFrame said no, with its reason) or
+ * `unreached` (CamFrame not found, or the browser blocked the call).
+ */
+export function cueReport(kind, cue, reason = "") {
+  const what = cueWords(cue);
+  if (kind === "sent") return `CamFrame switched to ${what}.`;
+  if (kind === "refused") return `CamFrame did not switch to ${what}: ${reason || "it refused the cue."}`;
+  return `Could not reach CamFrame to switch to ${what}. Is it open? Your browser may have blocked it; see Settings.`;
+}

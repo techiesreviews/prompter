@@ -166,6 +166,9 @@ function fakeCamFrame() {
       res.writeHead(204, { ...cors, "Access-Control-Allow-Methods": "GET, POST", "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Allow-Private-Network": "true" }).end();
       return;
     }
+    // A browser's call from the page always carries Origin; other programs on this computer
+    // that probe the port (seen: a Node tool asking for / every 15 s) are answered but not counted.
+    if (!req.headers.origin) { res.writeHead(404).end(); return; }
     let body = "";
     req.on("data", (c) => { body += c; });
     req.on("end", () => {
@@ -1656,11 +1659,28 @@ export async function run({ browser, base, mode, dist, out }) {
   await C.goto(await makeLink(CUE_SCRIPT, "lex", base));
   await C.locator(".section").first().waitFor();
   assert.equal(await C.locator("[data-cue]").count(), 4, "each cue line is marked");
-  assert.deepEqual(await C.locator("[data-cue]").allTextContents(), ["Share screen. Face small.", "Face small, bottom right", "Stop share. Face full.", "Face: Demo"], "cue lines look like any reminder");
+  assert.deepEqual(await C.locator("[data-cue]").allTextContents(), ["Camera: face small · Share screen.", "Camera: face small, bottom right", "Camera: face full · Stop share.", "Camera: Scene “Demo”"], "cue lines say what the camera does, then their other words");
+  assert.equal(await C.locator("[data-cue] svg.cue-icon").count(), 4, "each with a camera mark");
   const passCue = (n, dy = 0) => passCueOn(C, n, dy);
+  const toast = C.locator(".toast");
+  const toastShown = () => toast.evaluate((el) => el.dataset.show === "true" && el.querySelector(".toast-text").textContent);
+  await passCue(0, -200);
+  await C.mouse.wheel(0, 1);
+  await C.waitForTimeout(200);
+  await shot(C, "camframe-cue-lines-desktop");
+  const cueLook = await C.locator('[data-cue="0"]').evaluate((el) => {
+    const what = getComputedStyle(el.querySelector(".cue-what"));
+    const rest = getComputedStyle(el.querySelector(".cue-rest"));
+    return { what: what.color, weight: what.fontWeight, rest: rest.color, size: parseFloat(getComputedStyle(el).fontSize) / parseFloat(getComputedStyle(el.closest(".script")).fontSize) };
+  });
+  assert.equal(cueLook.what, "oklch(0.975 0.012 282)", "in the active section the camera words are as bright as the spoken lines");
+  assert.equal(cueLook.weight, "700");
+  assert.equal(cueLook.rest, "oklch(0.763 0.027 282)", "the line's other words stay muted");
+  assert.ok(cueLook.size > 0.5, "a little larger than an ordinary reminder (half the text size)");
   await passCue(0);
   await C.waitForTimeout(700);
   assert.deepEqual(cam.seen, [], "off by default: nothing is sent, not even a status check");
+  assert.equal(await toastShown(), false, "with the link off a cue shows no note: the cue line itself is the reminder");
   assert.equal(await C.evaluate(() => localStorage.getItem("prompter-camframe")), null);
   await C.evaluate(() => window.scrollTo(0, 0));
   await (await dock(C, ".settings-btn")).click();
@@ -1718,6 +1738,21 @@ export async function run({ browser, base, mode, dist, out }) {
   await passCue(0);
   await C.waitForTimeout(700);
   assert.deepEqual(cam.cues(), [{ size: "small" }]);
+  // A short note by the reading line says it worked, read out once through the status line.
+  assert.equal(await toastShown(), "CamFrame switched to face small.");
+  assert.equal(await toast.getAttribute("aria-hidden"), "true", "the note itself is not read out a second time");
+  assert.equal(await C.locator(".status").textContent(), "CamFrame switched to face small.");
+  const toastBox = await toast.boundingBox();
+  const lineTop = await C.locator(".reading-line").evaluate((el) => el.getBoundingClientRect().top);
+  assert.ok(toastBox.y + toastBox.height <= lineTop && toastBox.y + toastBox.height > lineTop - 40, "just above the reading line");
+  assert.ok(toastBox.x + toastBox.width <= 1366 - 8, "at the right, inside the window");
+  assert.equal(await toast.evaluate((el) => getComputedStyle(el).pointerEvents), "none", "never in the way of a click");
+  await shot(C, "camframe-toast-sent-desktop");
+  await C.waitForFunction(() => !document.querySelector(".toast").dataset.show, null, { timeout: 6000 });
+  await C.waitForFunction(() => getComputedStyle(document.querySelector(".toast")).opacity === "0", null, { timeout: 2000 });
+  await C.emulateMedia({ reducedMotion: "reduce" });
+  assert.doesNotMatch(await toast.evaluate((el) => getComputedStyle(el).transitionProperty), /translate/, "reduced motion: a plain fade, no movement");
+  await C.emulateMedia({ reducedMotion: "no-preference" });
   await passCue(0, 40);
   await C.waitForTimeout(500);
   assert.deepEqual(cam.cues(), [{ size: "small" }], "reading on past it sends nothing again");
@@ -1743,6 +1778,8 @@ export async function run({ browser, base, mode, dist, out }) {
   await C.waitForFunction(() => document.querySelector(".camframe-status").textContent.includes("Last cue:"));
   assert.deepEqual(cam.cues().slice(4), [{ size: "small", scene: "Demo" }]);
   assert.match(await C.locator("#settings .camframe-status").textContent(), /^Connected to CamFrame\. .* Last cue: CamFrame has no Scene named "Demo"\.$/);
+  assert.equal(await toastShown(), 'CamFrame did not switch to Scene “Demo”: CamFrame has no Scene named "Demo".');
+  await shot(C, "camframe-toast-refused-desktop");
   assert.equal(await C.locator(".camframe").getAttribute("data-state"), "on", "a refused cue keeps the link on");
   cam.answer = null;
   assert.ok(cam.seen.every((r) => r.origin === new URL(base).origin), "the page's own origin, nothing else");
@@ -1815,8 +1852,15 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await C.locator("#settings .camframe-status").textContent(), "CamFrame not found. Open CamFrame and turn on Prompter link in its Scenes settings.");
   assert.equal(await C.locator("#settings .camframe-hint").isVisible(), true);
   await shot(C, "camframe-lost-desktop");
-  // CamFrame back with other Scenes: the next cue that gets through checks again and lists them.
+  // A cue while CamFrame is gone: the note says it could not be reached.
   await C.keyboard.press("Escape");
+  await passCue(0, -120);
+  await C.waitForTimeout(400);
+  await passCue(0);
+  await C.waitForFunction(() => document.querySelector(".toast").dataset.show === "true" && document.querySelector(".toast-text").textContent.startsWith("Could not reach CamFrame"));
+  assert.equal(await toastShown(), "Could not reach CamFrame to switch to face small. Is it open? Your browser may have blocked it; see Settings.");
+  await shot(C, "camframe-toast-unreached-desktop");
+  // CamFrame back with other Scenes: the next cue that gets through checks again and lists them.
   cam.scenes = ["Intro", "Outro"];
   await cam.start();
   const statusBeforeBack = cam.seen.filter((r) => r.path === "/camframe/status").length;
@@ -1831,9 +1875,10 @@ export async function run({ browser, base, mode, dist, out }) {
   await C.locator("#settings:popover-open").waitFor();
   await C.locator("#settings .camframe-on").uncheck();
   assert.equal(await C.locator("#settings .camframe-hint").isVisible(), false);
+  assert.equal(await toastShown(), false, "turning the link off clears the note");
   assert.equal(await C.evaluate(() => localStorage.getItem("prompter-camframe")), null);
   await camCtx.close();
-  ok("CamFrame link: off by default (no calls at all); on in Settings it shows CamFrame's Scenes and a dot on Settings; the status line is not set again when a check gives the same answer; a cue line sends its cue to 127.0.0.1:47833 once per pass down (by hand, a section jump sending only the last cue it passed, auto-scroll, and Follow my voice), again after scrolling back above it, never the script; a refused cue shows CamFrame's reason and keeps the link on; a reload with the link remembered connects by itself and sends nothing for cues already above; CamFrame gone shows not found with the permission hint", reloadNote);
+  ok("CamFrame link: cue lines read as a camera instruction (a camera mark, \"Camera: face small\" bright and bold, the line's other words muted) whether or not the link is on; off by default (no calls at all, no note); on in Settings it shows CamFrame's Scenes and a dot on Settings; the status line is not set again when a check gives the same answer; a cue line sends its cue to 127.0.0.1:47833 once per pass down (by hand, a section jump sending only the last cue it passed, auto-scroll, and Follow my voice), again after scrolling back above it, never the script; a refused cue shows CamFrame's reason and keeps the link on; a reload with the link remembered connects by itself and sends nothing for cues already above; CamFrame gone shows not found with the permission hint; each cue sent shows a short note just above the reading line (switched, CamFrame's reason, could not reach CamFrame), read out once through the status line, that fades by itself (no movement with reduced motion) and never takes clicks", reloadNote);
 
   // ---- Offline (file://) ----
   const offline = await browser.newContext(DESKTOP);
