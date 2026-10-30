@@ -414,7 +414,7 @@ test("the demo script follows the lex preset and starts with a PREP checklist", 
   assert.ok(links.some((l) => !l.inline), "and a top link");
   const cues = parse(DEMO_SCRIPT).flatMap((s) => s.entries).filter((e) => e.cue);
   assert.deepEqual(cues.map((e) => e.cue), [
-    { size: "small", position: "bottom-right" }, { size: "full" },
     { size: "small", position: "top-left" }, { size: "full" },
+    { size: "small", position: "bottom-right" }, { size: "full" },
   ], "and camera cues for CamFrame");
 });

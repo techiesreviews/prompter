@@ -137,8 +137,8 @@ Thanks for watching.
 /**
  * The demo the page opens from its start screen ("Try the demo"): how to be a
  * better speaker with a prompter. It follows the "lex" preset and teaches the
- * format by example, including a link that opens itself, one inside a
- * sentence (section 4) and camera cues for CamFrame (sections 4 and 5).
+ * format by example, including camera cues for CamFrame (section 4, then used in section 5),
+ * a link that opens itself and one inside a sentence (section 5).
  */
 export const DEMO_SCRIPT = `### **PREP**
 
@@ -208,12 +208,31 @@ Breathe between sections.
 Let the scroll follow you.
 Try Follow my voice.
 
+Next: your camera on cue.
+Now: camera lines explained.
+
+---
+
+### **4 · CAMERA ON CUE · 05:00**
+
+QL: How does the camera follow?
+
+[Turn on the CamFrame link.]
+
+Camera lines switch your view.
+CamFrame runs on your computer.
+[Face small, top left]
+Your face moves top left.
+[Face full]
+And the camera fills again.
+Without CamFrame, they're reminders.
+
 Next: show your screen.
 Now: links open themselves.
 
 ---
 
-### **4 · SHOW, DON'T TELL · 05:00**
+### **5 · SHOW, DON'T TELL · 06:00**
 
 QL: When should viewers see it?
 
@@ -227,25 +246,6 @@ Exactly when you reach it.
 Or [mid-sentence, like this](https://en.wikipedia.org/wiki/Hyperlink).
 [Face full]
 Back to your full face.
-
-Next: the camera on cue.
-Now: camera lines explained.
-
----
-
-### **5 · CAMERA ON CUE · 06:30**
-
-QL: How does the camera follow?
-
-[Turn on the CamFrame link.]
-
-Camera lines switch your view.
-CamFrame runs on your computer.
-[Face small, top left]
-Watch your face move up.
-[Face full]
-And the camera fills again.
-Without CamFrame, they're reminders.
 
 Next: practise once.
 Now: rehearse before recording.
