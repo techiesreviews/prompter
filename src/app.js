@@ -107,6 +107,9 @@ let voiceState = followStart(-1); // where the voice is, after the final results
 let voiceFinal = 0; // speech results already final and followed
 let recognition = null;
 let voiceRestarts = 0;
+let voiceNetFails = 0; // network errors in a row with no words recognised between them
+let voiceWait = -1; // set by a network error: how long onend waits before starting again
+let voiceRetryTimer = 0; // that wait, while it runs
 let resumeAuto = false;
 let cues = []; // camera cues ({ size, position?, scene? }) by data-cue
 let cueAbove = null; // cue numbers above the reading line; null until the first look after render
@@ -744,7 +747,7 @@ function setCamframeOn(on) {
   camframe.seq++;
   if (on) store.set(CAMFRAME_KEY, "on"); else store.del(CAMFRAME_KEY);
   clearInterval(camframe.timer);
-  if (!on) { hideToast(); setCamframe({ state: "off", scenes: [], note: "" }); return; }
+  if (!on) { hideToast("ok"); hideToast("problem"); setCamframe({ state: "off", scenes: [], note: "" }); return; }
   setCamframe({ state: "looking", note: "" });
   checkCamframe();
   camframe.timer = setInterval(() => { if (document.visibilityState === "visible") checkCamframe(); }, CAMFRAME_CHECK_MS);
@@ -865,18 +868,21 @@ function showAlert(t) {
 }
 
 // A short note by the reading line (a camera cue switched, refused or not
-// reached), read out once through the status line. It fades away by itself.
+// reached; reconnecting to speech), read out once through the status line. It
+// fades away by itself, or with `stay` when hideToast(kind) is called.
 const TOAST_MS = 4000;
 let toastTimer = 0;
-function showToast(text, kind) {
+function showToast(text, kind, stay = false) {
   clearTimeout(toastTimer);
   toastEl.dataset.kind = kind;
   toastText.textContent = text;
   toastEl.dataset.show = "true";
   setStatus(text);
-  toastTimer = setTimeout(hideToast, TOAST_MS);
+  if (!stay) toastTimer = setTimeout(hideToast, TOAST_MS);
 }
-function hideToast() {
+// Without `kind` any note goes; with it, only a note of that kind.
+function hideToast(kind) {
+  if (kind && toastEl.dataset.kind !== kind) return;
   clearTimeout(toastTimer);
   delete toastEl.dataset.show;
 }
@@ -1061,6 +1067,8 @@ function startVoice() {
   }
   voiceOn = true;
   voiceRestarts = 0;
+  voiceNetFails = 0;
+  voiceWait = -1;
   voiceLinkKey = "";
   voiceLinkAt = -1;
   voiceFinal = 0;
@@ -1075,6 +1083,11 @@ function stopVoice(message = "") {
   const r = recognition;
   recognition = null;
   voiceOn = false;
+  clearTimeout(voiceRetryTimer);
+  voiceRetryTimer = 0;
+  voiceWait = -1;
+  voiceNetFails = 0;
+  hideToast("voice");
   if (r) {
     r.onresult = r.onerror = r.onend = null;
     try { r.abort(); } catch { /* already stopped */ }
@@ -1089,6 +1102,7 @@ function stopVoice(message = "") {
 // are tried from there each time and dropped, so no word counts twice.
 function onVoiceResult(e) {
   voiceRestarts = 0;
+  if (voiceNetFails) { voiceNetFails = 0; hideToast("voice"); } // back: the speech service heard words
   const words = (i) => speechWords(e.results[i][0].transcript);
   for (; voiceFinal < e.results.length && e.results[voiceFinal].isFinal; voiceFinal++) {
     voiceState = followWords(voiceLines, voiceState, words(voiceFinal));
@@ -1132,15 +1146,32 @@ const VOICE_ERRORS = {
   "language-not-supported": "The browser's speech service does not support your language. Follow my voice is off.",
 };
 
+// A network error (Edge's speech service drops now and then) keeps Follow my
+// voice on: onend starts again after a short, growing wait. Only several in a
+// row with no words between them turn it off, with the message.
 function onVoiceError(e) {
   if (e.error === "no-speech" || e.error === "aborted") return; // onend restarts
-  stopVoice(VOICE_ERRORS[e.error] || "Follow my voice stopped. Turn it on again to retry.");
+  const wait = speechRetryWait(e.error, voiceNetFails);
+  if (wait < 0) { stopVoice(VOICE_ERRORS[e.error] || "Follow my voice stopped. Turn it on again to retry."); return; }
+  if (!voiceNetFails++) showToast("Reconnecting to speech…", "voice", true); // read out once, not on every try
+  voiceWait = wait;
 }
 
 // Chrome ends a continuous session after a pause; start again while it is on.
+// After a network error the start waits; one start at a time, never two.
 function onVoiceEnd() {
-  if (!voiceOn || !recognition) return;
+  if (!voiceOn || !recognition || voiceRetryTimer) return;
+  if (voiceWait >= 0) {
+    voiceRetryTimer = setTimeout(() => { voiceRetryTimer = 0; restartVoice(); }, voiceWait);
+    voiceWait = -1;
+    return;
+  }
   if (++voiceRestarts > 5) { stopVoice("Follow my voice stopped hearing you. Turn it on again to retry."); return; }
+  restartVoice();
+}
+
+function restartVoice() {
+  if (!voiceOn || !recognition) return;
   voiceLinkAt = -1; // a new session numbers its results from 0 again
   voiceFinal = 0;
   try { recognition.start(); } catch { stopVoice("Follow my voice stopped. Turn it on again to retry."); }

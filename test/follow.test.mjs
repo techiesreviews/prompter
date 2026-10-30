@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DEMO_SCRIPT, parse } from "../src/core.mjs";
-import { commonWord, followStart, followWords, heardLink, sameWord, speechWords } from "../src/follow.mjs";
+import { commonWord, followStart, followWords, heardLink, sameWord, SPEECH_RETRY_MS, speechRetryWait, speechWords } from "../src/follow.mjs";
 
 const script = [
   "Writing scripts takes too long.",
@@ -168,4 +168,13 @@ test("a link inside a line: voice follow hears only its words, never the address
   assert.deepEqual(candidates.map((c) => c.label), ["the docs", "Plugin Check"]);
   assert.equal(heardLink(candidates, "and now run plugin check")?.l, 1);
   assert.equal(heardLink(candidates, "developer mozilla org"), null, "the address is not a label");
+});
+
+test("speechRetryWait: a network error waits a little longer each time in a row, then gives up", () => {
+  assert.deepEqual([0, 1, 2, 3, 4].map((n) => speechRetryWait("network", n)), SPEECH_RETRY_MS);
+  assert.deepEqual(SPEECH_RETRY_MS, [500, 1000, 2000, 4000, 8000]);
+  assert.equal(speechRetryWait("network", SPEECH_RETRY_MS.length), -1, "after five tries in a row it gives up");
+  for (const error of ["not-allowed", "service-not-allowed", "audio-capture", "language-not-supported", "bad-grammar"]) {
+    assert.equal(speechRetryWait(error, 0), -1, `${error} is not retried`);
+  }
 });

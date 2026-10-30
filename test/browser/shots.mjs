@@ -15,12 +15,22 @@ const DEMO_SECTIONS = parse(DEMO_SCRIPT).length;
 // Replaces the browser's speech recognition with one the test drives:
 // window.__speech.say("words") delivers a final result to the running
 // instance; say("wor", true) an interim one, replaced by the next result.
+// fail("network") fires error and then end, as browsers do. Like a real one,
+// start() while running throws InvalidStateError (counted in doubleStarts),
+// and each start is a new session whose results number from 0.
 const SPEECH_STUB = () => {
-  const state = { started: 0, aborted: 0, instance: null, results: [] };
+  const state = { started: 0, aborted: 0, doubleStarts: 0, startedAt: [], instance: null, results: [] };
   class FakeRecognition {
-    start() { state.started++; state.instance = this; }
-    stop() { this.onend?.(); }
-    abort() { state.aborted++; }
+    start() {
+      if (this.running) { state.doubleStarts++; throw new DOMException("already started", "InvalidStateError"); }
+      this.running = true;
+      state.started++;
+      state.startedAt.push(performance.now());
+      state.results = [];
+      state.instance = this;
+    }
+    stop() { this.running = false; this.onend?.(); }
+    abort() { this.running = false; state.aborted++; }
   }
   state.say = (text, interim = false) => {
     if (state.results.at(-1)?.isFinal === false) state.results.pop();
@@ -29,7 +39,13 @@ const SPEECH_STUB = () => {
     state.results.push(result);
     state.instance?.onresult?.({ results: state.results, resultIndex: state.results.length - 1 });
   };
-  state.fail = (error) => state.instance?.onerror?.({ error });
+  state.fail = (error) => {
+    const r = state.instance;
+    if (!r) return;
+    r.onerror?.({ error });
+    r.running = false;
+    r.onend?.();
+  };
   window.__speech = state;
   window.SpeechRecognition = FakeRecognition;
   delete window.webkitSpeechRecognition;
@@ -896,12 +912,56 @@ export async function run({ browser, base, mode, dist, out }) {
   await viaSettings(v, ".voice");
   assert.equal(await v.locator(".voice-notice").isHidden(), true);
   assert.equal(await v.evaluate(() => window.__speech.started), 1);
+  // Edge's speech service drops now and then: a network error keeps Follow my voice on, says
+  // Reconnecting to speech by the reading line (read out once) and starts again after a short wait.
+  const voiceNote = () => v.locator(".toast").evaluate((el) => el.dataset.show === "true" && el.dataset.kind === "voice" && el.querySelector(".toast-text").textContent);
+  const failAndRestart = async () => {
+    const n = await v.evaluate(() => { window.__speech.fail("network"); return window.__speech.started; });
+    await v.waitForFunction((k) => window.__speech.started === k + 1, n, { timeout: 10_000 });
+    return v.evaluate(() => { const t = window.__speech.startedAt; return t.at(-1) - t.at(-2); });
+  };
   await v.evaluate(() => window.__speech.fail("network"));
+  assert.equal(await v.locator(".voice").getAttribute("aria-pressed"), "true", "a network error keeps Follow my voice on");
+  assert.equal(await voiceNote(), "Reconnecting to speech…");
+  assert.equal(await v.locator(".status").textContent(), "Reconnecting to speech…");
+  assert.equal(await v.locator(".note-row.alert").isHidden(), true, "no error message yet");
+  assert.equal(await v.locator(".toast .i-mic").isVisible(), true, "with a microphone mark");
+  await shot(v, "voice-reconnecting-desktop");
+  await v.waitForFunction(() => window.__speech.started === 2, null, { timeout: 2000 });
+  const firstWait = await v.evaluate(() => window.__speech.startedAt[1] - window.__speech.startedAt[0]);
+  assert.ok(firstWait >= 450 && firstWait < 1000, `started again after about half a second (${Math.round(firstWait)} ms)`);
+  await v.evaluate(() => window.__speech.say("hi"));
+  assert.equal(await voiceNote(), false, "words heard again: the note goes");
+  // Words reset the count: three errors in a row wait longer each time; after words the next wait is short again.
+  const waits = [];
+  for (let i = 0; i < 3; i++) waits.push(await failAndRestart());
+  assert.ok(waits[0] < waits[1] && waits[1] < waits[2] && waits[2] >= 1900, `growing waits: ${waits.map(Math.round).join(", ")} ms`);
+  await v.evaluate(() => window.__speech.say("hi"));
+  const afterWords = await failAndRestart();
+  assert.ok(afterWords < 1000, `after words the wait starts short again (${Math.round(afterWords)} ms)`);
+  // A browser that never reaches its speech service (Vivaldi, Brave) still gives up, with the message.
+  await v.evaluate(() => {
+    window.__reconnectSaid = 0;
+    let last = document.querySelector(".status").textContent;
+    new MutationObserver(() => {
+      const now = document.querySelector(".status").textContent;
+      if (now !== last && now === "Reconnecting to speech…") window.__reconnectSaid++;
+      last = now;
+    }).observe(document.querySelector(".status"), { childList: true, characterData: true, subtree: true });
+  });
+  for (let i = 0; i < 4; i++) await failAndRestart();
+  assert.equal(await v.locator(".voice").getAttribute("aria-pressed"), "true", "still on after five network errors in a row");
+  await v.evaluate(() => window.__speech.fail("network"));
+  await v.locator(".note-row.alert:not([hidden])").waitFor();
   assert.match(await v.locator(".alert-text").textContent(), /could not reach its speech service\. Some browsers \(like Vivaldi or Brave\) cannot use it; try Chrome or Edge\./);
   assert.equal(await v.locator(".voice").getAttribute("aria-pressed"), "false");
+  assert.equal(await voiceNote(), false, "the reconnecting note goes with it");
+  assert.equal(await v.evaluate(() => window.__reconnectSaid), 0, "Reconnecting is not read out again on every try");
+  await v.waitForTimeout(1200);
+  assert.deepEqual(await v.evaluate(() => [window.__speech.started, window.__speech.doubleStarts]), [10, 0], "no start after giving up, and never two at once");
   await v.locator('.note-row.alert [data-action="dismiss"]').click();
   await voiced.close();
-  ok("Follow my voice: a big mic button in Settings (orange when on) with the API, notice before first use, follows line by line to the reading line (white current line, dimmer lines after it), interim and later-line words never jump, skips QL, picks up after scrolling by hand, pauses auto-scroll, handles a blocked mic and a browser without the speech service, remembers consent");
+  ok("Follow my voice: a big mic button in Settings (orange when on) with the API, notice before first use, follows line by line to the reading line (white current line, dimmer lines after it), interim and later-line words never jump, skips QL, picks up after scrolling by hand, pauses auto-scroll, handles a blocked mic, keeps going through a network error (Reconnecting to speech by the reading line, read out once; started again after 0.5, 1, 2 s…, never two starts at once; heard words reset the count) and gives up with the message only after five in a row (a browser without the speech service), remembers consent");
 
   // ---- Links open at the point where they are talked about ----
   const inlineLink = await makeLink(INLINE_SCRIPT, "lex", base);
