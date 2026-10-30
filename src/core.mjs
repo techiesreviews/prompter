@@ -137,8 +137,8 @@ Thanks for watching.
 /**
  * The demo the page opens from its start screen ("Try the demo"): how to be a
  * better speaker with a prompter. It follows the "lex" preset and teaches the
- * format by example, including a link that opens itself and one inside a
- * sentence (section 4).
+ * format by example, including a link that opens itself, one inside a
+ * sentence (section 4) and camera cues for CamFrame (sections 4 and 5).
  */
 export const DEMO_SCRIPT = `### **PREP**
 
@@ -217,19 +217,42 @@ Now: links open themselves.
 
 QL: When should viewers see it?
 
+[Face small, bottom right]
+Your camera makes room.
 Put links where you speak.
 Like this one, right now:
 - Teleprompter: https://en.wikipedia.org/wiki/Teleprompter
 It opens on your screen.
 Exactly when you reach it.
 Or [mid-sentence, like this](https://en.wikipedia.org/wiki/Hyperlink).
+[Face full]
+Back to your full face.
+
+Next: the camera on cue.
+Now: camera lines explained.
+
+---
+
+### **5 · CAMERA ON CUE · 06:30**
+
+QL: How does the camera follow?
+
+[Turn on the CamFrame link.]
+
+Camera lines switch your view.
+CamFrame runs on your computer.
+[Face small, top left]
+Watch your face move up.
+[Face full]
+And the camera fills again.
+Without CamFrame, they're reminders.
 
 Next: practise once.
 Now: rehearse before recording.
 
 ---
 
-### **5 · PRACTISE AND RECORD · 06:30**
+### **6 · PRACTISE AND RECORD · 07:30**
 
 QL: What makes it feel natural?
 

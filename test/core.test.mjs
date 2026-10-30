@@ -412,4 +412,9 @@ test("the demo script follows the lex preset and starts with a PREP checklist", 
   assert.equal(links.filter((l) => l.inline && !l.inText).length, 1, "the demo shows one inline link on its own line");
   assert.equal(links.filter((l) => l.inText).length, 1, "and one inside a sentence");
   assert.ok(links.some((l) => !l.inline), "and a top link");
+  const cues = parse(DEMO_SCRIPT).flatMap((s) => s.entries).filter((e) => e.cue);
+  assert.deepEqual(cues.map((e) => e.cue), [
+    { size: "small", position: "bottom-right" }, { size: "full" },
+    { size: "small", position: "top-left" }, { size: "full" },
+  ], "and camera cues for CamFrame");
 });
