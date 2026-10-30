@@ -594,7 +594,16 @@ export async function run({ browser, base, mode, dist, out }) {
     return [hit.closest(".range-value") ? "value" : hit.id, edge.closest(".range-value") !== null];
   });
   assert.deepEqual(await hitAt(page, "label:first-child"), ["size", false], "a press on the name lands on the slider");
-  assert.deepEqual((await hitAt(page, ".range-value")), ["value", true], "the value (to the box's edge) takes presses for typing");
+  assert.deepEqual(await hitAt(page, ".range-value"), ["value", true], "the value (to the box's edge) takes presses for typing");
+  const nameBox = await page.locator("#settings .size-field label:first-child").boundingBox();
+  await page.mouse.click(nameBox.x + nameBox.width / 2, nameBox.y + nameBox.height / 2);
+  const pressed = [await page.locator(".size").inputValue(), await page.locator(".size-val").inputValue()];
+  assert.ok(pressed[0] === pressed[1] && Number(pressed[0]) < 70, `a press on the name moves the fill there: ${pressed}`);
+  const valueBox = await page.locator("#settings .size-field .range-value").boundingBox();
+  await page.mouse.click(valueBox.x + valueBox.width - 3, valueBox.y + 3);
+  assert.deepEqual([await page.evaluate(() => document.activeElement.className), await page.locator(".size").inputValue()], ["size-val", pressed[0]], "a press at the value's corner focuses it for typing; the slider stays");
+  await page.locator(".size").fill("70");
+  await page.locator(".size").evaluate((el) => el.blur());
   const grip = (p) => p.locator("#settings .size-field").evaluate((el) => [getComputedStyle(el).getPropertyValue("--rf-grip-size").trim(), getComputedStyle(el).getPropertyValue("--rf-grip-now").includes("color-mix")]);
   await page.locator("#settings legend").hover();
   assert.deepEqual(await grip(page), ["3px 34%", true], "faint grip at rest");

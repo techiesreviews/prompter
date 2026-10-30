@@ -118,6 +118,8 @@ test("a range field's value stays AA on its patch, over the fill or the track", 
   const ui = readFileSync(new URL("../src/ui/range-field.css", import.meta.url), "utf8");
   const mix = ui.match(/--rf-value-patch:\s*color-mix\(in oklch, var\(--rf-bg\) ([\d.]+)%, transparent\)/);
   assert.ok(mix, "--rf-value-patch is the page colour (--rf-bg) at some alpha");
+  assert.match(css, /\.range-field \{[^}]*--rf-bg: var\(--bg\);[^}]*--rf-fill: var\(--chip\);/, "the page's range fields use --bg and --chip");
+  assert.doesNotMatch(css, /--rf-value-patch/, "the page keeps the component's patch");
   const alpha = Number(mix[1]) / 100;
   const patch = gamma(tokens.bg);
   for (const under of ["chip", "bg"]) {
