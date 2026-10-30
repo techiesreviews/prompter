@@ -653,19 +653,20 @@ export async function run({ browser, base, mode, dist, out }) {
   ok("play (orange) toggles auto-scroll, Space on it toggles once; the clock starts on the first press and restarts from 00:00 on the next (tooltip says so), and still turns late; tooltips on hover");
 
   // Settings: text size, scroll speed and width (remembered after a reload), then Follow my
-  // voice (only with the speech API) and the main screen, then the CamFrame link (off).
+  // voice (only with the speech API), the main screen and the CamFrame link (off).
   await (await dock(page, ".settings-btn")).click();
   await popAbove(page, "#settings", ".settings-btn", "desktop Settings");
   assert.deepEqual(await page.locator("#settings").evaluate((el) => [...el.querySelectorAll(".setting")].map((row) => row.querySelector("legend, label").textContent.trim())),
-    ["Text size", "Scroll speed", "Width", "CamFrame link"]);
-  assert.equal(await page.locator("#settings .camframe-on").isChecked(), false, "the CamFrame link is off by default");
-  // Follow my voice and the main screen: two big buttons side by side (icons only).
+    ["Text size", "Scroll speed", "Width"]);
+  assert.equal(await page.locator("#settings .camframe").getAttribute("aria-pressed"), "false", "the CamFrame link is off by default");
+  // Follow my voice, the main screen and the CamFrame link: big buttons side by side (icons only).
   const bigButtons = (p) => p.locator("#settings .big-toggle:not([hidden])").evaluateAll((els) => els.map((el) => [el.getAttribute("aria-label"), el.innerText.trim()]));
-  assert.deepEqual(await bigButtons(page), [["Connect main screen", ""]], "icons only; no Follow my voice without the speech API; the main screen's button");
-  assert.equal(await page.locator("#settings").locator("input, select, button, textarea").count(), 10, "two sliders with their value boxes, three width choices, the voice and main screen buttons, the CamFrame link switch, nothing else");
+  assert.deepEqual(await bigButtons(page), [["Connect main screen", ""], ["CamFrame link: off", ""]], "icons only; no Follow my voice without the speech API; the main screen's and CamFrame's buttons");
+  assert.equal(await page.locator("#settings").locator("input, select, button, textarea").count(), 10, "two sliders with their value boxes, three width choices, the voice, main screen and CamFrame buttons, nothing else");
+  assert.equal(await page.locator("#settings .camframe-status, #settings .check-row").count(), 0, "no CamFrame status text in Settings");
   const screenBox = await page.locator("#settings .screen").boundingBox();
   const rowBox = await page.locator("#settings .big-toggles").boundingBox();
-  assert.ok(Math.abs(screenBox.width - rowBox.width) < 1, "alone, the main screen's button takes the whole row");
+  assert.ok(Math.abs(screenBox.width * 2 + 8 - rowBox.width) < 1.5, "without voice the main screen's and CamFrame's buttons share the row");
   const dockHeight = (await page.locator(".dock").boundingBox()).height;
   assert.ok(screenBox.height >= dockHeight && screenBox.height <= dockHeight + 24, `about as tall as the control bar: ${screenBox.height} vs ${dockHeight}`);
   assert.deepEqual(await page.locator("#settings .screen").evaluate((el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).color]), ["oklch(0.33 0.096 282)", "oklch(0.763 0.027 282)"], "not connected: quiet indigo");
@@ -847,9 +848,9 @@ export async function run({ browser, base, mode, dist, out }) {
   await (await dock(v, ".settings-btn")).click();
   await popAbove(v, "#settings", ".settings-btn", "Settings with voice on");
   assert.deepEqual(await v.locator("#settings .big-toggle").evaluateAll((els) => els.map((el) => [el.innerText.trim(), getComputedStyle(el).backgroundColor, getComputedStyle(el).color])),
-    [["", "oklch(0.33 0.096 282)", "oklch(0.7 0.19 32.3)"], ["", "oklch(0.33 0.096 282)", "oklch(0.763 0.027 282)"]], "icons only; on: an orange icon, off: a quiet one, on the same indigo button; side by side");
-  const [vb, sb] = await Promise.all([v.locator("#settings .voice").boundingBox(), v.locator("#settings .screen").boundingBox()]);
-  assert.ok(Math.abs(vb.y - sb.y) < 1 && Math.abs(vb.width - sb.width) < 1 && vb.x < sb.x, "two equal buttons side by side");
+    [["", "oklch(0.33 0.096 282)", "oklch(0.7 0.19 32.3)"], ["", "oklch(0.33 0.096 282)", "oklch(0.763 0.027 282)"], ["", "oklch(0.33 0.096 282)", "oklch(0.763 0.027 282)"]], "icons only; on: an orange icon, off: a quiet one, on the same indigo button; side by side");
+  const [vb, sb, cb] = await Promise.all([v.locator("#settings .voice").boundingBox(), v.locator("#settings .screen").boundingBox(), v.locator("#settings .camframe").boundingBox()]);
+  assert.ok(Math.abs(vb.y - sb.y) < 1 && Math.abs(sb.y - cb.y) < 1 && Math.abs(vb.width - sb.width) < 1 && Math.abs(sb.width - cb.width) < 1 && vb.x < sb.x && sb.x < cb.x, "three equal buttons side by side");
   await shot(v, "settings-voice-on-desktop");
   await v.evaluate(() => document.querySelector("#settings").hidePopover());
   assert.equal(await v.locator(".auto").getAttribute("aria-pressed"), "false", "auto-scroll pauses");
@@ -1568,8 +1569,8 @@ export async function run({ browser, base, mode, dist, out }) {
   await popAbove(m, "#settings", ".settings-btn", "mobile Settings");
   await noOverflow(m, "mobile Settings popover");
   await m.locator('#settings .seg label:has-text("Narrow")').click();
-  assert.deepEqual(await bigButtons(m), [["Follow my voice", ""], ["Connect main screen", ""]]);
-  for (const sel of ["#settings .voice", "#settings .screen", "#settings .size", "#settings .speed"]) {
+  assert.deepEqual(await bigButtons(m), [["Follow my voice", ""], ["Connect main screen", ""], ["CamFrame link: off", ""]]);
+  for (const sel of ["#settings .voice", "#settings .screen", "#settings .camframe", "#settings .size", "#settings .speed"]) {
     const box = await m.locator(sel).boundingBox();
     assert.ok(box.height >= 44 && box.x >= 0 && box.x + box.width <= 390, `${sel} fits a phone as a 44px target: ${JSON.stringify(box)}`);
   }
@@ -1748,31 +1749,51 @@ export async function run({ browser, base, mode, dist, out }) {
   await C.evaluate(() => window.scrollTo(0, 0));
   await (await dock(C, ".settings-btn")).click();
   await C.locator("#settings:popover-open").waitFor();
-  assert.equal(await C.locator("#settings .camframe-status").textContent(), "Switches your camera view in CamFrame at [Face …] cue lines.");
-  assert.equal(await C.locator("#settings .camframe-hint").isVisible(), false);
-  // It looks like the other settings: a 44px box in the sliders' well, its name, a dot and a switch.
-  const camRow = await C.locator("#settings .check-row").evaluate((row) => {
-    const field = document.querySelector("#settings .range-field");
-    const r = row.getBoundingClientRect();
-    return { height: Math.round(r.height), width: Math.round(r.width), fieldWidth: Math.round(field.getBoundingClientRect().width), bg: getComputedStyle(row).backgroundColor, fieldBg: getComputedStyle(field).backgroundColor,
-      radius: getComputedStyle(row).borderRadius, fieldRadius: getComputedStyle(field).borderRadius, role: row.querySelector("input").getAttribute("role"),
-      order: [...row.children].map((el) => el.className || el.textContent) };
+  // CamFrame's button sits with Follow my voice and the main screen, built like them; its name and
+  // hover title say how the link is doing (no status text on screen).
+  const camBtn = C.locator("#settings .big-toggle.camframe");
+  const camLook = () => camBtn.evaluate((el) => {
+    const cs = getComputedStyle(el);
+    const icon = [...el.querySelectorAll("svg")].find((svg) => getComputedStyle(svg).display !== "none");
+    return { state: el.dataset.state, pressed: el.getAttribute("aria-pressed"), label: el.getAttribute("aria-label"), title: el.title, color: cs.color,
+      icon: icon.getAttribute("class"), fill: getComputedStyle(icon.querySelector("rect, path")).fill, animation: getComputedStyle(icon).animationName,
+      glow: cs.boxShadow !== "none" && !cs.boxShadow.includes("inset 0px 0px 0px 1.5px") , ring: cs.boxShadow.includes("1.5px"), outline: cs.outlineStyle };
   });
-  assert.deepEqual(camRow, { height: 44, width: camRow.fieldWidth, fieldWidth: camRow.fieldWidth, bg: camRow.fieldBg, fieldBg: camRow.fieldBg, radius: camRow.fieldRadius, fieldRadius: camRow.fieldRadius, role: "switch", order: ["CamFrame link", "status-dot", "camframe-on"] });
-  await C.locator("#settings .camframe-on").check();
+  const camOff = await camLook();
+  assert.deepEqual([camOff.state, camOff.pressed, camOff.label, camOff.title, camOff.color, camOff.icon, camOff.fill, camOff.animation],
+    ["off", "false", "CamFrame link: off", "CamFrame link: off", "oklch(0.763 0.027 282)", "i-cam", "none", "none"], "off: a quiet outline camera, like the other off buttons");
+  const [camBox, screenBtnBox] = await Promise.all([camBtn.boundingBox(), C.locator("#settings .screen").boundingBox()]);
+  assert.ok(Math.abs(camBox.height - screenBtnBox.height) < 1 && Math.abs(camBox.width - screenBtnBox.width) < 1 && Math.abs(camBox.y - screenBtnBox.y) < 1, "the same size and row as the main screen's button");
+  // Turned on from the keyboard (Enter), as a button: blinking orange while it looks for CamFrame.
+  let holdFirst = true;
+  cam.answer = (path) => (path === "/camframe/status" && holdFirst ? { delay: 1500 } : null);
+  await camBtn.focus();
+  await C.keyboard.press("Enter");
+  await C.waitForTimeout(250); // the colour fade
+  const camLooking = await camLook();
+  assert.deepEqual([camLooking.state, camLooking.pressed, camLooking.label, camLooking.color, camLooking.icon, camLooking.fill, camLooking.animation],
+    ["looking", "true", "CamFrame link: looking for CamFrame", "oklch(0.7 0.19 32.3)", "i-cam", "none", "blink"], "looking: an orange outline camera that blinks");
+  await C.emulateMedia({ reducedMotion: "reduce" });
+  const camLookingStill = await camLook();
+  assert.deepEqual([camLookingStill.animation, camLookingStill.outline], ["none", "solid"], "reduced motion: no blinking (focused, so the focus ring shows)");
+  await C.evaluate(() => document.activeElement.blur());
+  assert.equal((await camLook()).outline, "dashed", "reduced motion: a dashed orange ring instead of blinking");
+  await shot(C, "camframe-looking-reduced-motion-desktop");
+  await C.emulateMedia({ reducedMotion: "no-preference" });
+  holdFirst = false;
   await C.waitForFunction(() => document.querySelector(".camframe").dataset.state === "on");
-  assert.equal(await C.locator("#settings .camframe-status").textContent(), "Connected to CamFrame. Scenes: Demo, Talking head.");
-  await C.waitForTimeout(300); // the switch's colour fade
-  assert.equal(await C.locator("#settings .camframe-on").evaluate((el) => getComputedStyle(el).backgroundColor), "oklch(0.65 0.227 32.3)", "the switch is orange when on");
+  await C.waitForTimeout(250);
+  const camOn = await camLook();
+  assert.deepEqual([camOn.pressed, camOn.label, camOn.title, camOn.color, camOn.icon, camOn.fill, camOn.animation, camOn.glow],
+    ["true", "CamFrame link: connected", "CamFrame link: connected", "oklch(0.7 0.19 32.3)", "i-cam", "oklch(0.7 0.19 32.3)", "none", true], "connected: a filled orange camera with a steady glow, no blinking");
+  assert.equal(await C.locator(".status").textContent(), "CamFrame link: connected.", "connected is read out once");
   assert.equal(await C.locator(".settings-btn").getAttribute("aria-label"), "Settings · CamFrame connected");
-  assert.equal(await C.locator("#settings .camframe .status-dot").evaluate((el) => getComputedStyle(el).backgroundColor), "oklch(0.8 0.15 155)", "a green dot when connected");
   await shot(C, "camframe-on-desktop");
-  // The status line is a live region: a check with the same answer must not touch it, or a
-  // screen reader hears it again on every check.
+  // A check with the same answer does not say it again.
   await C.evaluate(() => {
-    window.__camframeMutations = 0;
-    new MutationObserver((list) => { window.__camframeMutations += list.length; })
-      .observe(document.querySelector("#settings .camframe-status"), { childList: true, characterData: true, subtree: true });
+    window.__camframeSaid = 0;
+    new MutationObserver(() => { if (/CamFrame/.test(document.querySelector(".status").textContent)) window.__camframeSaid++; })
+      .observe(document.querySelector(".status"), { childList: true, characterData: true, subtree: true });
   });
   const statusChecks = () => cam.seen.filter((r) => r.path === "/camframe/status").length;
   for (let i = 0; i < 2; i++) {
@@ -1784,46 +1805,43 @@ export async function run({ browser, base, mode, dist, out }) {
     assert.ok(statusChecks() > checksBefore, "reopening Settings checks CamFrame again");
   }
   await C.waitForTimeout(200);
-  assert.equal(await C.evaluate(() => window.__camframeMutations), 0, "the same status text is not set again");
-  assert.equal(await C.locator("#settings .camframe-status").textContent(), "Connected to CamFrame. Scenes: Demo, Talking head.");
-  await C.keyboard.press("Escape");
+  assert.equal(await C.evaluate(() => window.__camframeSaid), 0, "the same state is not read out again on every check");
   assert.equal(await C.evaluate(() => localStorage.getItem("prompter-camframe")), "on", "remembered on this device");
-  // While still looking the permission hint stays hidden; an older check answering late is dropped.
-  let slowChecks = true;
+  // Space turns it off again (the same setting), and a click on again.
+  await camBtn.focus();
+  await C.keyboard.press(" ");
+  assert.deepEqual([(await camLook()).state, (await camLook()).pressed], ["off", "false"]);
+  assert.equal(await C.evaluate(() => localStorage.getItem("prompter-camframe")), null, "off is remembered too");
+  // An older check answering late is dropped: on, off and on again while CamFrame stops answering.
+  let slowFirst = true;
   cam.answer = (path) => {
     if (path !== "/camframe/status") return null;
-    return slowChecks ? { body: { app: "camframe", version: "test", scenes: ["Old"] }, delay: 1200 } : { body: { app: "camframe", version: "test", scenes: ["New"] } };
+    if (slowFirst) { slowFirst = false; return { delay: 1200 }; }
+    return { broken: true };
   };
-  await (await dock(C, ".settings-btn")).click();
-  await C.locator("#settings:popover-open").waitFor();
-  await C.locator("#settings .camframe-on").uncheck();
-  await C.locator("#settings .camframe-on").check();
-  assert.equal(await C.locator(".camframe").getAttribute("data-state"), "looking");
-  assert.equal(await C.locator("#settings .camframe-hint").isVisible(), false, "no permission hint while still looking");
-  slowChecks = false;
-  await C.locator("#settings .camframe-on").uncheck();
-  await C.locator("#settings .camframe-on").check();
-  await C.waitForFunction(() => document.querySelector(".camframe-status").textContent.includes("Scenes: New."));
-  await C.waitForTimeout(1400);
-  assert.equal(await C.locator("#settings .camframe-status").textContent(), "Connected to CamFrame. Scenes: New.", "the older, slower checks are dropped");
+  await camBtn.click();
+  await camBtn.click();
+  await camBtn.click();
+  await C.waitForTimeout(1500);
+  assert.equal(await camBtn.getAttribute("data-state"), "looking", "the older, slower answer is dropped; a first look that misses keeps looking");
+  cam.answer = null;
+  await C.waitForFunction(() => document.querySelector(".camframe").dataset.state === "on", null, { timeout: 4000 });
   // One missed check (Edge's calls to this computer fail now and then) is not "not found": it says
-  // reconnecting with an amber dot, checks again a second later and is connected again.
+  // reconnecting (blinking orange), checks again a second later and is connected again.
   let dropChecks = 1;
   cam.answer = (path) => (path === "/camframe/status" && dropChecks-- > 0 ? { broken: true } : null);
   await C.keyboard.press("Escape");
   await (await dock(C, ".settings-btn")).click();
   await C.locator("#settings:popover-open").waitFor();
   await C.waitForFunction(() => document.querySelector(".camframe").dataset.state !== "on", null, { timeout: 5000 });
-  assert.equal(await C.locator(".camframe").getAttribute("data-state"), "reconnecting", "one miss: reconnecting, not lost");
-  assert.equal(await C.locator("#settings .camframe-status").textContent(), "Reconnecting to CamFrame…");
-  assert.equal(await C.locator("#settings .camframe .status-dot").evaluate((el) => getComputedStyle(el).backgroundColor), "oklch(0.88 0.11 80)", "an amber dot while reconnecting");
-  assert.equal(await C.locator("#settings .camframe-hint").isVisible(), false, "no permission hint while reconnecting");
+  const camReconnecting = await camLook();
+  assert.deepEqual([camReconnecting.state, camReconnecting.label, camReconnecting.animation, camReconnecting.fill], ["reconnecting", "CamFrame link: reconnecting", "blink", "none"], "one miss: reconnecting, blinking orange, not lost");
   await shot(C, "camframe-reconnecting-desktop");
   await C.waitForFunction(() => document.querySelector(".camframe").dataset.state === "on", null, { timeout: 4000 });
-  assert.equal(await C.locator("#settings .camframe-status").textContent(), "Connected to CamFrame. Scenes: Demo, Talking head.", "connected again by itself");
   cam.answer = null;
   await C.keyboard.press("Escape");
   // Down past the first cue: sent once, after a short settle.
+  await C.evaluate(() => { document.querySelector(".status").textContent = ""; });
   await passCue(0);
   await C.waitForTimeout(700);
   assert.deepEqual(cam.cues(), [{ size: "small" }]);
@@ -1847,14 +1865,14 @@ export async function run({ browser, base, mode, dist, out }) {
   await passCue(3);
   await C.waitForTimeout(700);
   assert.deepEqual(cam.cues().slice(3), [{ size: "small", scene: "Demo" }]);
-  // CamFrame refuses a cue: the reason shows in the status, the link stays on, scrolling goes on.
+  // CamFrame refuses a cue: the link stays on (CamFrame answered), scrolling goes on.
   cam.answer = (path, body) => (body?.scene === "Demo" ? { status: 404, body: { ok: false, error: 'CamFrame has no Scene named "Demo".' } } : null);
   await passCue(3, -120);
   await C.waitForTimeout(500);
   await passCue(3);
-  await C.waitForFunction(() => document.querySelector(".camframe-status").textContent.includes("Last cue:"));
+  for (let t = 0; t < 40 && cam.cues().length < 5; t++) await C.waitForTimeout(50);
+  await C.waitForTimeout(200);
   assert.deepEqual(cam.cues().slice(4), [{ size: "small", scene: "Demo" }]);
-  assert.match(await C.locator("#settings .camframe-status").textContent(), /^Connected to CamFrame\. .* Last cue: CamFrame has no Scene named "Demo"\.$/);
   assert.equal(await toastShown(), false, "no note for a refused cue either");
   assert.equal(await C.locator(".camframe").getAttribute("data-state"), "on", "a refused cue keeps the link on");
   // A cue that does not get through is sent once more, and then CamFrame switches.
@@ -1886,8 +1904,8 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.ok(cam.cues().length > sentBeforeToggle, "the cue is on its way before the switch");
   await (await dock(C, ".settings-btn")).click();
   await C.locator("#settings:popover-open").waitFor();
-  await C.locator("#settings .camframe-on").uncheck();
-  await C.locator("#settings .camframe-on").check();
+  await C.locator("#settings .camframe").click();
+  await C.locator("#settings .camframe").click();
   await C.keyboard.press("Escape");
   await C.waitForFunction(() => document.querySelector(".camframe").dataset.state === "on");
   await C.waitForTimeout(2500);
@@ -1914,7 +1932,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await C.locator(".section").first().waitFor();
   await C.waitForFunction(() => document.querySelector(".camframe").dataset.state === "on");
   assert.ok(cam.seen.filter((r) => r.path === "/camframe/status").length > statusBeforeReload, "the reloaded page checks CamFrame without the box being touched");
-  assert.equal(await C.locator("#settings .camframe-on").isChecked(), true);
+  assert.equal(await C.locator("#settings .camframe").getAttribute("aria-pressed"), "true");
   // The browser may put the page back where it was (not every server's page gets that), a little
   // after it is drawn. Either way opening the page sends nothing; when it is back past cues 0 and 1,
   // they stay unsent.
@@ -1955,7 +1973,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await V.waitForTimeout(900);
   assert.deepEqual(cam.cues().slice(sentBeforeVoice), [{ size: "small", position: "bottom-right" }], "Follow my voice sends the cue it passes, once");
   await voiceCtx.close();
-  // CamFrame gone: the status says so, with the one-time permission hint; scrolling carries on.
+  // CamFrame gone: the button says so (a quiet crossed-out camera), with the permission help in its title.
   await C.evaluate(() => {
     const row = document.querySelector(".camframe");
     window.__camStates = [];
@@ -1967,8 +1985,11 @@ export async function run({ browser, base, mode, dist, out }) {
   await C.locator("#settings:popover-open").waitFor();
   await C.waitForFunction(() => document.querySelector(".camframe").dataset.state === "lost", null, { timeout: 15_000 });
   assert.deepEqual(await C.evaluate(() => window.__camStates), ["reconnecting", "lost"], "reconnecting first; not found only after several missed checks in a row");
-  assert.equal(await C.locator("#settings .camframe-status").textContent(), "CamFrame not found. Open CamFrame and turn on Prompter link in its Scenes settings.");
-  assert.equal(await C.locator("#settings .camframe-hint").isVisible(), true);
+  await C.waitForTimeout(250);
+  const camLost = await camLook();
+  assert.deepEqual([camLost.pressed, camLost.label, camLost.color, camLost.icon, camLost.animation, camLost.ring], ["true", "CamFrame link: not found", "oklch(0.763 0.027 282)", "i-cam-off", "none", true], "not found: a quiet crossed-out camera with a thin orange ring, no blinking");
+  assert.equal(camLost.title, "CamFrame link: not found. Open CamFrame and turn on Prompter link in its Scenes settings. Chrome may ask once to let this page reach apps on this device: allow it.");
+  assert.equal(await C.locator(".status").textContent(), "CamFrame link: not found.", "not found is read out once");
   await shot(C, "camframe-lost-desktop");
   // A cue while CamFrame is gone: tried twice, no note, scrolling carries on.
   await C.keyboard.press("Escape");
@@ -1977,7 +1998,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await passCue(0);
   await C.waitForTimeout(1200);
   assert.equal(await toastShown(), false, "no note when CamFrame cannot be reached");
-  // CamFrame back with other Scenes: the next cue that gets through checks again and lists them.
+  // CamFrame back: the next cue that gets through checks again and connects.
   cam.scenes = ["Intro", "Outro"];
   await cam.start();
   const statusBeforeBack = cam.seen.filter((r) => r.path === "/camframe/status").length;
@@ -1986,15 +2007,14 @@ export async function run({ browser, base, mode, dist, out }) {
   await passCue(0);
   await C.waitForFunction(() => document.querySelector(".camframe").dataset.state === "on");
   assert.ok(cam.seen.filter((r) => r.path === "/camframe/status").length > statusBeforeBack, "a status check follows the cue");
-  assert.equal(await C.locator("#settings .camframe-status").textContent(), "Connected to CamFrame. Scenes: Intro, Outro.", "back after not found: the new Scenes, never No saved Scenes first");
   await cam.stop();
   await (await dock(C, ".settings-btn")).click();
   await C.locator("#settings:popover-open").waitFor();
-  await C.locator("#settings .camframe-on").uncheck();
-  assert.equal(await C.locator("#settings .camframe-hint").isVisible(), false);
+  await C.locator("#settings .camframe").click();
+  assert.equal((await camLook()).state, "off");
   assert.equal(await C.evaluate(() => localStorage.getItem("prompter-camframe")), null);
   await camCtx.close();
-  ok("CamFrame link: cue lines read as a camera instruction (a camera mark, \"Camera: face small\" bright and bold, the line's other words muted) whether or not the link is on; off by default (no calls at all); on in Settings it shows CamFrame's Scenes and a dot on Settings; the status line is not set again when a check gives the same answer; a cue line sends its cue to 127.0.0.1:47833 once per pass down (by hand, a section jump sending only the last cue it passed, auto-scroll, and Follow my voice), again after scrolling back above it, never the script; a refused cue shows CamFrame's reason and keeps the link on; a reload with the link remembered connects by itself and sends nothing for cues already above; one missed check says reconnecting (amber dot, no hint) and connects again by itself, several in a row say not found with the permission hint; a cue that does not get through is sent once more, and twice not through says so and reconnects; a cue still on its way when the link is turned off and on changes nothing; the switch row looks like the other settings (a 44px box in the sliders' well, its name, a dot and an orange switch); no note pops up for a cue (switched, refused or not reached)", reloadNote);
+  ok("CamFrame link: cue lines read as a camera instruction (a camera mark, \"Camera: face small\" bright and bold, the line's other words muted) whether or not the link is on; off by default (no calls at all); CamFrame's big button in Settings, beside Follow my voice and the main screen and built like them (Enter, Space or a click turn the same remembered setting on and off), says its state in its name and title: off a quiet outline camera, looking or reconnecting a blinking orange camera (reduced motion: a dashed ring, no blinking), connected a filled orange camera with a steady glow (and a dot on Settings), not found a quiet crossed-out camera with a thin orange ring and the permission help in its title; connected and not found are read out once, not on every check; a cue line sends its cue to 127.0.0.1:47833 once per pass down (by hand, a section jump sending only the last cue it passed, auto-scroll, and Follow my voice), again after scrolling back above it, never the script; a refused cue keeps the link on; a reload with the link remembered connects by itself and sends nothing for cues already above; one missed check says reconnecting and connects again by itself, several in a row say not found; a cue that does not get through is sent once more, and twice not through reconnects; a cue still on its way when the link is turned off and on changes nothing; no note pops up for a cue (switched, refused or not reached)", reloadNote);
 
   // ---- Offline (file://) ----
   const offline = await browser.newContext(DESKTOP);
@@ -2032,7 +2052,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await fileCam.start();
   await o.goto(fileUrl + new URL(await makeLink(CUE_SCRIPT, "lex", base)).hash);
   await o.locator(".section").first().waitFor();
-  await viaSettings(o, ".camframe-on");
+  await viaSettings(o, ".camframe");
   await o.waitForFunction(() => document.querySelector(".camframe").dataset.state === "on");
   await passCueOn(o, 0);
   await o.waitForTimeout(700);

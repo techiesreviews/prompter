@@ -57,10 +57,7 @@ const continueBtn = $(".continue");
 const widthInputs = document.querySelectorAll('input[name="width"]');
 const toastEl = $(".toast");
 const toastText = $(".toast-text");
-const camframeRow = $(".camframe");
-const camframeBox = $(".camframe-on");
-const camframeStatus = $(".camframe-status");
-const camframeHint = $(".camframe-hint");
+const camframeBtn = $(".big-toggle.camframe"); // in Settings
 const WINDOW_NAME = "prompter-main-screen";
 const SETTLE_MS = 700; // wait this long on a section before changing the main screen
 const LAST_KEY = "prompter-last-script";
@@ -122,7 +119,7 @@ let cueTimer = 0;
 // CamFrame link: off unless turned on in Settings. state: off, looking, on (CamFrame answered),
 // reconnecting (a check or two missed after it answered) or lost (several missed in a row).
 // session counts turns on and off, so a cue sent before that is not news after it.
-const camframe = { on: store.get(CAMFRAME_KEY) === "on", state: "off", scenes: [], note: "", timer: 0, retry: 0, seq: 0, misses: 0, session: 0 };
+const camframe = { on: store.get(CAMFRAME_KEY) === "on", state: "off", timer: 0, retry: 0, seq: 0, misses: 0, session: 0 };
 
 // ---------- Opening scripts ----------
 const isEmpty = () => root.dataset.view === "empty";
@@ -681,7 +678,7 @@ function updateActive() {
 // ---------- CamFrame link ----------
 // A camera cue line that reaches the reading line goes to CamFrame once per
 // pass down (auto-scroll, scrolling by hand, Follow my voice and section jumps
-// all scroll the page). Failures only change the status in Settings.
+// all scroll the page). Failures only change the CamFrame button in Settings.
 function updateCues(y) {
   if (!cues.length) return;
   const now = [];
@@ -712,12 +709,9 @@ async function sendCue(cue) {
     afterCheck(null);
     return;
   }
-  const { ok, body } = answer;
-  const note = ok ? "" : String(body.error || "");
-  // Not connected yet (looking, or back after "not found"): the status check says Connected
-  // once it has the Scenes, instead of "No saved Scenes" first.
-  if (camframe.state !== "on") { camframe.note = note; checkCamframe(); return; }
-  setCamframe({ state: "on", note, misses: 0 });
+  // CamFrame answered (switched, or refused with its reason): it is there.
+  if (camframe.state !== "on") { checkCamframe(); return; }
+  setCamframe({ misses: 0 });
 }
 
 // Only the newest check counts: an older answer (from before the box was
@@ -735,10 +729,7 @@ async function checkCamframe() {
 function afterCheck(body) {
   clearTimeout(camframe.retry);
   const next = camframeAfterCheck(camframe.state, camframe.misses, Boolean(body));
-  const patch = { state: next.state, misses: next.misses };
-  if (body) patch.scenes = Array.isArray(body.scenes) ? body.scenes.map(String) : [];
-  else if (next.state === "lost") patch.scenes = [];
-  setCamframe(patch);
+  setCamframe({ state: next.state, misses: next.misses });
   // Like the usual checks, only while the page is in view; those pick it up again after.
   if (next.retry >= 0) camframe.retry = setTimeout(() => { if (document.visibilityState === "visible") checkCamframe(); }, next.retry);
 }
@@ -750,28 +741,32 @@ function setCamframeOn(on) {
   if (on) store.set(CAMFRAME_KEY, "on"); else store.del(CAMFRAME_KEY);
   clearInterval(camframe.timer);
   clearTimeout(camframe.retry);
-  if (!on) { setCamframe({ state: "off", scenes: [], note: "", misses: 0 }); return; }
-  setCamframe({ state: "looking", note: "", misses: 0 });
+  if (!on) { setCamframe({ state: "off", misses: 0 }); return; }
+  setCamframe({ state: "looking", misses: 0 });
   checkCamframe();
   camframe.timer = setInterval(() => { if (document.visibilityState === "visible") checkCamframe(); }, CAMFRAME_CHECK_MS);
 }
 
+// The CamFrame button says how the link is doing in its name and hover title (no status
+// text on screen): blinking orange while looking or reconnecting, lit orange when connected,
+// a quiet crossed-out camera when not found. Connected and not found are read out once.
+const CAMFRAME_SAYS = {
+  off: "CamFrame link: off",
+  looking: "CamFrame link: looking for CamFrame",
+  reconnecting: "CamFrame link: reconnecting",
+  on: "CamFrame link: connected",
+  lost: "CamFrame link: not found",
+};
+const CAMFRAME_LOST_HELP = ". Open CamFrame and turn on Prompter link in its Scenes settings. Chrome may ask once to let this page reach apps on this device: allow it.";
 function setCamframe(patch) {
+  const was = camframeBtn.dataset.state;
   Object.assign(camframe, patch);
-  camframeBox.checked = camframe.on;
-  camframeRow.dataset.state = camframe.state;
-  const scenes = camframe.scenes.length ? ` Scenes: ${camframe.scenes.join(", ")}.` : " No saved Scenes.";
-  const text = {
-    off: "Switches your camera view in CamFrame at [Face …] cue lines.",
-    looking: "Looking for CamFrame on this computer…",
-    reconnecting: "Reconnecting to CamFrame…",
-    on: `Connected to CamFrame.${scenes}${camframe.note ? ` Last cue: ${camframe.note}` : ""}`,
-    lost: "CamFrame not found. Open CamFrame and turn on Prompter link in its Scenes settings.",
-  }[camframe.state];
-  // A live region: the same text set again would be read out again (every poll).
-  if (camframeStatus.textContent !== text) camframeStatus.textContent = text;
-  // The Chrome permission hint only once CamFrame was not found, not while looking.
-  camframeHint.hidden = !camframe.on || camframe.state !== "lost";
+  const name = CAMFRAME_SAYS[camframe.state];
+  camframeBtn.dataset.state = camframe.state;
+  camframeBtn.setAttribute("aria-pressed", String(camframe.on));
+  camframeBtn.setAttribute("aria-label", name);
+  camframeBtn.title = camframe.state === "lost" ? name + CAMFRAME_LOST_HELP : name;
+  if (was !== camframe.state && (camframe.state === "on" || camframe.state === "lost")) setStatus(`${name}.`);
   updateSettingsBtn();
 }
 
@@ -1276,7 +1271,7 @@ voiceBtn.addEventListener("click", toggleVoice);
 $(".prev").addEventListener("click", () => goSection(-1));
 $(".next").addEventListener("click", () => goSection(1));
 widthInputs.forEach((input) => input.addEventListener("change", () => setWidth(input.value)));
-camframeBox.addEventListener("change", () => setCamframeOn(camframeBox.checked));
+camframeBtn.addEventListener("click", () => setCamframeOn(!camframe.on));
 $("#settings").addEventListener("toggle", (e) => { if (e.newState === "open") checkCamframe(); });
 main.addEventListener("click", (e) => {
   const b = e.target.closest(".link, .mark, .inlink");

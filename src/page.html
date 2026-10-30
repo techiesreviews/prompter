@@ -335,38 +335,6 @@
   .seg label:has(input:checked) { color: var(--text); background: var(--chip); }
   .seg label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-  /* CamFrame link: a 44px box in the sliders' well, its name on the left, a
-     status dot (grey off or looking, green connected, amber and pulsing while
-     reconnecting, orange not found) and a switch (orange when on) on the
-     right, then one line of status; the dot is never the only sign. */
-  .camframe { margin-block-start: 8px; }
-  .check-row {
-    display: flex; align-items: center; gap: 10px; min-block-size: 44px; padding-inline: 14px 10px;
-    font-size: 14px; font-weight: 600; background: var(--bg); border-radius: var(--radius); cursor: pointer;
-  }
-  .check-row .status-dot { margin-inline: auto 0; }
-  .check-row input {
-    appearance: none; position: relative; flex: none; inline-size: 38px; block-size: 22px; margin: 0;
-    background: var(--chip); border-radius: 999px; cursor: pointer;
-  }
-  .check-row input::before {
-    content: ""; position: absolute; inset-block-start: 3px; inset-inline-start: 3px;
-    inline-size: 16px; block-size: 16px; border-radius: 50%; background: var(--muted);
-  }
-  .check-row input:checked { background: var(--accent); }
-  .check-row input:checked::before { translate: 16px 0; background: var(--on-accent); }
-  @media (hover: hover) and (pointer: fine) { .check-row:hover input:not(:checked) { background: var(--chip-hover); } }
-  @media (prefers-reduced-motion: no-preference) {
-    .check-row input { transition: background-color 160ms var(--ease-out); }
-    .check-row input::before { transition: translate 160ms var(--ease-out), background-color 160ms var(--ease-out); }
-    .camframe[data-state="reconnecting"] .status-dot { animation: pulse 1.2s ease-in-out infinite; }
-  }
-  .camframe[data-state="on"] .status-dot { background: var(--ok); }
-  .camframe[data-state="reconnecting"] .status-dot { background: var(--ql); }
-  .camframe[data-state="lost"] .status-dot { background: var(--accent); }
-  .camframe-status, .camframe-hint { margin: 6px 0 0; padding-inline: 14px; font-size: 13px; line-height: 1.4; color: var(--muted); }
-  .camframe-hint[hidden] { display: none; }
-
   /* Dialogs: paste */
   .dialog { inline-size: min(720px, 94vw); max-block-size: 90dvh; color: var(--text); background: var(--panel); border: 0; border-radius: 16px; padding: 18px 22px; box-shadow: var(--shadow); }
   .dialog::backdrop { background: oklch(4% 0.06 282 / 0.7); }
@@ -400,11 +368,11 @@
   .mcp-prompt { display: block; min-inline-size: min(300px, 100%); min-block-size: 9em; margin: 6px 0 2px; font-size: 12px; resize: vertical; }
   .mcp-prompt[hidden] { display: none; }
 
-  /* Follow my voice and the main screen: two big buttons side by side, about
-     as tall as the control bar, icons only (their names are for screen
-     readers and the hover title). Off: a quiet outline icon. On: an orange,
-     filled icon, so the state does not rest on colour alone. Without the
-     speech API the main screen's button takes the whole row. */
+  /* Follow my voice, the main screen and the CamFrame link: big buttons side
+     by side, about as tall as the control bar, icons only (their names, and
+     CamFrame's status, are for screen readers and the hover title). Off: a
+     quiet outline icon. On: an orange, filled icon, so the state does not
+     rest on colour alone. Without the speech API the other two share the row. */
   .big-toggles { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 8px; }
   .big-toggle {
     display: grid; place-items: center; min-block-size: 64px; padding: 6px 8px;
@@ -416,6 +384,27 @@
     .big-toggle:hover { color: var(--text); background: var(--chip-hover); }
     .big-toggle:is([aria-pressed="true"], [data-on="true"]):hover { color: var(--accent-bright); }
   }
+  /* CamFrame: looking or reconnecting blinks orange (an outline camera);
+     connected is a filled orange camera with a calm, steady glow; not found
+     is a quiet crossed-out camera with a thin orange ring. Reduced motion:
+     no blinking, a dashed orange ring instead. */
+  .camframe .i-cam-off, .camframe[data-state="lost"] .i-cam { display: none; }
+  .camframe[data-state="lost"] .i-cam-off { display: block; }
+  .big-toggle.camframe:is([data-state="looking"], [data-state="reconnecting"]) rect { fill: none; }
+  .camframe[data-state="on"] .i-cam path { fill: currentColor; }
+  .camframe[data-state="on"] {
+    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 45%, transparent), 0 0 18px -4px color-mix(in oklch, var(--accent) 60%, transparent);
+  }
+  .camframe[data-state="on"] svg { filter: drop-shadow(0 0 5px color-mix(in oklch, var(--accent) 55%, transparent)); }
+  .big-toggle.camframe[data-state="lost"] { color: var(--muted); box-shadow: inset 0 0 0 1.5px var(--accent); }
+  @media (prefers-reduced-motion: no-preference) {
+    .camframe:is([data-state="looking"], [data-state="reconnecting"]) svg { animation: blink 1.2s steps(1, end) infinite; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .camframe:is([data-state="looking"], [data-state="reconnecting"]) { outline: 2px dashed var(--accent); outline-offset: -6px; }
+    .camframe:is([data-state="looking"], [data-state="reconnecting"]):focus-visible { outline-style: solid; outline-offset: 2px; }
+  }
+  @keyframes blink { 50% { opacity: 0.25; } }
 
   @media (max-width: 760px) {
     .script { padding-inline: 5vw; }
@@ -539,11 +528,10 @@
     <button class="big-toggle screen" type="button" data-action="connect" data-on="false" aria-label="Connect main screen" title="Connect main screen">
       <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
     </button>
-  </div>
-  <div class="setting camframe" data-state="off">
-    <label class="check-row"><span>CamFrame link</span><span class="status-dot" aria-hidden="true"></span><input class="camframe-on" type="checkbox" role="switch" aria-describedby="camframe-status camframe-hint"></label>
-    <p class="camframe-status" id="camframe-status" aria-live="polite">Switches your camera view in CamFrame at [Face …] cue lines.</p>
-    <p class="camframe-hint" id="camframe-hint" hidden>Chrome may ask once to let this page reach apps on this device. Allow it.</p>
+    <button class="big-toggle camframe" type="button" aria-pressed="false" data-state="off" aria-label="CamFrame link: off" title="CamFrame link: off">
+      <svg class="i-cam" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="6" width="13" height="12" rx="2"/><path d="m15.5 10.5 6-3.5v10l-6-3.5z"/></svg>
+      <svg class="i-cam-off" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 6h3a2 2 0 0 1 2 2v2.5l6-3.5v10M15.5 15.5V16a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2"/><path d="m2 2 20 20"/></svg>
+    </button>
   </div>
 </div>
 

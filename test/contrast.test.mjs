@@ -70,6 +70,7 @@ const PAIRS = [
   ["accent-bright", "chip", "the icon of an on Settings toggle (graphic)", 3],
   ["accent-bright", "chip-hover", "the same, hovered (graphic)", 3],
   ["muted", "chip", "the icon of an off Settings toggle (graphic)", 3],
+  ["accent", "chip", "the ring of the CamFrame button when CamFrame is not found (graphic)", 3],
   ["accent", "bg", "border of the link on the main screen (graphic)", 3],
 ];
 

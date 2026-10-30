@@ -10,7 +10,7 @@ A free teleprompter for talking to camera, plus an MCP server so your AI assista
 - Follow my voice (Chrome and Edge, a switch in Settings): the prompter listens and keeps the line you are reading at the reading mark. Your browser's speech service hears your voice; the script stays on your device. If the speech service drops for a moment (Edge does this now and then), it shows "Reconnecting to speech…" and carries on by itself; only if it can't get back after about 15 seconds does Follow my voice turn off with a message.
 - A start screen to open a file, paste a script, connect your AI agent (Wait for MCP) or try the demo. It offers your last script ("Continue") but never opens it by itself.
 - One floating control bar: Open, previous and next section, auto-scroll, the clock (press again to restart it from 00:00) and Settings. A small dot on Open shows your AI agent is waiting or connected; a dot on Settings shows Follow my voice is on or a main screen is connected.
-- Settings kept simple: text size, scroll speed, a narrow, medium or full column (narrow keeps your eyes near the camera), Follow my voice and the main screen.
+- Settings kept simple: text size, scroll speed, a narrow, medium or full column (narrow keeps your eyes near the camera), and three buttons: Follow my voice, the main screen and the CamFrame link.
 - CamFrame link (optional, off until you turn it on in Settings): camera cue lines like `[Face full]` or `[Face small, bottom right]` switch your camera view in [CamFrame](https://github.com/techiesreviews/camframe) when you reach them. See [Camera cues](#camera-cues-camframe-link).
 - Your own AI agent can open the script it wrote straight in your prompter (Wait for MCP, in the Open menu and on the start screen), as in the script editor.
 - A checker (through the MCP server) that points out long lines, a missing main question, a link without its full address and similar problems.
@@ -86,7 +86,7 @@ If you use CamFrame (the camera window app), the prompter can switch its view fo
 **Turn it on (once, in both apps)**
 
 1. In CamFrame: open its controls, choose **Scenes**, and switch on **Prompter link**.
-2. In the prompter: open **Settings** (the gear) and tick **CamFrame link**. You should see "Connected to CamFrame" and your CamFrame Scene names. A green dot means it is connected, amber means it missed CamFrame for a moment and is reconnecting by itself, orange means CamFrame was not found.
+2. In the prompter: open **Settings** (the gear) and press the **camera button** (next to the microphone and the screen). A blinking orange camera means it is looking for CamFrame (or reconnecting after a missed answer); a steady, glowing orange camera means it is connected; a grey crossed-out camera with an orange ring means CamFrame was not found. Hover the button to read its state in words. Press it again to turn the link off.
 3. Chrome may ask once whether this page may reach apps on this device. Allow it. Use Chrome or Edge; Safari may not reach apps on your computer.
 
 **Cheat-sheet** (a reminder line in square brackets; capitals don't matter; the cue is its own sentence starting with "Face")
@@ -104,7 +104,7 @@ If you use CamFrame (the camera window app), the prompter can switch its view fo
 - The checker warns about a cue it can't read, such as `[Face small, middle]` or `[Face big]`. A reminder that starts with "Face" but isn't a cue (like `[Face the camera]`) gets the same warning; reword it if you see one.
 - A cue line shows a small camera mark and what the camera does, like **Camera: face small · Share screen.**, so you can see where a switch happens, with the link on or off.
 - No note pops up when a cue goes out: the camera moving is the sign it worked.
-- A single missed answer (Edge sometimes drops a call) does not break the link: it says "Reconnecting to CamFrame…" and tries again, and a cue that does not get through is sent once more. If CamFrame isn't running, scrolling never waits, and after a few seconds Settings shows "CamFrame not found"; it connects again by itself when CamFrame is back.
+- A single missed answer (Edge sometimes drops a call) does not break the link: the camera button blinks while it tries again, and a cue that does not get through is sent once more. If CamFrame isn't running, scrolling never waits, and after a few seconds the camera button shows "not found"; it connects again by itself when CamFrame is back.
 
 The full format, the two style presets (`lex`, strict, and `default`, softer) and the checker live in [`src/core.mjs`](src/core.mjs). The page, the checker and the MCP server all use that one file. The `get_format` tool shows the same rules, and the page's demo ("Try the demo") teaches them by example.
 
