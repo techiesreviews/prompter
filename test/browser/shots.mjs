@@ -557,12 +557,12 @@ export async function run({ browser, base, mode, dist, out }) {
   // voice (only with the speech API) and the main screen.
   await (await dock(page, ".settings-btn")).click();
   await popAbove(page, "#settings", ".settings-btn", "desktop Settings");
-  assert.deepEqual(await page.locator("#settings").evaluate((el) => [...el.querySelectorAll(".setting")].map((row) => (row.matches("fieldset") ? row.querySelector("legend") : row).firstChild.textContent.trim())),
+  assert.deepEqual(await page.locator("#settings").evaluate((el) => [...el.querySelectorAll(".setting")].map((row) => row.querySelector("legend, label").textContent.trim())),
     ["Text size", "Scroll speed", "Width"]);
   // Follow my voice and the main screen: two big buttons side by side (icons only).
   const bigButtons = (p) => p.locator("#settings .big-toggle:not([hidden])").evaluateAll((els) => els.map((el) => [el.getAttribute("aria-label"), el.innerText.trim()]));
   assert.deepEqual(await bigButtons(page), [["Connect main screen", ""]], "icons only; no Follow my voice without the speech API; the main screen's button");
-  assert.equal(await page.locator("#settings").locator("input, select, button, textarea").count(), 7, "two sliders, three width choices, the voice and main screen buttons, nothing else");
+  assert.equal(await page.locator("#settings").locator("input, select, button, textarea").count(), 9, "two sliders with their value boxes, three width choices, the voice and main screen buttons, nothing else");
   const screenBox = await page.locator("#settings .screen").boundingBox();
   const rowBox = await page.locator("#settings .big-toggles").boundingBox();
   assert.ok(Math.abs(screenBox.width - rowBox.width) < 1, "alone, the main screen's button takes the whole row");
@@ -570,20 +570,26 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.ok(screenBox.height >= dockHeight && screenBox.height <= dockHeight + 24, `about as tall as the control bar: ${screenBox.height} vs ${dockHeight}`);
   assert.deepEqual(await page.locator("#settings .screen").evaluate((el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).color]), ["oklch(0.33 0.096 282)", "oklch(0.763 0.027 282)"], "not connected: quiet indigo");
   assert.equal(await page.locator("#settings .screen rect").evaluate((r) => getComputedStyle(r).fill), "none", "not connected: an outline icon");
-  // Sliders: drawn by the page (a slim track, orange up to a round white thumb; see the
-  // screenshot), 28px tall for a mouse. Slider parts cannot be read with getComputedStyle.
-  const sliderLook = (p) => p.locator("#settings .size").evaluate((el) => [getComputedStyle(el).appearance, el.getBoundingClientRect().height, Number(el.style.getPropertyValue("--fill")).toFixed(3)]);
+  // Sliders: range fields (src/ui/range-field.css: one 44px box, the name inside on the left,
+  // an indigo fill up to a white grip, ticks, the value on the right; see the screenshot).
+  // Slider parts cannot be read with getComputedStyle.
+  const sliderLook = (p) => p.locator("#settings .size-field").evaluate((el) => [
+    getComputedStyle(el.querySelector('input[type="range"]')).appearance, el.getBoundingClientRect().height,
+    el.querySelector("label").getBoundingClientRect().left - el.getBoundingClientRect().left < 20,
+    el.querySelector(".range-value").getBoundingClientRect().right === el.getBoundingClientRect().right,
+  ]);
   assert.deepEqual(await page.locator("#settings .seg label").allTextContents(), ["Narrow", "Medium", "Full"]);
   await page.locator(".size").fill("70");
   await page.locator(".speed").fill("120");
   await page.locator('#settings .seg label:has-text("Narrow")').click();
-  assert.deepEqual(await page.locator("#settings .setting .val").allTextContents(), ["70 px", "120"]);
-  assert.deepEqual(await sliderLook(page), ["none", 28, "0.556"], "the page's own slider, filled to the value");
+  assert.deepEqual([await page.locator(".size-val").inputValue(), await page.locator(".speed-val").inputValue()], ["70", "120"], "the boxes show the sliders' values");
+  assert.deepEqual(await sliderLook(page), ["none", 44, true, true], "the page's own slider: the name inside on the left, the value on the right");
   await page.locator(".size").hover();
   await shot(page, "settings-popover-desktop");
   await page.locator(".size").focus();
   await page.keyboard.press("ArrowRight");
-  assert.deepEqual([await page.locator(".size").inputValue(), await page.locator(".size").evaluate((el) => getComputedStyle(el).outlineStyle)], ["72", "none"], "arrow keys move it; the ring is on the thumb");
+  assert.deepEqual([await page.locator(".size").inputValue(), await page.locator(".size").evaluate((el) => getComputedStyle(el).outlineStyle)], ["72", "none"], "arrow keys move it");
+  assert.equal(await page.locator(".size-field").evaluate((el) => getComputedStyle(el).outlineStyle), "solid", "the ring goes round the whole field");
   await page.keyboard.press("ArrowLeft");
   const narrowCol = await page.locator(".script").evaluate((el) => el.getBoundingClientRect().width - parseFloat(getComputedStyle(el).paddingLeft) * 2);
   assert.ok(Math.abs(narrowCol - 600) < 2, `narrow column is ${narrowCol}px`);
@@ -607,8 +613,33 @@ export async function run({ browser, base, mode, dist, out }) {
   const fullCol = await page.locator(".script").evaluate((el) => el.getBoundingClientRect().width);
   assert.ok(fullCol > 1300, `full column is ${fullCol}px`);
   await page.locator('#settings .seg label:has-text("Medium")').click();
+  // Type an exact value: off the slider's step, past its end, half typed, empty, too small.
+  const typed = () => page.evaluate(() => [getComputedStyle(document.documentElement).getPropertyValue("--size").trim(), document.querySelector(".size").value, document.querySelector(".size-val").value]);
+  await page.locator(".size-field .range-value span").click();
+  assert.equal(await page.evaluate(() => document.activeElement.className), "size-val", "clicking next to the value focuses it");
+  await page.keyboard.type("47");
+  assert.deepEqual(await typed(), ["47px", "48", "47"], "the value was selected, so typing replaces it; it applies at once and keeps the exact number; the slider sits nearest");
+  await page.keyboard.press("Enter");
+  assert.deepEqual(await typed(), ["47px", "48", "47"]);
+  await page.locator(".size-val").fill("150");
+  assert.deepEqual(await typed(), ["150px", "110", "150"], "past the slider's end: the slider stops there");
+  await page.locator(".size-val").fill("");
+  await page.locator(".size-val").press("Tab");
+  assert.deepEqual(await typed(), ["150px", "110", "150"], "an empty box goes back to the last value");
+  await page.locator(".size-val").fill("5");
+  assert.equal((await typed())[0], "150px", "half typed (below the box's minimum): nothing changes yet");
+  await page.locator(".size-val").press("Enter");
+  assert.deepEqual(await typed(), ["10px", "20", "10"], "too small: the smallest allowed on Enter");
+  await page.locator(".speed-val").fill("75");
+  await page.locator(".speed-val").press("Enter");
+  assert.deepEqual(await page.evaluate(() => [document.querySelector(".speed").value, document.querySelector(".speed-val").value, localStorage.getItem("prompter-speed")]), ["80", "75", "75"], "speed takes any whole number too");
+  await page.locator(".size-val").fill("70");
+  await page.locator(".size-val").press("Enter");
+  await page.locator(".speed-val").fill("120");
+  await page.locator(".speed-val").press("Enter");
+  assert.equal(await page.locator("#settings:popover-open").count(), 1, "Enter in a value box keeps Settings open");
   await page.keyboard.press("Escape");
-  ok("Settings popover above its button: Text size, Scroll speed and a Narrow/Medium/Full width choice only; remembered after a reload; keys move the sliders; focus returns");
+  ok("Settings popover above its button: Text size, Scroll speed and a Narrow/Medium/Full width choice only; remembered after a reload; keys move the sliders; exact values typed into their boxes (also past the slider's ends); focus returns");
 
   // Without CSS anchor positioning the page places the popovers itself.
   const noAnchor = await browser.newContext(DESKTOP);

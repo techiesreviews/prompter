@@ -1,7 +1,7 @@
-// Page logic. scripts/build.mjs inlines src/core.mjs, src/follow.mjs and
-// src/agent.mjs above this file inside one function, so parse, PRESETS,
-// DEMO_SCRIPT, encodeScript, followWords, heardLink, linkAt, speechWords,
-// connectionPrompt, agentName … are in scope here.
+// Page logic. scripts/build.mjs inlines src/core.mjs, src/follow.mjs,
+// src/agent.mjs and src/ui/range-field.mjs above this file inside one function,
+// so parse, PRESETS, DEMO_SCRIPT, encodeScript, followWords, heardLink, linkAt,
+// speechWords, connectionPrompt, agentName, rangeField … are in scope here.
 
 // ---------- Player view ----------
 // The main-screen window shows a YouTube video full size via this same page.
@@ -53,8 +53,6 @@ const hintEl = $(".screen-hint");
 const pasteDialog = $(".paste-dialog");
 const fileInput = $(".file-input");
 const continueBtn = $(".continue");
-const speedInput = $(".speed");
-const sizeInput = $(".size");
 const widthInputs = document.querySelectorAll('input[name="width"]');
 const WINDOW_NAME = "prompter-main-screen";
 const SETTLE_MS = 700; // wait this long on a section before changing the main screen
@@ -823,26 +821,22 @@ function toggleAuto() {
   setAuto(!autoOn);
 }
 
-// A slider's track is orange up to its thumb (--fill, 0 to 1).
-function fillRange(input) {
-  input.style.setProperty("--fill", String((input.value - input.min) / (input.max - input.min)));
-}
+// The sliders in Settings: drag them, or type an exact value into their box,
+// also past the slider's ends (speed 1 to 999, text size 10 to 300 px).
+const showSpeed = rangeField($(".speed-field"), (v) => setSpeed(v));
+const showSize = rangeField($(".size-field"), (v) => setSize(v));
 
 function setSpeed(v) {
-  speed = Math.min(300, Math.max(10, Math.round(v / 10) * 10 || 40));
-  speedInput.value = speed;
-  fillRange(speedInput);
-  $(".speed-val").textContent = speed;
+  speed = Math.min(999, Math.max(1, Math.round(v) || 40));
+  showSpeed(speed);
   store.set("prompter-speed", speed);
 }
 
 // ---------- Text size and column ----------
 function setSize(px) {
-  px = Math.min(110, Math.max(20, Math.round(px) || 52));
+  px = Math.min(300, Math.max(10, Math.round(px) || 52));
   root.style.setProperty("--size", px + "px");
-  sizeInput.value = px;
-  fillRange(sizeInput);
-  $(".size-val").textContent = `${px} px`;
+  showSize(px);
   store.set("prompter-size", px);
 }
 const curSize = () => parseInt(getComputedStyle(root).getPropertyValue("--size"), 10);
@@ -1119,8 +1113,6 @@ autoBtn.addEventListener("click", toggleAuto);
 voiceBtn.addEventListener("click", toggleVoice);
 $(".prev").addEventListener("click", () => goSection(-1));
 $(".next").addEventListener("click", () => goSection(1));
-speedInput.addEventListener("input", () => setSpeed(Number(speedInput.value)));
-sizeInput.addEventListener("input", () => setSize(Number(sizeInput.value)));
 widthInputs.forEach((input) => input.addEventListener("change", () => setWidth(input.value)));
 main.addEventListener("click", (e) => {
   const b = e.target.closest(".link, .mark, .inlink");

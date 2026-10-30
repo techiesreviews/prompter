@@ -1,0 +1,73 @@
+/* Range field: a slider with its name inside and an exact value you can type.
+   One box: the name on the left, always on the fill, which grows from there to
+   a slim grip, faint ticks for the rest, the value on the right. CSS draws all of it, the fill too: the
+   thumb's shadow in Blink and WebKit (clipped by the slider), its
+   ::-moz-range-progress in Firefox. range-field.mjs only keeps the slider and
+   the typed value in step. Restyle it with the --rf-* properties.
+
+   <div class="range-field">
+     <label for="size">Text size</label>
+     <input id="size" type="range" min="20" max="110" step="2" value="52">
+     <label class="range-value"><input type="number" min="10" max="300" value="52" aria-label="Text size in pixels"><span aria-hidden="true">px</span></label>
+   </div> */
+.range-field {
+  --rf-height: 44px;
+  --rf-radius: 10px;
+  --rf-thumb: 16px; /* the end of the fill that carries the grip */
+  --rf-ticks: 10;
+  --rf-bg: oklch(22% 0.01 280);
+  --rf-fill: oklch(32% 0.012 280);
+  --rf-grip: oklch(98% 0 0);
+  --rf-tick: oklch(98% 0 0 / 0.16);
+  --rf-muted: oklch(75% 0.01 280);
+  --rf-focus: currentColor;
+  --rf-grip-mark: linear-gradient(var(--rf-grip) 0 0) 50% 50% / 3px 45% no-repeat;
+  --rf-tick-marks: repeating-linear-gradient(to right, transparent 0 calc(100% / var(--rf-ticks) - 1px), var(--rf-tick) 0 calc(100% / var(--rf-ticks)))
+    50% 50% / calc(100% - var(--rf-thumb)) 28% no-repeat;
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;
+  block-size: var(--rf-height); border-radius: var(--rf-radius); background: var(--rf-bg);
+  container-type: inline-size; font-weight: 600;
+}
+/* The start of the fill; the slider takes the rest of the row. */
+.range-field > label:first-child {
+  max-inline-size: 60cqi; padding-inline: 14px 4px; line-height: var(--rf-height);
+  border-radius: var(--rf-radius) 0 0 var(--rf-radius); background: var(--rf-fill);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.range-field > input[type="range"] {
+  inline-size: 100%; block-size: 100%; margin: 0; padding: 0;
+  appearance: none; -webkit-appearance: none; background: transparent; cursor: pointer; overflow: hidden;
+}
+.range-field > input[type="range"]:focus-visible { outline: 0; }
+.range-field > input[type="range"]::-webkit-slider-runnable-track { block-size: 100%; background: var(--rf-tick-marks); }
+.range-field > input[type="range"]::-moz-range-track { block-size: 100%; background: var(--rf-tick-marks); }
+.range-field > input[type="range"]::-moz-range-progress { block-size: 100%; background: var(--rf-fill); }
+/* The fill's rounded end; its shadow reaches back to the start, ending under the
+   thumb so the round corners show. */
+.range-field > input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; inline-size: var(--rf-thumb); block-size: var(--rf-height);
+  border: 0; border-radius: 0 var(--rf-radius) var(--rf-radius) 0; background: var(--rf-grip-mark), var(--rf-fill);
+  box-shadow: calc(-100vmax - var(--rf-radius)) 0 0 100vmax var(--rf-fill);
+}
+.range-field > input[type="range"]::-moz-range-thumb {
+  inline-size: var(--rf-thumb); block-size: var(--rf-height);
+  border: 0; border-radius: 0 var(--rf-radius) var(--rf-radius) 0; background: var(--rf-grip-mark), var(--rf-fill);
+}
+/* The value: click or tab to it and type. 16px so phones do not zoom in. */
+.range-field > .range-value {
+  display: flex; align-items: center; gap: 3px; block-size: 100%;
+  padding-inline: 10px 14px; border-radius: 0 var(--rf-radius) var(--rf-radius) 0; cursor: text;
+}
+.range-value > input {
+  inline-size: 3ch; margin: 0; padding: 0; border: 0; background: transparent; color: inherit;
+  font-family: inherit; font-size: 16px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; text-align: end;
+  appearance: textfield; -moz-appearance: textfield;
+}
+@supports (field-sizing: content) { .range-value > input { inline-size: auto; field-sizing: content; min-inline-size: 1ch; } }
+.range-value > input::-webkit-inner-spin-button, .range-value > input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.range-value > input:focus { outline: 0; }
+.range-value > span { color: var(--rf-muted); font-size: 13px; font-weight: 500; }
+@media (hover: hover) and (pointer: fine) { .range-field > .range-value:hover { background: var(--rf-fill); } }
+.range-field > .range-value:focus-within { background: var(--rf-fill); }
+.range-field:has(input:focus-visible) { outline: 2px solid var(--rf-focus); outline-offset: 2px; }
+.range-field:has(input:disabled) { opacity: 0.5; pointer-events: none; }

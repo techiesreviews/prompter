@@ -83,36 +83,13 @@
     /* No colour fade of its own: it dims and brightens with its line. */
     .inlink { transition: background-color 160ms var(--ease-out), border-color 160ms var(--ease-out); }
   }
-  .row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin: 0 0 6px; font-weight: 600; font-size: 14px; }
-  .val { font: 500 12px/1.2 var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
-  /* Sliders: a slim rounded track, orange up to a round white thumb with a
-     soft orange ring (app.js sets --fill, 0 to 1). The thumb's centre runs
-     from half a thumb in to half a thumb from the end, and so does the fill. */
-  input[type="range"] {
-    --fill: 0.5; --thumb: 20px;
-    --halo: 4px; --halo-mix: 25%;
-    --ring: 0 0 0 var(--halo) color-mix(in oklch, var(--accent) var(--halo-mix), transparent), 0 1px 3px oklch(4% 0.06 282 / 0.6);
-    --track: linear-gradient(to right, var(--accent) calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--fill)), var(--chip) 0);
-    display: block; inline-size: 100%; block-size: 28px; margin: 0 0 14px; padding: 0;
-    appearance: none; -webkit-appearance: none; background: transparent; cursor: pointer;
-  }
-  @media (pointer: coarse) { input[type="range"] { block-size: 44px; margin-block-end: 6px; } }
-  input[type="range"]::-webkit-slider-runnable-track { block-size: 6px; border-radius: 999px; background: var(--track); }
-  input[type="range"]::-moz-range-track { block-size: 6px; border-radius: 999px; background: var(--track); }
-  input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none; appearance: none; inline-size: var(--thumb); block-size: var(--thumb); margin-block-start: calc(3px - var(--thumb) / 2);
-    border: 0; border-radius: 50%; background: var(--text); box-shadow: var(--ring);
-  }
-  input[type="range"]::-moz-range-thumb { inline-size: var(--thumb); block-size: var(--thumb); border: 0; border-radius: 50%; background: var(--text); box-shadow: var(--ring); }
-  @media (hover: hover) and (pointer: fine) {
-    input[type="range"]:hover { --halo: 6px; --halo-mix: 30%; }
-  }
-  input[type="range"]:active { --halo: 7px; --halo-mix: 35%; }
-  /* Focused from the keyboard: a solid orange ring round the thumb. */
-  input[type="range"]:focus-visible { outline: 0; --ring: 0 0 0 3px var(--panel), 0 0 0 5px var(--accent); }
-  @media (prefers-reduced-motion: no-preference) {
-    input[type="range"]::-webkit-slider-thumb { transition: box-shadow 160ms var(--ease-out); }
-    input[type="range"]::-moz-range-thumb { transition: box-shadow 160ms var(--ease-out); }
+  /* Sliders: range fields (src/ui/range-field.css, inlined by the build) in the
+     page's colours: the well of the width choice, an indigo fill, a white grip. */
+  /*@UI-CSS@*/
+  .range-field {
+    --rf-bg: var(--bg); --rf-fill: var(--chip); --rf-grip: var(--text); --rf-muted: var(--muted); --rf-focus: var(--accent);
+    --rf-tick: color-mix(in oklch, var(--muted) 30%, transparent); --rf-ticks: 6;
+    font-size: 14px;
   }
 
   /* Start screen: one centred card. */
@@ -320,8 +297,9 @@
   .item svg { color: var(--muted); }
   @media (hover: hover) and (pointer: fine) { .item:hover { background: var(--panel-2); } }
   .pop-sep { block-size: 1px; margin: 6px 4px; background: var(--border); }
-  .settings-pop { inline-size: 300px; padding: 16px 16px 14px; }
+  .settings-pop { inline-size: 340px; padding: 16px 16px 14px; }
   .setting + .setting { margin-block-start: 16px; }
+  .range-field + .range-field { margin-block-start: 8px; }
   .setting legend { padding: 0; margin: 0 0 6px; font-weight: 600; font-size: 14px; }
   fieldset.setting { margin-inline: 0; padding: 0; border: 0; }
   .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; padding: 3px; background: var(--bg); border-radius: var(--radius); }
@@ -483,10 +461,16 @@
 </div>
 
 <div class="pop settings-pop" id="settings" popover aria-label="Settings">
-  <label class="row setting" for="size">Text size <span class="val size-val"></span></label>
-  <input class="size" id="size" type="range" min="20" max="110" step="2">
-  <label class="row setting" for="speed">Scroll speed <span class="val speed-val"></span></label>
-  <input class="speed" id="speed" type="range" min="10" max="300" step="10">
+  <div class="range-field setting size-field">
+    <label for="size">Text size</label>
+    <input class="size" id="size" type="range" min="20" max="110" step="2" value="52">
+    <label class="range-value"><input class="size-val" type="number" min="10" max="300" inputmode="numeric" value="52" aria-label="Text size in pixels"><span aria-hidden="true">px</span></label>
+  </div>
+  <div class="range-field setting speed-field">
+    <label for="speed">Scroll speed</label>
+    <input class="speed" id="speed" type="range" min="10" max="300" step="10" value="40">
+    <label class="range-value"><input class="speed-val" type="number" min="1" max="999" inputmode="numeric" value="40" aria-label="Scroll speed in pixels per second"></label>
+  </div>
   <fieldset class="setting width">
     <legend>Width</legend>
     <div class="seg">

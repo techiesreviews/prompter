@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// Builds dist/: one self-contained index.html (core, follow, agent + app inlined), the
-// _headers file whose Content-Security-Policy pins that inline script's hash,
-// and the two font files (the page falls back to system fonts without them).
+// Builds dist/: one self-contained index.html (core, follow, agent, the range field + app
+// inlined, and the range field's styles), the _headers file whose
+// Content-Security-Policy pins that inline script's hash, and the two font files
+// (the page falls back to system fonts without them).
 // Usage: node scripts/build.mjs [outDir=dist]
 import { createHash } from "node:crypto";
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -14,7 +15,10 @@ const read = (file) => readFileSync(join(root, file), "utf8");
 export const FONTS = ["inter-latin.woff2", "roboto-mono-latin.woff2", "OFL.txt"];
 
 /** Shared modules inlined into the page, in this order, without `export`. */
-export const INLINED = ["src/core.mjs", "src/follow.mjs", "src/agent.mjs"];
+export const INLINED = ["src/core.mjs", "src/follow.mjs", "src/agent.mjs", "src/ui/range-field.mjs"];
+
+/** Shared component styles inlined into the page's style at its marker. */
+export const UI_CSS = ["src/ui/range-field.css"];
 
 /** Inline the page script: the shared modules, then the app, in one function scope. */
 export function pageScript() {
@@ -29,7 +33,10 @@ export function pageScript() {
 }
 
 export function build(dir = join(root, "dist")) {
-  const template = read("src/page.html");
+  const cssMarker = "/*@UI-CSS@*/";
+  const page = read("src/page.html");
+  if (!page.includes(cssMarker)) throw new Error(`src/page.html is missing ${cssMarker}`);
+  const template = page.replace(cssMarker, () => UI_CSS.map((file) => read(file).trim()).join("\n"));
   const marker = "<script>/*@APP@*/</script>";
   if (!template.includes(marker)) throw new Error(`src/page.html is missing ${marker}`);
   const script = pageScript();
