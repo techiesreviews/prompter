@@ -13,7 +13,7 @@
      The page is the indigo night colour; surfaces get lighter as they stack;
      the bright orange is for actions. Every text colour meets WCAG AA (4.5:1)
      on the backgrounds it is used on, and white on orange only at 19px bold
-     (large text, 3:1); test/contrast.test.mjs checks the pairs. The one
+     (large text, 3:1; smaller labels on orange are dark); test/contrast.test.mjs checks the pairs. The one
      deliberate exception: text above the reading line has been read and is
      faded almost into the page (--read-veil). */
   :root {
@@ -27,10 +27,13 @@
     --chip: oklch(33% 0.096 282);       /* chips and secondary buttons: night l+0.17, c×1.6 */
     --chip-hover: oklch(37% 0.1 282);
     --text: oklch(97.5% 0.012 282);     /* night hue at 97.5%, c×0.25 (in sRGB) */
+    --text-now: oklch(100% 0 none);     /* the line Follow my voice is on: pure white */
+    --upcoming: oklch(80% 0.03 282);    /* the lines after it: a little dimmer, still AA */
     --muted: oklch(76.3% 0.027 282);    /* 74% text mixed into the page */
     --dim: oklch(64% 0.04 282);         /* lines of the other sections */
     --accent: oklch(65% 0.227 32.3);    /* the bright orange action colour */
     --accent-hover: oklch(60% 0.21 32.3);
+    --accent-bright: oklch(70% 0.19 32.3); /* hovered orange buttons with dark labels */
     --link-tint: oklch(23% 0.06 32);    /* hovered links: a soft orange behind orange text */
     --on-accent: oklch(100% 0 none);    /* white, 19px bold only */
     --ok: oklch(80% 0.15 155);
@@ -66,7 +69,7 @@
   }
   /* White on orange is large text only: 19px bold. */
   .btn.primary { background: var(--accent); color: var(--on-accent); font-size: 19px; font-weight: 700; }
-  .btn:active, .dock-btn:active, .link:active, .mark:active, .item:active { scale: 0.97; }
+  .btn:active, .dock-btn:active, .link:active, .mark:active, .item:active, .big-toggle:active { scale: 0.97; }
   @media (hover: hover) and (pointer: fine) {
     .btn:hover { background: var(--chip-hover); }
     .btn.primary:hover { background: var(--accent-hover); }
@@ -75,14 +78,41 @@
   .error-text { color: var(--accent); }
   .dropping { outline: 3px dashed var(--accent); outline-offset: -12px; }
   @media (prefers-reduced-motion: no-preference) {
-    .btn, .dock-btn, .item { transition: scale 160ms var(--ease-out), background-color 160ms var(--ease-out); }
+    .btn, .dock-btn, .item, .big-toggle { transition: scale 160ms var(--ease-out), background-color 160ms var(--ease-out), color 160ms var(--ease-out); }
     .link, .mark { transition: color 160ms var(--ease-out), background-color 160ms var(--ease-out), border-color 160ms var(--ease-out), scale 160ms var(--ease-out); }
     /* No colour fade of its own: it dims and brightens with its line. */
     .inlink { transition: background-color 160ms var(--ease-out), border-color 160ms var(--ease-out); }
   }
   .row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin: 0 0 6px; font-weight: 600; font-size: 14px; }
   .val { font: 500 12px/1.2 var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
-  input[type="range"] { inline-size: 100%; margin: 0; accent-color: var(--accent); }
+  /* Sliders: a slim rounded track, orange up to a round white thumb with a
+     soft orange ring (app.js sets --fill, 0 to 1). The thumb's centre runs
+     from half a thumb in to half a thumb from the end, and so does the fill. */
+  input[type="range"] {
+    --fill: 0.5; --thumb: 20px;
+    --ring: 0 0 0 4px oklch(65% 0.227 32.3 / 0.25), 0 1px 3px oklch(4% 0.06 282 / 0.6);
+    --track: linear-gradient(to right, var(--accent) calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--fill)), var(--chip) 0);
+    display: block; inline-size: 100%; block-size: 28px; margin: 0 0 14px; padding: 0;
+    appearance: none; -webkit-appearance: none; background: transparent; cursor: pointer;
+  }
+  @media (pointer: coarse) { input[type="range"] { block-size: 44px; margin-block-end: 6px; } }
+  input[type="range"]::-webkit-slider-runnable-track { block-size: 6px; border-radius: 999px; background: var(--track); }
+  input[type="range"]::-moz-range-track { block-size: 6px; border-radius: 999px; background: var(--track); }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; inline-size: var(--thumb); block-size: var(--thumb); margin-block-start: calc(3px - var(--thumb) / 2);
+    border: 0; border-radius: 50%; background: var(--text); box-shadow: var(--ring);
+  }
+  input[type="range"]::-moz-range-thumb { inline-size: var(--thumb); block-size: var(--thumb); border: 0; border-radius: 50%; background: var(--text); box-shadow: var(--ring); }
+  @media (hover: hover) and (pointer: fine) {
+    input[type="range"]:hover { --ring: 0 0 0 6px oklch(65% 0.227 32.3 / 0.3), 0 1px 3px oklch(4% 0.06 282 / 0.6); }
+  }
+  input[type="range"]:active { --ring: 0 0 0 7px oklch(65% 0.227 32.3 / 0.35), 0 1px 3px oklch(4% 0.06 282 / 0.6); }
+  /* Focused from the keyboard: a solid orange ring round the thumb. */
+  input[type="range"]:focus-visible { outline: 0; --ring: 0 0 0 3px var(--panel), 0 0 0 5px var(--accent); }
+  @media (prefers-reduced-motion: no-preference) {
+    input[type="range"]::-webkit-slider-thumb { transition: box-shadow 160ms var(--ease-out); }
+    input[type="range"]::-moz-range-thumb { transition: box-shadow 160ms var(--ease-out); }
+  }
 
   /* Start screen: one centred card. */
   .empty { min-block-size: 100dvh; display: grid; place-items: center; padding: 24px 16px calc(24px + env(safe-area-inset-bottom, 0px)); }
@@ -161,8 +191,11 @@
   .ql small { display: block; margin-block-end: 0.3em; font: 500 max(12px, 0.28em)/1.3 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
   .note { color: var(--muted); font-size: 0.5em; font-weight: 500; margin: 0.15em 0 0.35em; }
   .gap { block-size: 0.6em; }
-  /* The line Follow my voice heard last. */
-  .script p.cur { color: var(--text); background: var(--panel-2); border-radius: 0.2em; box-shadow: 0 0 0 0.15em var(--panel-2), 0 0.2em 0 0.15em var(--accent); }
+  /* Follow my voice: the line being read is pure white, the lines after it in
+     its section a little dimmer (still AA); they fade between the two with
+     the section colours above. Next: and reminder lines keep their colours. */
+  .script p.cur { color: var(--text-now); }
+  :where(.section.active .cur ~ p) { color: var(--upcoming); }
 
   /* Links stay quiet while reading. The top row (every link of the section,
      numbered for keys 1–9) and the marker of a link on its own line are small
@@ -330,25 +363,29 @@
   .agent-row { display: flex; align-items: center; gap: 10px; padding: 4px 4px 4px 12px; font-weight: 600; }
   .agent-name { flex: 1; overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
   .agent-doing { color: var(--muted); font-size: 13px; font-weight: 500; white-space: nowrap; }
-  .agent-row .btn, .toggle-row .btn { font-size: 14px; padding: 8px 14px; }
-  @media (pointer: coarse) { .agent-row .btn, .toggle-row .btn { min-block-size: 44px; } }
+  .agent-row .btn { font-size: 14px; padding: 8px 14px; }
+  @media (pointer: coarse) { .agent-row .btn { min-block-size: 44px; } }
   .mcp-prompt { display: block; min-inline-size: min(300px, 100%); min-block-size: 9em; margin: 6px 0 2px; font-size: 12px; resize: vertical; }
   .mcp-prompt[hidden] { display: none; }
   .card .agent-row { padding-inline-start: 16px; }
 
-  /* Settings switches and the main-screen row. */
-  .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-block-size: 44px; font-weight: 600; font-size: 14px; }
-  .toggle-row label { flex: 1; align-self: stretch; display: flex; align-items: center; cursor: pointer; }
-  .toggle-row .val { display: block; margin-block-start: 2px; }
-  .switch {
-    appearance: none; position: relative; flex: none; inline-size: 44px; block-size: 26px; margin: 0;
-    border-radius: 999px; background: var(--chip); cursor: pointer;
+  /* Follow my voice and the main screen: two big buttons side by side, about
+     as tall as the control bar. Quiet indigo when off, orange when on, with
+     dark labels there (white on orange is for 19px bold only). Without the
+     speech API the main screen's button takes the whole row. */
+  .big-toggles { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 8px; }
+  .big-toggle {
+    display: grid; justify-items: center; align-content: center; gap: 1px; min-block-size: 64px; padding: 6px 8px;
+    font: 700 14px/1.15 var(--font-body); color: var(--text); background: var(--chip);
+    border: 0; border-radius: 14px; cursor: pointer; text-align: center;
   }
-  .switch::before { content: ""; position: absolute; inset-block-start: 3px; inset-inline-start: 3px; inline-size: 20px; block-size: 20px; border-radius: 50%; background: var(--muted); }
-  .switch:checked { background: var(--accent); }
-  .switch:checked::before { translate: 18px 0; background: var(--on-accent); }
-  @media (prefers-reduced-motion: no-preference) {
-    .switch, .switch::before { transition: background-color 160ms var(--ease-out), translate 160ms var(--ease-out); }
+  .big-toggle svg { margin-block-end: 2px; }
+  .big-state { font: 500 12px/1.15 var(--font-mono); color: var(--muted); }
+  .big-toggle:is([aria-pressed="true"], [data-on="true"]) { color: var(--bg); background: var(--accent); }
+  .big-toggle:is([aria-pressed="true"], [data-on="true"]) .big-state { color: var(--bg); }
+  @media (hover: hover) and (pointer: fine) {
+    .big-toggle:hover { background: var(--chip-hover); }
+    .big-toggle:is([aria-pressed="true"], [data-on="true"]):hover { background: var(--accent-bright); }
   }
 
   @media (max-width: 760px) {
@@ -460,13 +497,15 @@
     </div>
   </fieldset>
   <div class="pop-sep" role="separator"></div>
-  <div class="toggle-row voice-row" hidden>
-    <label for="voice">Follow my voice</label>
-    <input class="switch voice" id="voice" type="checkbox" role="switch">
-  </div>
-  <div class="toggle-row">
-    <span>Main screen<span class="val screen-state">Not connected</span></span>
-    <button class="btn screen" type="button" data-action="connect" data-on="false" aria-label="Connect main screen">Connect</button>
+  <div class="big-toggles">
+    <button class="big-toggle voice" type="button" aria-pressed="false" aria-label="Follow my voice" hidden>
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>
+      <span class="big-label">Follow my voice</span><span class="big-state">Off</span>
+    </button>
+    <button class="big-toggle screen" type="button" data-action="connect" data-on="false" aria-label="Connect main screen">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
+      <span class="big-label">Main screen</span><span class="big-state screen-state">Not connected</span>
+    </button>
   </div>
 </div>
 

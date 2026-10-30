@@ -31,62 +31,136 @@ function editDistanceAtMostOne(a, b) {
   return edits + (a.length - i) + (b.length - j) <= 1;
 }
 
-/** Fuzzy word match: equal, a cut-off interim word, or one typo in a longer word. */
+// Words people say all the time. Alone, or only with each other, they never
+// move the followed line: "the" or "you" is in nearly every line. Any word of
+// one or two letters counts as common too.
+export const COMMON_WORDS = new Set(("a an the and or but so to of in on at by for with from as into about over "
+  + "is are was were be been am do does did dont doesnt didnt have has had will would can cant could should "
+  + "it its this that these those there here then than now just very really also too not no yes "
+  + "i im ive me my we our you youre your he she they them their his her what when where why how who which "
+  + "get got go going up down out all some more like well okay ok um uh yeah "
+  + "de het een en van je jij ik dat die dit op te met voor niet maar dus er ook wel nog naar om als bij aan").split(" "));
+
+/** A common word: short or on the list above. */
+export function commonWord(word) {
+  return word.length <= 2 || COMMON_WORDS.has(word);
+}
+
+/**
+ * Fuzzy word match: equal, a cut-off interim word, or one typo in a longer
+ * word. Common words must match exactly ("the" is not "them").
+ */
 export function sameWord(heard, word) {
   if (heard === word) return true;
-  if (heard.length >= 3 && word.startsWith(heard)) return true;
+  if (commonWord(heard) || commonWord(word)) return false;
+  if (word.startsWith(heard)) return true;
   return Math.min(heard.length, word.length) >= 4 && editDistanceAtMostOne(heard, word);
 }
 
 /**
- * Score how well the end of what was heard matches one line: the longest
- * in-order fuzzy match, where later heard words weigh more. So the line that
- * holds the words just spoken beats the line that held the words before them.
+ * Where Follow my voice starts: at the first word of `line` (the line at the
+ * reading line; -1 before the first). `line` is the line followed, `word` the
+ * next word in it to hear, `heard` the last few words heard ({ w, used }, used
+ * when it moved the cursor) and `moved` whether anything has been followed since.
  */
-function lineScore(tail, words) {
-  const rows = tail.length + 1;
-  const cols = words.length + 1;
-  const best = Array.from({ length: rows }, () => new Array(cols).fill(0));
-  const count = Array.from({ length: rows }, () => new Array(cols).fill(0));
-  for (let i = 1; i < rows; i++) {
-    for (let j = 1; j < cols; j++) {
-      const options = [[best[i - 1][j], count[i - 1][j]], [best[i][j - 1], count[i][j - 1]]];
-      if (sameWord(tail[i - 1], words[j - 1])) options.push([best[i - 1][j - 1] + i, count[i - 1][j - 1] + 1]);
-      [best[i][j], count[i][j]] = options.reduce((a, b) => (b[0] > a[0] ? b : a));
-    }
-  }
-  return { score: best[tail.length][words.length], matched: count[tail.length][words.length] };
+export function followStart(line) {
+  return { line: Math.max(0, line), word: 0, heard: [], moved: false };
 }
 
 /**
- * Pick the line being read. `lines` holds each spoken line's speechWords
- * (QL questions and [reminders] left out by the caller); `current` is the
- * line followed so far (-1 before the first); `heard` is recent recognised text.
- * Looks `ahead` lines forward and at most `back` lines back, so it never jumps
- * far backwards. Returns `current` when nothing matches well enough.
+ * Follow the speaker word by word. `lines` holds each spoken line's
+ * speechWords (QL questions and [reminders] left out by the caller); `state`
+ * comes from followStart or an earlier call; `words` are newly heard words
+ * (speechWords), each heard once. Returns the new state; `state` is not
+ * changed, so interim words can be tried from the last final state and then
+ * thrown away.
+ *
+ * Each heard word moves a cursor through the script, in order:
+ * - in the current line, to the next word or a few words on (a common word
+ *   only to the very next one); finishing a line moves to the next line;
+ * - to the next line when its start is heard: two words in a row, one of
+ *   them not common;
+ * - further ahead (at most `ahead` lines) or one line back only after a
+ *   strong run: three words in a row, two of them not common.
+ * So a single word, or a pair of common words, that also appears in a later
+ * line never moves the line. "In a row" forgives one missed or extra word.
  */
-export function followLine(lines, current, heard, { ahead = 6, back = 1, tailWords = 6 } = {}) {
-  const tail = speechWords(heard).slice(-tailWords);
-  if (!tail.length || !lines.length) return current;
-  const from = Math.max(0, current - back);
-  const to = Math.min(lines.length - 1, Math.max(current, 0) + ahead);
-  let pick = current;
-  let pickScore = 0;
-  for (let k = from; k <= to; k++) {
-    const words = lines[k];
-    if (!words?.length) continue;
-    // Two matching words (or the whole of a one-word line), one of them the
-    // word heard last: the speaker is on this line now.
-    if (!words.some((w) => sameWord(tail.at(-1), w))) continue;
-    const { score, matched } = lineScore(tail, words);
-    if (matched < Math.min(2, words.length)) continue;
-    // Small pull towards the line already followed; going back costs more
-    // than going forward, so a repeated phrase moves on.
-    const step = k - Math.max(current, 0);
-    const weighted = score - (step < 0 ? 1.5 : 0.5) * Math.abs(step) + (k === current ? 0.75 : 0);
-    if (weighted > pickScore) { pick = k; pickScore = weighted; }
+export function followWords(lines, state, words, { ahead = 6, keep = 8 } = {}) {
+  // All words in one list; starts[k] is where line k begins in it.
+  const flat = [];
+  const starts = lines.map((ws, k) => {
+    const s = flat.length;
+    for (const w of ws || []) flat.push({ w, k });
+    return s;
+  });
+  if (!flat.length) return state;
+  const line = Math.min(Math.max(0, state.line), lines.length - 1);
+  let at = Math.min(flat.length, starts[line] + Math.max(0, state.word));
+  const heard = state.heard.slice();
+  let moved = state.moved;
+  for (const w of words) {
+    const word = { w, used: false };
+    heard.push(word);
+    if (heard.length > keep) heard.shift();
+    const j = nextWord(flat, starts, at, heard, ahead);
+    if (j >= 0) { at = j + 1; moved = word.used = true; }
+  }
+  if (at >= flat.length) {
+    const last = flat.at(-1).k;
+    return { line: last, word: lines[last].length, heard, moved };
+  }
+  return { line: flat[at].k, word: at - starts[flat[at].k], heard, moved };
+}
+
+/** The script word the newest heard word is, or -1 when it does not move the cursor. */
+function nextWord(flat, starts, at, heard, ahead) {
+  const cur = flat[Math.min(at, flat.length - 1)].k;
+  const lo = cur > 0 ? starts[cur - 1] : 0;
+  const strong = (r) => r.n >= 3 && r.strong >= 2;
+  let pick = -1;
+  let pickRun = 0;
+  let pickFar = Infinity;
+  for (let j = lo; j < flat.length && flat[j].k <= cur + ahead; j++) {
+    if (!sameWord(heard.at(-1).w, flat[j].w)) continue;
+    // Going forward only new words count (not heard before and not used to
+    // move already); going back, all of them.
+    const { all, ahead: fresh } = runTo(flat, heard, j, at);
+    const d = flat[j].k - cur;
+    let ok;
+    if (d === 0) ok = j === at || (j > at && ((j - at <= 3 && !commonWord(flat[j].w)) || strong(fresh)));
+    else if (d === 1) ok = (fresh.n >= 2 && fresh.strong >= 1 && fresh.first <= starts[flat[j].k] + 1) || strong(fresh);
+    else ok = d > 1 ? strong(fresh) : d === -1 && strong(all);
+    if (!ok) continue;
+    // The longest run of words counted wins; on a tie, the nearest word ahead, then behind.
+    const run = j >= at ? fresh.n : all.n;
+    const far = j >= at ? j - at : flat.length + at - j;
+    if (run > pickRun || (run === pickRun && far < pickFar)) { pick = j; pickRun = run; pickFar = far; }
   }
   return pick;
+}
+
+/**
+ * The heard words, ending with the newest, that match the script in order up
+ * to word `j`, forgiving one missed or extra word between matches: `all` of
+ * them, and the new ones `ahead` of the cursor `at` (heard words not used to
+ * move before). Each has `n` matches, `strong` of them not common words,
+ * starting at script word `first`.
+ */
+function runTo(flat, heard, j, at) {
+  const all = { n: 0, strong: 0, first: j };
+  const fresh = { n: 0, strong: 0, first: j };
+  let i = heard.length - 1;
+  for (;;) {
+    for (const r of j >= at && !heard[i].used ? [all, fresh] : [all]) {
+      r.n++;
+      r.first = j;
+      if (!commonWord(flat[j].w)) r.strong++;
+    }
+    const step = [[1, 1], [2, 1], [1, 2], [2, 2]].find(([di, dj]) => i - di >= 0 && j - dj >= 0 && sameWord(heard[i - di].w, flat[j - dj].w));
+    if (!step) return { all, ahead: fresh };
+    i -= step[0];
+    j -= step[1];
+  }
 }
 
 /**

@@ -44,6 +44,8 @@ const inGamut = (t) => {
 // [text, background, where, minimum]
 const PAIRS = [
   ["text", "bg", "active spoken lines"],
+  ["text-now", "bg", "the line Follow my voice is on"],
+  ["upcoming", "bg", "the lines after it while Follow my voice is on"],
   ["dim", "bg", "lines and titles of the other sections, their Now: label and links"],
   ["muted", "bg", "reminders, the active section's link row and link markers"],
   ["next", "bg", "active Next: lines"],
@@ -57,13 +59,16 @@ const PAIRS = [
   ["ok", "panel", "main screen connected"],
   ["ql", "panel", "active QL box"],
   ["ql-dim", "panel", "other sections' QL box"],
-  ["text", "panel-2", "the line Follow my voice heard, hovered menu items"],
+  ["text", "panel-2", "hovered menu items"],
   ["muted", "panel-2", "code on raised surfaces"],
   ["text", "chip", "buttons, chosen width, tooltips"],
   ["muted", "chip", "section times"],
   ["text", "chip-hover", "hovered buttons"],
   ["on-accent", "accent", "orange buttons: 19px bold labels only (large text)", 3],
   ["on-accent", "accent-hover", "hovered orange buttons: 19px bold (large text)", 3],
+  ["bg", "accent", "dark labels on orange buttons (Follow my voice on, main screen connected)"],
+  ["bg", "accent-bright", "the same, hovered"],
+  ["muted", "chip-hover", "the state word on a hovered indigo button"],
   // Not text: the orange border of the link on the main screen (3:1).
   ["accent", "bg", "border of the link on the main screen (graphic)", 3],
 ];
@@ -90,6 +95,14 @@ test("the active section stays clearly brighter than the rest", () => {
   assert.ok(luminance(tokens.text) / luminance(tokens.dim) >= 3, "spoken lines: active vs other sections");
 });
 
+// Follow my voice: the line being read stands out from the lines after it,
+// which stay brighter than the other sections.
+test("the line Follow my voice is on is the brightest; the lines after it dimmer, above the other sections", () => {
+  assert.equal(luminance(tokens["text-now"]), 1, "pure white");
+  assert.ok(luminance(tokens["text-now"]) / luminance(tokens.upcoming) >= 1.6, "the lines after it are clearly dimmer");
+  assert.ok(luminance(tokens.upcoming) / luminance(tokens.dim) >= 1.6, "and still brighter than other sections");
+});
+
 // The one deliberate exception to AA (AGENTS.md): text above the reading line
 // has been read, so a veil in the page colour (--read-veil) fades it almost
 // into the page. It must stay LOW; do not raise it to AA. Browsers blend in
@@ -103,7 +116,7 @@ test("read text above the reading line is deliberately faded below AA (the one e
   const [L, C, h, alpha] = veil.slice(1).map(Number);
   assert.deepEqual([L / 100, C, h], tokens.bg, "the veil is the page colour");
   const bg = gamma(tokens.bg);
-  for (const fg of ["text", "dim", "ql", "next"]) {
+  for (const fg of ["text", "text-now", "dim", "ql", "next"]) {
     const faded = gamma(tokens[fg]).map((v, i) => v * (1 - alpha) + bg[i] * alpha);
     const ratio = (fromGamma(faded) + 0.05) / (luminance(tokens.bg) + 0.05);
     assert.ok(ratio < 2, `--${fg} under the veil is ${ratio.toFixed(2)}:1 on --bg; read text stays faded below 2:1`);

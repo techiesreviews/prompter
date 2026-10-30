@@ -1,6 +1,6 @@
 // Page logic. scripts/build.mjs inlines src/core.mjs, src/follow.mjs and
 // src/agent.mjs above this file inside one function, so parse, PRESETS,
-// DEMO_SCRIPT, encodeScript, followLine, heardLink, linkAt, speechWords,
+// DEMO_SCRIPT, encodeScript, followWords, heardLink, linkAt, speechWords,
 // connectionPrompt, agentName … are in scope here.
 
 // ---------- Player view ----------
@@ -46,7 +46,7 @@ const connectBtn = $(".screen"); // in Settings
 const settingsBtn = $(".settings-btn");
 const openBtn = $(".open-btn");
 const autoBtn = $(".auto");
-const voiceSwitch = $(".voice"); // in Settings
+const voiceBtn = $(".voice"); // in Settings
 const voiceNotice = $(".voice-notice");
 const alertEl = $(".note-row.alert");
 const hintEl = $(".screen-hint");
@@ -95,7 +95,8 @@ let speed = Number(store.get("prompter-speed")) || 40;
 let lastFrame = 0;
 let voiceLines = []; // speechWords of each spoken line, by data-k
 let voiceOn = false;
-let voiceAt = -1;
+let voiceState = followStart(-1); // where the voice is, after the final results so far (followWords)
+let voiceFinal = 0; // speech results already final and followed
 let recognition = null;
 let voiceRestarts = 0;
 let resumeAuto = false;
@@ -257,7 +258,7 @@ function render() {
   voiceLinkKey = "";
   voiceLinkAt = -1;
   clearTimeout(settleTimer);
-  voiceAt = -1;
+  voiceState = followStart(-1);
   updateActive();
 }
 
@@ -582,7 +583,7 @@ function moveLine(frac, save = false) {
   setLine(frac, true);
   if (save) store.set(LINE_KEY, lineFrac.toFixed(4));
   updateActive();
-  if (voiceOn) voiceAt = lineAtReadingLine();
+  if (voiceOn) voiceFromReadingLine();
 }
 
 // Mouse, pen and touch drag it the same way; the page does not scroll under a finger (touch-action: none).
@@ -658,10 +659,9 @@ function updateActive() {
 // ---------- Main screen ----------
 function connected() { return mainWin && !mainWin.closed; }
 
-// The main screen's row in Settings; the Settings button shows a dot while it is connected.
+// The main screen's button in Settings (orange while connected); the Settings button shows a dot then.
 function setConnected(on) {
   connectBtn.dataset.on = String(on);
-  connectBtn.textContent = on ? "Reconnect" : "Connect";
   connectBtn.setAttribute("aria-label", on ? "Main screen connected, reconnect" : "Connect main screen");
   $(".screen-state").textContent = on ? "Connected" : "Not connected";
   updateSettingsBtn();
@@ -822,9 +822,15 @@ function toggleAuto() {
   setAuto(!autoOn);
 }
 
+// A slider's track is orange up to its thumb (--fill, 0 to 1).
+function fillRange(input) {
+  input.style.setProperty("--fill", String((input.value - input.min) / (input.max - input.min)));
+}
+
 function setSpeed(v) {
   speed = Math.min(300, Math.max(10, Math.round(v / 10) * 10 || 40));
   speedInput.value = speed;
+  fillRange(speedInput);
   $(".speed-val").textContent = speed;
   store.set("prompter-speed", speed);
 }
@@ -834,6 +840,7 @@ function setSize(px) {
   px = Math.min(110, Math.max(20, Math.round(px) || 52));
   root.style.setProperty("--size", px + "px");
   sizeInput.value = px;
+  fillRange(sizeInput);
   $(".size-val").textContent = `${px} px`;
   store.set("prompter-size", px);
 }
@@ -852,7 +859,7 @@ function goSection(delta) {
   if (!target) return;
   window.scrollTo({ top: target.offsetTop - readingLineY() + 2 });
   updateActive(); // at once, so quick repeated presses keep moving
-  if (voiceOn) voiceAt = lineAtReadingLine();
+  if (voiceOn) voiceFromReadingLine();
 }
 
 // ---------- Follow my voice ----------
@@ -865,12 +872,23 @@ function lineAtReadingLine() {
   return k;
 }
 
+// Scrolled by hand, a section jump or the line moved: follow on from the line
+// at the reading line, marked there without scrolling. Still on the followed
+// line, the place in it is kept.
+function voiceFromReadingLine() {
+  const k = lineAtReadingLine();
+  if (k !== voiceState.line) voiceState = followStart(k);
+  markLine(k, false);
+}
+
+// The line being read is bright; the lines after it a little dimmer (CSS).
 let voiceScrolling = false;
-function markLine(k) {
+function markLine(k, scroll = true) {
   main.querySelector("p.cur")?.classList.remove("cur");
   const el = main.querySelector(`[data-k="${k}"]`);
   if (!el) return;
   el.classList.add("cur");
+  if (!scroll) return;
   const top = el.getBoundingClientRect().top + window.scrollY - readingLineY() + 2;
   voiceScrolling = true;
   window.scrollTo({ top, behavior: reducedMotion.matches ? "auto" : "smooth" });
@@ -878,7 +896,8 @@ function markLine(k) {
 }
 
 function setVoiceButton() {
-  voiceSwitch.checked = voiceOn;
+  voiceBtn.setAttribute("aria-pressed", String(voiceOn));
+  voiceBtn.querySelector(".big-state").textContent = voiceOn ? "On" : "Off";
   updateSettingsBtn();
   setAutoTip();
 }
@@ -915,7 +934,8 @@ function startVoice() {
   voiceRestarts = 0;
   voiceLinkKey = "";
   voiceLinkAt = -1;
-  voiceAt = lineAtReadingLine();
+  voiceFinal = 0;
+  voiceState = followStart(lineAtReadingLine());
   resumeAuto = autoOn;
   setAuto(false);
   setVoiceButton();
@@ -936,12 +956,20 @@ function stopVoice(message = "") {
   if (resumeAuto) { resumeAuto = false; setAuto(true); }
 }
 
+// Each final result is followed once, in order; the interim words after them
+// are tried from there each time and dropped, so no word counts twice.
 function onVoiceResult(e) {
   voiceRestarts = 0;
+  const words = (i) => speechWords(e.results[i][0].transcript);
+  for (; voiceFinal < e.results.length && e.results[voiceFinal].isFinal; voiceFinal++) {
+    voiceState = followWords(voiceLines, voiceState, words(voiceFinal));
+  }
+  let now = voiceState;
+  for (let i = voiceFinal; i < e.results.length; i++) now = followWords(voiceLines, now, words(i));
+  const cur = main.querySelector("p.cur");
+  if (now.moved && (!cur || Number(cur.dataset.k) !== now.line)) markLine(now.line);
   let heard = "";
   for (let i = Math.max(0, e.results.length - 3); i < e.results.length; i++) heard += ` ${e.results[i][0].transcript}`;
-  const k = followLine(voiceLines, voiceAt, heard);
-  if (k !== voiceAt && k >= 0) { voiceAt = k; markLine(k); }
   // Saying a link's label (this section or the next) opens it at once. The
   // heard words keep a label for a few more results; that echo never reopens
   // it. Only a label heard in a later result does, and only when the main
@@ -971,7 +999,7 @@ const VOICE_ERRORS = {
   "not-allowed": "The microphone is blocked. Allow it for this page to use Follow my voice.",
   "service-not-allowed": "This browser does not allow speech recognition here. Follow my voice is off.",
   "audio-capture": "No microphone found. Follow my voice is off.",
-  network: "The browser's speech service could not be reached. Follow my voice is off.",
+  network: "Your browser could not reach its speech service. Some browsers (like Vivaldi or Brave) cannot use it; try Chrome or Edge. Follow my voice is off.",
   "language-not-supported": "The browser's speech service does not support your language. Follow my voice is off.",
 };
 
@@ -985,6 +1013,7 @@ function onVoiceEnd() {
   if (!voiceOn || !recognition) return;
   if (++voiceRestarts > 5) { stopVoice("Follow my voice stopped hearing you. Turn it on again to retry."); return; }
   voiceLinkAt = -1; // a new session numbers its results from 0 again
+  voiceFinal = 0;
   try { recognition.start(); } catch { stopVoice("Follow my voice stopped. Turn it on again to retry."); }
 }
 
@@ -1077,13 +1106,13 @@ window.addEventListener("resize", () => { setLine(lineFrac); updateActive(); });
 // scrolling is ignored.
 for (const type of ["wheel", "touchmove", "scrollend"]) {
   window.addEventListener(type, () => {
-    if (voiceOn && !voiceScrolling) requestAnimationFrame(() => { voiceAt = lineAtReadingLine(); });
+    if (voiceOn && !voiceScrolling) requestAnimationFrame(voiceFromReadingLine);
   }, { passive: true });
 }
 clockBtn.addEventListener("click", startClock);
 autoBtn.addEventListener("click", toggleAuto);
-// The switch shows whether it is on; the first turn-on waits for the notice's Turn on.
-voiceSwitch.addEventListener("change", () => { voiceSwitch.checked = voiceOn; toggleVoice(); });
+// The button shows whether it is on; the first turn-on waits for the notice's Turn on.
+voiceBtn.addEventListener("click", toggleVoice);
 $(".prev").addEventListener("click", () => goSection(-1));
 $(".next").addEventListener("click", () => goSection(1));
 speedInput.addEventListener("input", () => setSpeed(Number(speedInput.value)));
@@ -1165,7 +1194,7 @@ document.addEventListener("keydown", (e) => {
 });
 
 // ---------- Start ----------
-$(".voice-row").hidden = !Recognition;
+voiceBtn.hidden = !Recognition;
 setLine(store.get(LINE_KEY));
 setSpeed(speed);
 setSize(Number(store.get("prompter-size")) || (window.innerWidth < 640 ? 32 : 52));

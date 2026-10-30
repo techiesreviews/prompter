@@ -12,7 +12,8 @@ const MOBILE = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch
 const DEMO_SECTIONS = parse(DEMO_SCRIPT).length;
 
 // Replaces the browser's speech recognition with one the test drives:
-// window.__speech.say("words") delivers a result to the running instance.
+// window.__speech.say("words") delivers a final result to the running
+// instance; say("wor", true) an interim one, replaced by the next result.
 const SPEECH_STUB = () => {
   const state = { started: 0, aborted: 0, instance: null, results: [] };
   class FakeRecognition {
@@ -20,8 +21,11 @@ const SPEECH_STUB = () => {
     stop() { this.onend?.(); }
     abort() { state.aborted++; }
   }
-  state.say = (text) => {
-    state.results.push([{ transcript: text }]);
+  state.say = (text, interim = false) => {
+    if (state.results.at(-1)?.isFinal === false) state.results.pop();
+    const result = [{ transcript: text }];
+    result.isFinal = !interim;
+    state.results.push(result);
     state.instance?.onresult?.({ results: state.results, resultIndex: state.results.length - 1 });
   };
   state.fail = (error) => state.instance?.onerror?.({ error });
@@ -555,15 +559,31 @@ export async function run({ browser, base, mode, dist, out }) {
   await popAbove(page, "#settings", ".settings-btn", "desktop Settings");
   assert.deepEqual(await page.locator("#settings").evaluate((el) => [...el.querySelectorAll(".setting")].map((row) => (row.matches("fieldset") ? row.querySelector("legend") : row).firstChild.textContent.trim())),
     ["Text size", "Scroll speed", "Width"]);
-  const toggleRows = (p) => p.locator("#settings .toggle-row:not([hidden])").evaluateAll((rows) => rows.map((r) => r.innerText.replace(/\s+/g, " ").trim()));
-  assert.deepEqual(await toggleRows(page), ["Main screen Not connected Connect"], "no Follow my voice without the speech API; the main screen's row");
-  assert.equal(await page.locator("#settings").locator("input, select, button, textarea").count(), 7, "two sliders, three width choices, the voice switch and Connect, nothing else");
+  // Follow my voice and the main screen: two big buttons side by side (label and state).
+  const bigButtons = (p) => p.locator("#settings .big-toggle:not([hidden])").evaluateAll((els) => els.map((el) => el.innerText.replace(/\s+/g, " ").trim()));
+  assert.deepEqual(await bigButtons(page), ["Main screen Not connected"], "no Follow my voice without the speech API; the main screen's button");
+  assert.equal(await page.locator("#settings").locator("input, select, button, textarea").count(), 7, "two sliders, three width choices, the voice and main screen buttons, nothing else");
+  const screenBox = await page.locator("#settings .screen").boundingBox();
+  const rowBox = await page.locator("#settings .big-toggles").boundingBox();
+  assert.ok(Math.abs(screenBox.width - rowBox.width) < 1, "alone, the main screen's button takes the whole row");
+  const dockHeight = (await page.locator(".dock").boundingBox()).height;
+  assert.ok(screenBox.height >= dockHeight && screenBox.height <= dockHeight + 24, `about as tall as the control bar: ${screenBox.height} vs ${dockHeight}`);
+  assert.deepEqual(await page.locator("#settings .screen").evaluate((el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).color]), ["oklch(0.33 0.096 282)", "oklch(0.975 0.012 282)"], "not connected: quiet indigo");
+  // Sliders: drawn by the page (a slim track, orange up to a round white thumb; see the
+  // screenshot), 28px tall for a mouse. Slider parts cannot be read with getComputedStyle.
+  const sliderLook = (p) => p.locator("#settings .size").evaluate((el) => [getComputedStyle(el).appearance, el.getBoundingClientRect().height, Number(el.style.getPropertyValue("--fill")).toFixed(3)]);
   assert.deepEqual(await page.locator("#settings .seg label").allTextContents(), ["Narrow", "Medium", "Full"]);
   await page.locator(".size").fill("70");
   await page.locator(".speed").fill("120");
   await page.locator('#settings .seg label:has-text("Narrow")').click();
   assert.deepEqual(await page.locator("#settings .setting .val").allTextContents(), ["70 px", "120"]);
+  assert.deepEqual(await sliderLook(page), ["none", 28, "0.556"], "the page's own slider, filled to the value");
+  await page.locator(".size").hover();
   await shot(page, "settings-popover-desktop");
+  await page.locator(".size").focus();
+  await page.keyboard.press("ArrowRight");
+  assert.deepEqual([await page.locator(".size").inputValue(), await page.locator(".size").evaluate((el) => getComputedStyle(el).outlineStyle)], ["72", "none"], "arrow keys move it; the ring is on the thumb");
+  await page.keyboard.press("ArrowLeft");
   const narrowCol = await page.locator(".script").evaluate((el) => el.getBoundingClientRect().width - parseFloat(getComputedStyle(el).paddingLeft) * 2);
   assert.ok(Math.abs(narrowCol - 600) < 2, `narrow column is ${narrowCol}px`);
   await page.keyboard.press("Escape");
@@ -653,7 +673,7 @@ export async function run({ browser, base, mode, dist, out }) {
   watch(v, "voice");
   await v.goto(link);
   await v.locator(".section").first().waitFor();
-  await v.locator(".voice-row:not([hidden])").waitFor({ state: "attached" });
+  await v.locator(".voice:not([hidden])").waitFor({ state: "attached" });
   await (await dock(v, ".auto")).click();
   assert.equal(await v.locator(".auto").getAttribute("aria-pressed"), "true");
   await viaSettings(v, ".voice");
@@ -661,13 +681,17 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.match(await v.locator(".voice-notice").textContent(), /speech service[\s\S]*Google[\s\S]*Your script stays on this device/);
   assert.equal(await v.evaluate(() => window.__speech.started), 0, "nothing listens before consent");
   await shot(v, "voice-notice-desktop");
-  assert.equal(await v.locator(".voice").evaluate((el) => el.checked), false, "the switch stays off until Turn on");
+  assert.equal(await v.locator(".voice").getAttribute("aria-pressed"), "false", "the button stays off until Turn on");
   await v.locator('[data-action="voice-ok"]').click();
   assert.equal(await v.evaluate(() => window.__speech.started), 1);
-  assert.equal(await v.locator(".voice").evaluate((el) => String(el.checked)), "true");
+  assert.deepEqual([await v.locator(".voice").getAttribute("aria-pressed"), await v.locator(".voice .big-state").textContent()], ["true", "On"]);
   assert.deepEqual([await v.locator(".settings-btn").getAttribute("data-dot"), await v.locator(".settings-btn").getAttribute("aria-label")], ["on", "Settings · Follow my voice on"], "a dot on Settings while it listens");
   await (await dock(v, ".settings-btn")).click();
   await popAbove(v, "#settings", ".settings-btn", "Settings with voice on");
+  assert.deepEqual(await v.locator("#settings .big-toggle").evaluateAll((els) => els.map((el) => [el.innerText.replace(/\s+/g, " "), getComputedStyle(el).backgroundColor, getComputedStyle(el).color])),
+    [["Follow my voice On", "oklch(0.65 0.227 32.3)", "oklch(0.16 0.06 282)"], ["Main screen Not connected", "oklch(0.33 0.096 282)", "oklch(0.975 0.012 282)"]], "on: orange with dark text; off: quiet indigo; side by side");
+  const [vb, sb] = await Promise.all([v.locator("#settings .voice").boundingBox(), v.locator("#settings .screen").boundingBox()]);
+  assert.ok(Math.abs(vb.y - sb.y) < 1 && Math.abs(vb.width - sb.width) < 1 && vb.x < sb.x, "two equal buttons side by side");
   await shot(v, "settings-voice-on-desktop");
   await v.evaluate(() => document.querySelector("#settings").hidePopover());
   assert.equal(await v.locator(".auto").getAttribute("aria-pressed"), "false", "auto-scroll pauses");
@@ -676,25 +700,55 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.deepEqual([await v.locator(".auto").getAttribute("aria-pressed"), await v.locator(".auto").evaluate((el) => [getComputedStyle(el, "::after").opacity, getComputedStyle(el).opacity].join(" ")), await v.locator(".status").textContent()], ["false", "1 1", "Auto-scroll is off while Follow my voice is on."], "a press shows the reason on the button, at full strength");
   assert.notEqual(await v.locator(".auto").evaluate((el) => getComputedStyle(el).backgroundColor), "oklch(0.65 0.227 32.3)", "greyed out: not the orange play colour");
   await v.waitForFunction(() => !document.querySelector(".auto").hasAttribute("data-show-tip"), null, { timeout: 3000 });
-  await v.evaluate(() => window.__speech.say("writing scripts takes too long"));
+  // Word by word, line by line: a finished line moves on to the next one.
+  const curText = () => v.evaluate(() => document.querySelector("p.cur")?.textContent ?? null);
+  await v.evaluate(() => window.__speech.say("writing scripts takes"));
   await v.waitForFunction(() => document.querySelector("p.cur")?.textContent === "Writing scripts takes too long.");
-  await v.evaluate(() => window.__speech.say("reading them looks"));
+  await v.evaluate(() => window.__speech.say("too long reading"));
   await v.waitForFunction(() => document.querySelector("p.cur")?.textContent === "Reading them looks stiff.");
-  await v.evaluate(() => window.__speech.say("hi i'm sam welcome"));
+  // Interim words: a cut-off word or one word of a later line never jumps.
+  await v.evaluate(() => window.__speech.say("them looks stiff to", true));
+  await v.evaluate(() => window.__speech.say("them looks stiff to", true));
+  await v.waitForFunction(() => document.querySelector("p.cur")?.textContent === "Today: a calmer way.");
+  await v.evaluate(() => window.__speech.say("them looks", true));
+  await v.waitForFunction(() => document.querySelector("p.cur")?.textContent === "Reading them looks stiff.");
+  await v.evaluate(() => window.__speech.say("them looks question", true));
+  await v.waitForTimeout(100);
+  assert.equal(await curText(), "Reading them looks stiff.", "a word of a later line does not jump");
+  await v.evaluate(() => window.__speech.say("them looks stiff today a calmer way hi i'm"));
   await v.waitForFunction(() => document.querySelector("p.cur")?.textContent === "Hi, I'm Sam. Welcome.");
   await v.waitForFunction(() => {
     const top = document.querySelector("p.cur").getBoundingClientRect().top;
     return Math.abs(top - window.innerHeight * 0.34) < 12;
   });
+  await v.waitForTimeout(400); // let the colours settle
+  // The line being read is pure white, the lines after it dimmer (AA), no box or underline.
+  assert.deepEqual(await v.evaluate(() => {
+    const cur = document.querySelector("p.cur");
+    const cs = getComputedStyle(cur);
+    const lines = [...cur.parentElement.querySelectorAll("p.say, p.now")];
+    const [before, after] = [lines[lines.indexOf(cur) - 1], lines[lines.indexOf(cur) + 1]];
+    return [cs.color, cs.backgroundColor, cs.boxShadow, getComputedStyle(after).color, getComputedStyle(before).color];
+  }), ["oklch(1 0 none)", "rgba(0, 0, 0, 0)", "none", "oklch(0.8 0.03 282)", "oklch(0.975 0.012 282)"], "the current line is white; the lines after it dimmer; read lines keep their colour under the veil");
   await shot(v, "voice-follow-desktop");
-  // QL lines are never followed: saying the QL keeps the current line.
+  // QL lines are never followed, and a pair of words from a later line does not jump.
   await v.evaluate(() => window.__speech.say("why one question per section"));
   await v.waitForTimeout(100);
-  assert.equal(await v.locator("p.cur").textContent(), "Hi, I'm Sam. Welcome.");
+  assert.equal(await curText(), "Hi, I'm Sam. Welcome.");
+  // Scrolling by hand: the line at the reading line becomes the current one, without a jump.
+  await v.evaluate(() => {
+    const el = [...document.querySelectorAll("p[data-k]")].find((p) => p.textContent === "One question keeps you focused.");
+    window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - document.querySelector(".reading-line").getBoundingClientRect().top + 2);
+  });
+  await v.mouse.wheel(0, 1);
+  await v.waitForFunction(() => document.querySelector("p.cur")?.textContent === "One question keeps you focused.");
+  await v.evaluate(() => window.__speech.say("one question keeps you focused you"));
+  await v.waitForFunction(() => document.querySelector("p.cur")?.textContent === "You answer, not recite.");
   await v.evaluate(() => window.__speech.fail("not-allowed"));
   await v.locator(".note-row.alert:not([hidden])").waitFor();
   assert.match(await v.locator(".alert-text").textContent(), /microphone is blocked/);
-  assert.equal(await v.locator(".voice").evaluate((el) => String(el.checked)), "false");
+  assert.equal(await v.locator(".voice").getAttribute("aria-pressed"), "false");
+  assert.equal(await v.locator("p.cur").count(), 0, "voice off: no line marked");
   assert.equal(await v.locator(".settings-btn").getAttribute("data-dot"), null);
   assert.equal(await v.locator(".auto").getAttribute("aria-pressed"), "true", "auto-scroll resumes");
   await (await dock(v, ".auto")).click();
@@ -703,10 +757,12 @@ export async function run({ browser, base, mode, dist, out }) {
   await viaSettings(v, ".voice");
   assert.equal(await v.locator(".voice-notice").isHidden(), true);
   assert.equal(await v.evaluate(() => window.__speech.started), 1);
-  await viaSettings(v, ".voice");
-  assert.equal(await v.locator(".voice").evaluate((el) => String(el.checked)), "false");
+  await v.evaluate(() => window.__speech.fail("network"));
+  assert.match(await v.locator(".alert-text").textContent(), /could not reach its speech service\. Some browsers \(like Vivaldi or Brave\) cannot use it; try Chrome or Edge\./);
+  assert.equal(await v.locator(".voice").getAttribute("aria-pressed"), "false");
+  await v.locator('.note-row.alert [data-action="dismiss"]').click();
   await voiced.close();
-  ok("Follow my voice: shown with the API, notice before first use, follows spoken lines to the reading line, skips QL, pauses auto-scroll, handles a blocked mic, remembers consent");
+  ok("Follow my voice: a big mic button in Settings (orange when on) with the API, notice before first use, follows line by line to the reading line (white current line, dimmer lines after it), interim and later-line words never jump, skips QL, picks up after scrolling by hand, pauses auto-scroll, handles a blocked mic and a browser without the speech service, remembers consent");
 
   // ---- Links open at the point where they are talked about ----
   const inlineLink = await makeLink(INLINE_SCRIPT, "lex", base);
@@ -727,8 +783,9 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await L.evaluate(() => document.querySelector(".section:nth-child(2) .mark").previousElementSibling.textContent), "Patchstack finds the holes.");
   await viaSettings(L, ".screen");
   assert.equal(await L.locator("#settings .screen").getAttribute("data-on"), "true");
-  assert.deepEqual([await L.locator("#settings .screen").textContent(), await L.locator(".screen-state").textContent(), await L.locator(".settings-btn").getAttribute("data-dot"), await L.locator(".settings-btn").getAttribute("aria-label")],
-    ["Reconnect", "Connected", "on", "Settings · main screen connected"], "Settings shows the main screen connected, with a dot on its button");
+  assert.deepEqual([await L.locator("#settings .screen").getAttribute("aria-label"), await L.locator(".screen-state").textContent(), await L.locator(".settings-btn").getAttribute("data-dot"), await L.locator(".settings-btn").getAttribute("aria-label")],
+    ["Main screen connected, reconnect", "Connected", "on", "Settings · main screen connected"], "Settings shows the main screen connected, with a dot on its button");
+  assert.deepEqual(await L.locator("#settings .screen").evaluate((el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).color]), ["oklch(0.65 0.227 32.3)", "oklch(0.16 0.06 282)"], "connected: orange with dark text");
   const visits = () => L.evaluate(() => window.__screen.visits.slice());
   const lastVisit = async () => (await visits()).at(-1);
   await L.waitForTimeout(900);
@@ -765,7 +822,7 @@ export async function run({ browser, base, mode, dist, out }) {
   // Follow my voice: saying the next section's link label opens it at once.
   await L.evaluate(() => localStorage.setItem("prompter-voice-ok", "yes"));
   await viaSettings(L, ".voice");
-  assert.equal(await L.locator(".voice").evaluate((el) => String(el.checked)), "true");
+  assert.equal(await L.locator(".voice").getAttribute("aria-pressed"), "true");
   await L.evaluate(() => window.__speech.say("and then wordfence"));
   await L.waitForFunction(() => window.__screen.visits.at(-1) === "https://www.wordfence.com", null, { timeout: 2000 });
   await L.evaluate(() => window.__speech.say("and then wordfence blocks it"));
@@ -1215,7 +1272,7 @@ export async function run({ browser, base, mode, dist, out }) {
     // Follow my voice brings the heard line to the moved line.
     const V = await open(link);
     await viaSettings(V, ".voice");
-    await V.evaluate(() => window.__speech.say("writing scripts takes too long"));
+    await V.evaluate(() => window.__speech.say("writing scripts takes"));
     await V.waitForFunction(() => document.querySelector("p.cur")?.textContent === "Writing scripts takes too long.");
     await V.waitForFunction((y) => Math.abs(document.querySelector("p.cur").getBoundingClientRect().top - y) < 12, Y);
     await V.close();
@@ -1307,8 +1364,8 @@ export async function run({ browser, base, mode, dist, out }) {
   await popAbove(m, "#settings", ".settings-btn", "mobile Settings");
   await noOverflow(m, "mobile Settings popover");
   await m.locator('#settings .seg label:has-text("Narrow")').click();
-  assert.deepEqual(await toggleRows(m), ["Follow my voice", "Main screen Not connected Connect"]);
-  for (const sel of [".voice-row", "#settings .screen"]) {
+  assert.deepEqual(await bigButtons(m), ["Follow my voice Off", "Main screen Not connected"]);
+  for (const sel of ["#settings .voice", "#settings .screen", "#settings .size", "#settings .speed"]) {
     const box = await m.locator(sel).boundingBox();
     assert.ok(box.height >= 44 && box.x >= 0 && box.x + box.width <= 390, `${sel} fits a phone as a 44px target: ${JSON.stringify(box)}`);
   }
