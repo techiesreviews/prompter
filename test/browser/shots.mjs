@@ -559,7 +559,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await popAbove(page, "#settings", ".settings-btn", "desktop Settings");
   assert.deepEqual(await page.locator("#settings").evaluate((el) => [...el.querySelectorAll(".setting")].map((row) => (row.matches("fieldset") ? row.querySelector("legend") : row).firstChild.textContent.trim())),
     ["Text size", "Scroll speed", "Width"]);
-  // Follow my voice and the main screen: two big buttons side by side (label and state).
+  // Follow my voice and the main screen: two big buttons side by side (icons only).
   const bigButtons = (p) => p.locator("#settings .big-toggle:not([hidden])").evaluateAll((els) => els.map((el) => [el.getAttribute("aria-label"), el.innerText.trim()]));
   assert.deepEqual(await bigButtons(page), [["Connect main screen", ""]], "icons only; no Follow my voice without the speech API; the main screen's button");
   assert.equal(await page.locator("#settings").locator("input, select, button, textarea").count(), 7, "two sliders, three width choices, the voice and main screen buttons, nothing else");
@@ -569,6 +569,7 @@ export async function run({ browser, base, mode, dist, out }) {
   const dockHeight = (await page.locator(".dock").boundingBox()).height;
   assert.ok(screenBox.height >= dockHeight && screenBox.height <= dockHeight + 24, `about as tall as the control bar: ${screenBox.height} vs ${dockHeight}`);
   assert.deepEqual(await page.locator("#settings .screen").evaluate((el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).color]), ["oklch(0.33 0.096 282)", "oklch(0.763 0.027 282)"], "not connected: quiet indigo");
+  assert.equal(await page.locator("#settings .screen rect").evaluate((r) => getComputedStyle(r).fill), "none", "not connected: an outline icon");
   // Sliders: drawn by the page (a slim track, orange up to a round white thumb; see the
   // screenshot), 28px tall for a mouse. Slider parts cannot be read with getComputedStyle.
   const sliderLook = (p) => p.locator("#settings .size").evaluate((el) => [getComputedStyle(el).appearance, el.getBoundingClientRect().height, Number(el.style.getPropertyValue("--fill")).toFixed(3)]);
@@ -684,7 +685,7 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await v.locator(".voice").getAttribute("aria-pressed"), "false", "the button stays off until Turn on");
   await v.locator('[data-action="voice-ok"]').click();
   assert.equal(await v.evaluate(() => window.__speech.started), 1);
-  assert.deepEqual([await v.locator(".voice").getAttribute("aria-pressed"), await v.locator(".voice").getAttribute("title")], ["true", "Follow my voice is on"]);
+  assert.deepEqual([await v.locator(".voice").getAttribute("aria-pressed"), await v.locator(".voice rect").evaluate((r) => getComputedStyle(r).fill)], ["true", "oklch(0.7 0.19 32.3)"]);
   assert.deepEqual([await v.locator(".settings-btn").getAttribute("data-dot"), await v.locator(".settings-btn").getAttribute("aria-label")], ["on", "Settings · Follow my voice on"], "a dot on Settings while it listens");
   await (await dock(v, ".settings-btn")).click();
   await popAbove(v, "#settings", ".settings-btn", "Settings with voice on");

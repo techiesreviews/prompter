@@ -901,7 +901,6 @@ function markLine(k, scroll = true) {
 
 function setVoiceButton() {
   voiceBtn.setAttribute("aria-pressed", String(voiceOn));
-  voiceBtn.title = voiceOn ? "Follow my voice is on" : "Follow my voice";
   updateSettingsBtn();
   setAutoTip();
 }

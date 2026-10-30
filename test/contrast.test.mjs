@@ -66,10 +66,10 @@ const PAIRS = [
   ["text", "chip-hover", "hovered buttons"],
   ["on-accent", "accent", "orange buttons: 19px bold labels only (large text)", 3],
   ["on-accent", "accent-hover", "hovered orange buttons: 19px bold (large text)", 3],
-  ["bg", "accent", "dark labels on orange buttons (Follow my voice on, main screen connected)"],
-  ["bg", "accent-bright", "the same, hovered"],
-  ["muted", "chip-hover", "the state word on a hovered indigo button"],
-  // Not text: the orange border of the link on the main screen (3:1).
+  // Not text (3:1): the orange border of the link on the main screen, the Settings toggles' icons.
+  ["accent-bright", "chip", "the icon of an on Settings toggle (graphic)", 3],
+  ["accent-bright", "chip-hover", "the same, hovered (graphic)", 3],
+  ["muted", "chip", "the icon of an off Settings toggle (graphic)", 3],
   ["accent", "bg", "border of the link on the main screen (graphic)", 3],
 ];
 

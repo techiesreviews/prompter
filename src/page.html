@@ -33,7 +33,7 @@
     --dim: oklch(64% 0.04 282);         /* lines of the other sections */
     --accent: oklch(65% 0.227 32.3);    /* the bright orange action colour */
     --accent-hover: oklch(60% 0.21 32.3);
-    --accent-bright: oklch(70% 0.19 32.3); /* hovered orange buttons with dark labels */
+    --accent-bright: oklch(70% 0.19 32.3); /* the icon of an on Settings toggle (Follow my voice, main screen) */
     --link-tint: oklch(23% 0.06 32);    /* hovered links: a soft orange behind orange text */
     --on-accent: oklch(100% 0 none);    /* white, 19px bold only */
     --ok: oklch(80% 0.15 155);
@@ -372,7 +372,8 @@
 
   /* Follow my voice and the main screen: two big buttons side by side, about
      as tall as the control bar, icons only (their names are for screen
-     readers and the hover title). The icon is quiet when off, orange when on. Without the
+     readers and the hover title). Off: a quiet outline icon. On: an orange,
+     filled icon, so the state does not rest on colour alone. Without the
      speech API the main screen's button takes the whole row. */
   .big-toggles { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 8px; }
   .big-toggle {
@@ -380,6 +381,7 @@
     color: var(--muted); background: var(--chip); border: 0; border-radius: 14px; cursor: pointer;
   }
   .big-toggle:is([aria-pressed="true"], [data-on="true"]) { color: var(--accent-bright); }
+  .big-toggle:is([aria-pressed="true"], [data-on="true"]) rect { fill: currentColor; }
   @media (hover: hover) and (pointer: fine) {
     .big-toggle:hover { color: var(--text); background: var(--chip-hover); }
     .big-toggle:is([aria-pressed="true"], [data-on="true"]):hover { color: var(--accent-bright); }
