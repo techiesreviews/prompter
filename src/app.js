@@ -348,7 +348,7 @@ function showDialog(dialog) {
 const live = /^https?:$/.test(location.protocol);
 const AGENT_KEY = "prompter-agent";
 const AGENT_MAX_AGE = 8 * 60 * 60 * 1000;
-const agent = { token: null, createdAt: 0, ws: null, state: "off", info: null, retry: 0, timer: 0, copied: false, copiedTimer: 0, failed: false, doing: "", doingTimer: 0 };
+const agent = { token: null, createdAt: 0, ws: null, state: "off", info: null, retry: 0, timer: 0, copied: false, copiedTimer: 0, failed: false };
 const relayUrl = () => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/relay`;
 
 // Tokens come from the Worker, which writes its own time into them. A clipboard write needs the click itself, so a
@@ -434,20 +434,11 @@ function disconnectAgent() {
   setTimeout(close, 5000);
 }
 
-// What the agent did last shows in its row for a few seconds, then "listening" again.
-function showDoing(text) {
-  agent.doing = text;
-  clearTimeout(agent.doingTimer);
-  agent.doingTimer = setTimeout(() => { agent.doing = ""; renderAgent(); }, 5000);
-  renderAgent();
-}
-
 async function handleCall({ id, tool, args = {} }) {
   const ws = agent.ws;
   const send = (payload) => { try { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "result", id, ...payload })); } catch { /* closed */ } };
   try {
     if (tool === "get_open_script") {
-      showDoing("reading your script");
       return send({ result: isEmpty() ? { open: false } : { open: true, markdown: scriptText, preset } });
     }
     if (tool === "show_script") {
@@ -459,7 +450,6 @@ async function handleCall({ id, tool, args = {} }) {
       store.set(PRESET_KEY, preset);
       showAlert("");
       await openScript(text, { label: `Opened from ${agentName(agent.info?.name)}` });
-      showDoing("opened a script");
       return send({ result: { opened: true, sections: sections.length } });
     }
     send({ error: `Unknown tool: ${tool}` });
@@ -486,13 +476,6 @@ function renderAgent() {
     // Only a changed label is written: the label is a polite live region.
     const el = act.querySelector(".mcp-label");
     if (el.textContent !== label) el.textContent = label;
-  }
-  for (const rows of document.querySelectorAll(".agent-rows")) {
-    if (s !== "on") { rows.replaceChildren(); continue; }
-    // The row is built once; later renders change only its text, so focus on Stop stays.
-    if (!rows.firstChild) rows.innerHTML = `<div class="agent-row"><span class="status-dot"></span><span class="agent-name"></span><span class="agent-doing"></span><button class="btn" type="button" data-action="agent-stop">Stop</button></div>`;
-    rows.querySelector(".agent-name").textContent = name;
-    rows.querySelector(".agent-doing").textContent = agent.doing || "listening";
   }
   const where = s === "on" ? ` · MCP connected to ${name}` : s === "waiting" ? " · waiting for MCP" : s === "elsewhere" ? " · MCP open in another tab" : "";
   if (s === "on" || s === "waiting") openBtn.dataset.dot = s; else delete openBtn.dataset.dot;
@@ -1311,7 +1294,7 @@ main.addEventListener("click", (e) => {
   }
   showLink(Number(b.dataset.s), Number(b.dataset.l), true);
 });
-const KEEP_OPEN = new Set(["mcp", "agent-stop", "connect", "copy-link"]);
+const KEEP_OPEN = new Set(["mcp", "connect", "copy-link"]);
 document.addEventListener("click", (e) => {
   const button = e.target.closest("[data-action]");
   const action = button?.dataset.action;
@@ -1326,7 +1309,6 @@ document.addEventListener("click", (e) => {
   else if (action === "demo") { showAlert(""); openDemo(); }
   else if (action === "continue") { showAlert(""); openScript(store.get(LAST_KEY) || "", { label: "Your last script" }); }
   else if (action === "mcp") pressMcp(button);
-  else if (action === "agent-stop") disconnectAgent();
   else if (action === "dismiss") showAlert("");
   else if (action === "connect") connect();
   else if (action === "hint-ok") hideHint();

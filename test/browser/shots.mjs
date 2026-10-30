@@ -508,7 +508,7 @@ export async function run({ browser, base, mode, dist, out }) {
     assert.equal(init.status, 200);
     assert.match(init.body.result.instructions, /show_script/);
     await A.waitForFunction(() => document.querySelector("#open-menu .mcp-action").dataset.state === "on");
-    assert.deepEqual(await A.locator("#open-menu .agent-row").evaluate((row) => [row.querySelector(".agent-name").textContent, row.querySelector(".agent-doing").textContent, row.querySelector("button").textContent]), ["Claude", "listening", "Stop"]);
+    assert.equal(await A.locator(".agent-row, .agent-rows").count(), 0, "no agent row: the menu shows only Disconnect MCP");
     assert.deepEqual([await act.textContent(), await act.locator(".i-copy").isVisible()], ["Disconnect MCP", false]);
     assert.deepEqual([await A.locator(".open-btn").getAttribute("data-dot"), await A.locator(".open-btn").getAttribute("aria-label"), await A.locator(".open-btn").getAttribute("data-tip")], ["on", "Open · MCP connected to Claude", "Open a script · MCP connected to Claude"]);
     const listed = (await agentRpc(token, "tools/list")).body.result.tools.map((t) => t.name);
@@ -518,11 +518,11 @@ export async function run({ browser, base, mode, dist, out }) {
     assert.match(shown.content[0].text, /^Opened in the prompter \(preset "lex"\)/);
     await A.waitForFunction(() => document.querySelectorAll(".section").length === 5);
     assert.deepEqual(await A.evaluate(() => [location.hash.startsWith("#s=") && location.hash.endsWith("&p=lex"), localStorage.getItem("prompter-last-script"), localStorage.getItem("prompter-preset")]), [true, EXAMPLE_SCRIPT, "lex"], "opened like a #s= link with its preset, and kept as the last script");
-    assert.equal(await A.locator("#open-menu .agent-doing").textContent(), "opened a script");
+    assert.deepEqual(await A.locator("#open-menu .mcp-action").evaluateAll((els) => els.map((el) => el.textContent)), ["Disconnect MCP"], "no status updates in the menu while the agent works");
     await shot(A, "mcp-connected-desktop");
     const read = await agentCall(token, "get_open_script");
     assert.deepEqual(read.structuredContent, { open: true, preset: "lex", markdown: EXAMPLE_SCRIPT });
-    ok("an agent with the copied token: initialize shows its name (claude-code → Claude) with listening and Stop, Disconnect MCP and a green dot on Open; show_script opens the example script with the lex preset in this tab (a #s= address, remembered as the last script); get_open_script reads it back");
+    ok("an agent with the copied token: initialize turns the item into Disconnect MCP (no agent row, no status updates) with a green dot on Open, its name (claude-code → Claude) in Open's label and tooltip; show_script opens the example script with the lex preset in this tab (a #s= address, remembered as the last script); get_open_script reads it back");
 
     // A second tab takes over; Use this tab takes it back.
     const B = await live.newPage();
@@ -530,10 +530,10 @@ export async function run({ browser, base, mode, dist, out }) {
     await B.goto(`${base}/`);
     await showsStart(B);
     await B.waitForFunction(() => document.querySelector(".empty .mcp-action").dataset.state === "on");
-    assert.deepEqual([await B.locator(".empty .mcp-action").textContent(), await B.locator(".empty .agent-name").textContent()], ["Disconnect MCP", "Claude"], "the new tab is connected, its start screen says so");
+    assert.deepEqual([await B.locator(".empty .mcp-action").textContent(), await B.locator(".open-btn").getAttribute("aria-label")], ["Disconnect MCP", "Open · MCP connected to Claude"], "the new tab is connected, its start screen says so");
     await A.waitForFunction(() => document.querySelector("#open-menu .mcp-action").dataset.state === "elsewhere");
-    assert.deepEqual([await act.textContent(), await act.locator(".i-copy").isVisible(), await A.locator("#open-menu .agent-row").count(), await A.locator(".open-btn").getAttribute("data-dot"), await A.locator(".open-btn").getAttribute("aria-label")],
-      ["Use this tab", false, 0, null, "Open · MCP open in another tab"]);
+    assert.deepEqual([await act.textContent(), await act.locator(".i-copy").isVisible(), await A.locator(".open-btn").getAttribute("data-dot"), await A.locator(".open-btn").getAttribute("aria-label")],
+      ["Use this tab", false, null, "Open · MCP open in another tab"]);
     await shot(A, "mcp-elsewhere-desktop");
     assert.deepEqual((await agentCall(token, "get_open_script")).structuredContent, { open: false }, "calls now reach the new tab (its start screen)");
     if (!(await A.locator("#open-menu:popover-open").count())) await (await dock(A, ".open-btn")).click();
@@ -547,8 +547,8 @@ export async function run({ browser, base, mode, dist, out }) {
 
     // Disconnect MCP: off at once, the token forgotten, the agent refused with 401.
     await act.click();
-    assert.deepEqual([await act.textContent(), await state(A, "#open-menu .mcp-action"), await A.locator("#open-menu .agent-row").count(), await A.locator(".open-btn").getAttribute("data-dot"), await A.locator(".open-btn").getAttribute("aria-label")],
-      ["Wait for MCP", "off", 0, null, "Open"]);
+    assert.deepEqual([await act.textContent(), await state(A, "#open-menu .mcp-action"), await A.locator(".open-btn").getAttribute("data-dot"), await A.locator(".open-btn").getAttribute("aria-label")],
+      ["Wait for MCP", "off", null, "Open"]);
     assert.equal(await A.evaluate(() => localStorage.getItem("prompter-agent")), null);
     assert.equal(await A.locator(".status").textContent(), "Opened from Claude", "no status line for Disconnect (the last one is from opening the script)");
     let refused;
@@ -1508,22 +1508,24 @@ export async function run({ browser, base, mode, dist, out }) {
     await shot(m, "mcp-start-waiting-mobile");
     const mToken = (await m.evaluate(() => window.__copied[0])).match(/Bearer (tp1-[\w-]+)/)[1];
     assert.equal((await agentRpc(mToken, "initialize", { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "my-helper-mcp-client", version: "1" } })).status, 200);
-    await m.waitForFunction(() => document.querySelector(".empty .agent-name")?.textContent === "My Helper");
+    await m.waitForFunction(() => document.querySelector(".open-btn").getAttribute("aria-label") === "Open · MCP connected to My Helper");
+    assert.equal(await m.locator(".empty .mcp-action").textContent(), "Disconnect MCP", "the start screen shows only Disconnect MCP, no agent row");
     assert.equal((await agentCall(mToken, "show_script", { markdown: EXAMPLE_SCRIPT })).isError, undefined);
     await m.locator(".section").first().waitFor();
     assert.equal(await m.locator(".section").count(), 5, "the agent's script opens from the start screen");
     await (await dock(m, ".open-btn")).click();
     const mPop = await popAbove(m, "#open-menu", ".open-btn", "mobile Open with an agent");
-    assert.ok(mPop.x >= 4 && mPop.x + mPop.width <= 386, "the Open menu with the agent row fits a phone");
-    assert.deepEqual(await m.locator("#open-menu .agent-row").evaluate((row) => [row.querySelector(".agent-name").textContent, Math.round(row.querySelector("button").getBoundingClientRect().height) >= 44]), ["My Helper", true], "Stop is a 44px target");
+    assert.ok(mPop.x >= 4 && mPop.x + mPop.width <= 386, "the Open menu with an agent fits a phone");
+    assert.equal(await m.locator(".agent-row").count(), 0, "no agent row");
+    assert.ok(Math.round((await m.locator("#open-menu .mcp-action").boundingBox()).height) >= 44, "Disconnect MCP is a 44px target");
     await noOverflow(m, "mobile Open menu with an agent");
     await shot(m, "mcp-popover-mobile");
-    await m.locator("#open-menu .agent-row button").click();
-    assert.deepEqual([await m.locator("#open-menu .mcp-action").textContent(), await m.locator(".open-btn").getAttribute("data-dot")], ["Wait for MCP", null], "Stop disconnects");
+    await m.locator("#open-menu .mcp-action").click();
+    assert.deepEqual([await m.locator("#open-menu .mcp-action").textContent(), await m.locator(".open-btn").getAttribute("data-dot")], ["Wait for MCP", null], "Disconnect MCP disconnects");
     await m.keyboard.press("Escape");
     await m.goto(`${base}/`);
     await showsStart(m);
-    ok("phone: the start screen's Wait for MCP copies with Copied and a check, then Waiting for MCP; an agent (my-helper-mcp-client → My Helper) opens its script from the start screen; the Open menu with the agent row fits 390px; Stop disconnects");
+    ok("phone: the start screen's Wait for MCP copies with Copied and a check, then Waiting for MCP; an agent (my-helper-mcp-client → My Helper) opens its script from the start screen; the Open menu with an agent shows only Disconnect MCP (a 44px target), fits 390px and disconnects");
   }
   // Without a clipboard the message shows, selected, under the button.
   await clip(m, true);

@@ -327,6 +327,7 @@
   }
   .item svg { color: var(--muted); }
   @media (hover: hover) and (pointer: fine) { .item:hover { background: var(--panel-2); } }
+  @media (pointer: coarse) { .item { min-block-size: 44px; } } /* Disconnect MCP and the rest: 44px targets on phones */
   .pop-sep { block-size: 1px; margin: 6px 4px; background: var(--border); }
   .settings-pop { inline-size: 340px; padding: 16px 16px 14px; }
   .setting + .setting { margin-block-start: 16px; }
@@ -382,7 +383,7 @@
      the message is on the clipboard. The connected agent's row sits above the action. */
   .status-dot { inline-size: 8px; block-size: 8px; margin-inline: 5px; border-radius: 50%; flex: none; background: var(--dim); }
   .mcp-action[data-state="waiting"] .status-dot { background: var(--accent); }
-  :is(.mcp-action[data-state="on"], .agent-row) .status-dot { background: var(--ok); }
+  .mcp-action[data-state="on"] .status-dot { background: var(--ok); }
   .mcp-action[data-state="offline"] .status-dot { display: none; }
   @media (prefers-reduced-motion: no-preference) {
     :is(.mcp-action[data-state="waiting"] .status-dot, .dock-btn[data-dot="waiting"]::before) { animation: pulse 1.2s ease-in-out infinite; }
@@ -401,15 +402,8 @@
   @media (max-width: 760px) { .dock-btn[data-show-tip]::after { white-space: normal; inline-size: max-content; max-inline-size: min(260px, calc(100vw - 32px)); } }
   .dock-btn[data-show-tip]::after { opacity: 1; visibility: visible; }
   .mcp-label { margin-inline-end: 12px; }
-  .agent-rows:empty { display: none; }
-  .agent-row { display: flex; align-items: center; gap: 10px; padding: 4px 4px 4px 12px; font-weight: 600; }
-  .agent-name { flex: 1; overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
-  .agent-doing { color: var(--muted); font-size: 13px; font-weight: 500; white-space: nowrap; }
-  .agent-row .btn { font-size: 14px; padding: 8px 14px; }
-  @media (pointer: coarse) { .agent-row .btn { min-block-size: 44px; } }
   .mcp-prompt { display: block; min-inline-size: min(300px, 100%); min-block-size: 9em; margin: 6px 0 2px; font-size: 12px; resize: vertical; }
   .mcp-prompt[hidden] { display: none; }
-  .card .agent-row { padding-inline-start: 16px; }
 
   /* Follow my voice and the main screen: two big buttons side by side, about
      as tall as the control bar, icons only (their names are for screen
@@ -453,7 +447,6 @@
       <button class="btn continue" type="button" data-action="continue" hidden></button>
       <button class="btn primary" type="button" data-action="open-file">Open a script file</button>
       <button class="btn" type="button" data-action="paste">Paste a script</button>
-      <div class="agent-rows"></div>
       <button class="btn mcp-action" type="button" data-action="mcp" data-state="off"><span class="status-dot"></span><span class="mcp-label" aria-live="polite">Wait for MCP</span><svg class="i-copy" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><svg class="i-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button>
       <textarea class="paste mcp-prompt" readonly hidden aria-label="Message for your AI agent"></textarea>
       <button class="btn" type="button" data-action="demo">Try the demo</button>
@@ -518,7 +511,6 @@
   <button class="item" type="button" data-action="paste"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="3" width="8" height="4" rx="1"/><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2"/></svg>Paste a script</button>
   <button class="item share" type="button" data-action="copy-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg><span class="share-label">Copy link</span><svg class="i-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button>
   <div class="pop-sep" role="separator"></div>
-  <div class="agent-rows"></div>
   <button class="item mcp-action" type="button" data-action="mcp" data-state="off"><span class="status-dot"></span><span class="mcp-label" aria-live="polite">Wait for MCP</span><svg class="i-copy" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><svg class="i-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button>
   <textarea class="paste mcp-prompt" readonly hidden aria-label="Message for your AI agent"></textarea>
   <div class="pop-sep" role="separator"></div>
