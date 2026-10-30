@@ -14,8 +14,8 @@
 // - a watchdog starts a fresh one when a session has gone quiet: no result for
 //   SPEECH_STALL_MS, or SPEECH_STALL_SOUND_MS while it hears sound;
 // - a passing error never turns it off. Only a blocked microphone (and the
-//   like) does, a browser that cannot make or start a recognizer at all
-//   ("start-failed"), or one that never heard a word since it was turned on
+//   like) does, a browser that cannot make or start a recognizer before it
+//   heard a word ("start-failed"), or one that never heard a word since it was turned on
 //   and has failed for SPEECH_GIVE_UP_MS (one without a speech service).
 
 /** No result for this long: the session has stalled (or the room is quiet); start a fresh one. */
@@ -80,9 +80,11 @@ export function speechKeeper({ make, onSession = () => {}, onResult = () => {}, 
     s.sound = false;
     s.sessionHeard = false;
     s.lastError = "";
-    // A new object that cannot be made or started will not do better next time.
+    // A browser that cannot make or start one at all will not do better next time. Once it
+    // has heard words it could, so then it is a passing failure like any other.
+    const cannot = () => { if (s.heard) ended(); else give("start-failed"); };
     let r;
-    try { r = make(s.local && !s.localFailed); } catch { give("start-failed"); return; }
+    try { r = make(s.local && !s.localFailed); } catch { cannot(); return; }
     s.rec = r;
     r.onresult = (e) => {
       if (!mine()) return;
@@ -98,7 +100,7 @@ export function speechKeeper({ make, onSession = () => {}, onResult = () => {}, 
     r.onerror = (e) => { if (mine()) failed(e?.error || ""); };
     r.onend = () => { if (mine()) ended(); };
     onSession();
-    try { r.start(); } catch { give("start-failed"); }
+    try { r.start(); } catch { cannot(); }
   }
 
   function failed(error) {

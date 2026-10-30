@@ -19,7 +19,7 @@ const DEMO_SECTIONS = parse(DEMO_SCRIPT).length;
 // start() while running (or a second time) throws InvalidStateError (counted
 // in doubleStarts), and each start is a new session whose results number
 // from 0. On-device recognition answers window.__speechOnDevice (unset:
-// "unavailable"); install() resolves true.
+// "unavailable"); install() resolves true. window.__speechBroken makes start() throw.
 const SPEECH_STUB = () => {
   const state = { started: 0, made: 0, aborted: 0, doubleStarts: 0, reused: 0, installs: 0, startedAt: [], instance: null, results: [] };
   class FakeRecognition {
@@ -27,6 +27,7 @@ const SPEECH_STUB = () => {
     static async available() { return window.__speechOnDevice || "unavailable"; }
     static async install() { state.installs++; return true; }
     start() {
+      if (window.__speechBroken) throw new DOMException("refused", "NotAllowedError");
       if (this.running || this.used) { state.doubleStarts++; if (this.used && !this.running) state.reused++; throw new DOMException("already started", "InvalidStateError"); }
       this.running = true;
       this.used = true;
@@ -994,6 +995,17 @@ export async function run({ browser, base, mode, dist, out }) {
   await viaSettings(v, ".voice");
   await v.waitForFunction(() => window.__speech.instance?.processLocally === true && window.__speech.instance.running);
   assert.equal(await v.evaluate(() => window.__speech.installs), 1, "the language pack is installed once");
+  // A browser whose recognizer cannot start at all: off at once, with its own message.
+  await viaSettings(v, ".voice");
+  await v.evaluate(() => { window.__speechBroken = true; });
+  const madeBefore = await v.evaluate(() => window.__speech.made);
+  await viaSettings(v, ".voice");
+  await v.locator(".note-row.alert:not([hidden])").waitFor();
+  assert.equal(await v.locator(".alert-text").textContent(), "Follow my voice could not start in this browser; try Chrome or Edge. Follow my voice is off.");
+  assert.equal(await v.locator(".voice").getAttribute("aria-pressed"), "false");
+  assert.equal(await v.locator(".settings-btn").getAttribute("data-dot"), null);
+  await v.waitForTimeout(1500);
+  assert.equal(await v.evaluate(() => window.__speech.made), madeBefore + 1, "one try, no retry loop");
   await voiced.close();
   ok("Follow my voice: a big mic button in Settings (orange when on) with the API, notice before first use, follows line by line to the reading line (white current line, dimmer lines after it), interim and later-line words never jump, skips QL, picks up after scrolling by hand, pauses auto-scroll, handles a blocked mic, keeps going when speech drops (a fresh recognizer at once after a blip or a session end, no note for one blip; Reconnecting to speech by the reading line, read out once, only while it keeps failing, tries a little apart and never two at once; heard words hide it; a silent stall replaced by a fresh recognizer) and gives up with the message only after about 15 s of failing with no word heard (a browser without the speech service), uses on-device recognition where the browser has it, remembers consent");
 

@@ -256,6 +256,33 @@ test("a recognizer that cannot be made or started turns it off at once, without 
     assert.equal(made, 1, "no retries");
     assert.equal(keeper.state.on, false);
   }
+  // After words were heard, a start that throws is a passing failure: it tries again.
+  const { clock, speech, log, keeper, latest } = setup();
+  keeper.start();
+  latest().say("words heard");
+  const r = latest();
+  const FakeClass = r.constructor;
+  const origStart = FakeClass.prototype.start;
+  let throwsLeft = 2;
+  FakeClass.prototype.start = function () { if (throwsLeft-- > 0) { this.starts++; throw new DOMException("busy", "InvalidStateError"); } return origStart.call(this); };
+  r.end();
+  clock.advance(5000);
+  FakeClass.prototype.start = origStart;
+  assert.deepEqual(log.fatal, [], "not turned off");
+  assert.equal(speech.running().length, 1, "running again after two failed starts");
+  keeper.stop();
+});
+
+test("on-device failing with its end event straight after: one fallback, never two running", () => {
+  const { clock, speech, log, keeper, latest } = setup();
+  keeper.start({ local: true });
+  latest().onerror({ error: "language-not-supported" });
+  latest().onend();
+  clock.advance(2000);
+  assert.deepEqual(speech.made.map((r) => r.local), [true, false], "one on-device, then one from the browser's service");
+  assert.equal(speech.running().length, 1);
+  assert.deepEqual(log.fatal, []);
+  keeper.stop();
 });
 
 test("speechOnDevice: on-device when the browser has it, installing a pack; the cloud otherwise", async () => {

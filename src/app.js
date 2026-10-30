@@ -1136,7 +1136,7 @@ const VOICE_ERRORS = {
   "audio-capture": "No microphone found. Follow my voice is off.",
   network: "Your browser could not reach its speech service. Some browsers (like Vivaldi or Brave) cannot use it; try Chrome or Edge. Follow my voice is off.",
   "language-not-supported": "The browser's speech service does not support your language. Follow my voice is off.",
-  "start-failed": "Follow my voice could not start in this browser.",
+  "start-failed": "Follow my voice could not start in this browser; try Chrome or Edge. Follow my voice is off.",
 };
 
 // ---------- Link, paste and copy ----------
