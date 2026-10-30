@@ -662,7 +662,9 @@ function connected() { return mainWin && !mainWin.closed; }
 // The main screen's button in Settings (orange while connected); the Settings button shows a dot then.
 function setConnected(on) {
   connectBtn.dataset.on = String(on);
-  $(".screen-state").textContent = on ? "Connected · Reconnect" : "Not connected"; // its name, too
+  const name = on ? "Main screen connected, reconnect" : "Connect main screen";
+  connectBtn.setAttribute("aria-label", name);
+  connectBtn.title = name;
   updateSettingsBtn();
 }
 
@@ -899,7 +901,7 @@ function markLine(k, scroll = true) {
 
 function setVoiceButton() {
   voiceBtn.setAttribute("aria-pressed", String(voiceOn));
-  voiceBtn.querySelector(".big-state").textContent = voiceOn ? "On" : "Off";
+  voiceBtn.title = voiceOn ? "Follow my voice is on" : "Follow my voice";
   updateSettingsBtn();
   setAutoTip();
 }
