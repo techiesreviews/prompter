@@ -14,7 +14,8 @@
 // - a watchdog starts a fresh one when a session has gone quiet: no result for
 //   SPEECH_STALL_MS, or SPEECH_STALL_SOUND_MS while it hears sound;
 // - a passing error never turns it off. Only a blocked microphone (and the
-//   like) does, or a browser that never heard a word since it was turned on
+//   like) does, a browser that cannot make or start a recognizer at all
+//   ("start-failed"), or one that never heard a word since it was turned on
 //   and has failed for SPEECH_GIVE_UP_MS (one without a speech service).
 
 /** No result for this long: the session has stalled (or the room is quiet); start a fresh one. */
@@ -43,10 +44,12 @@ export function speechRestartWait(fails) {
  * recognition object (on this device when `local`); `onSession()` runs as each
  * new one starts (its results number from 0 again); `onResult(event)` gets
  * every result event; `onReconnecting(bool)` says when quick failures in a row
- * start and stop; `onFatal(error)` says it gave up (an error name). Timers and
- * the clock can be replaced for tests. Returns { start, stop, useLocal, state }.
+ * start and stop; `onLocalFailed()` that on-device recognition did not work;
+ * `onFatal(error)` says it gave up (an error name, or "start-failed" when a new
+ * recognizer could not be made or started). Timers and the clock can be
+ * replaced for tests. Returns { start, stop, useLocal, state }.
  */
-export function speechKeeper({ make, onSession = () => {}, onResult = () => {}, onReconnecting = () => {}, onFatal = () => {},
+export function speechKeeper({ make, onSession = () => {}, onResult = () => {}, onReconnecting = () => {}, onLocalFailed = () => {}, onFatal = () => {},
   now = () => Date.now(), setTimer = (fn, ms) => setTimeout(fn, ms), clearTimer = (id) => clearTimeout(id), tickMs = 1000 }) {
   const s = { on: false, rec: null, gen: 0, local: false, localFailed: false, startedAt: 0, alive: 0, sound: false,
     heard: false, sessionHeard: false, fails: 0, failingSince: 0, lastError: "", reconnecting: false, restart: 0, tick: 0 };
@@ -77,8 +80,9 @@ export function speechKeeper({ make, onSession = () => {}, onResult = () => {}, 
     s.sound = false;
     s.sessionHeard = false;
     s.lastError = "";
+    // A new object that cannot be made or started will not do better next time.
     let r;
-    try { r = make(s.local && !s.localFailed); } catch { ended(); return; }
+    try { r = make(s.local && !s.localFailed); } catch { give("start-failed"); return; }
     s.rec = r;
     r.onresult = (e) => {
       if (!mine()) return;
@@ -94,14 +98,14 @@ export function speechKeeper({ make, onSession = () => {}, onResult = () => {}, 
     r.onerror = (e) => { if (mine()) failed(e?.error || ""); };
     r.onend = () => { if (mine()) ended(); };
     onSession();
-    try { r.start(); } catch { ended(); }
+    try { r.start(); } catch { give("start-failed"); }
   }
 
   function failed(error) {
     s.lastError = error;
     // On-device recognition missing or removed for this language: carry on with the browser's service.
-    if (s.local && !s.localFailed && (error === "service-not-allowed" || error === "language-not-supported")) { s.localFailed = true; return; }
-    if (SPEECH_FATAL.includes(error)) { give(error); return; }
+    if (s.local && !s.localFailed && (error === "service-not-allowed" || error === "language-not-supported")) { s.localFailed = true; onLocalFailed(); }
+    else if (SPEECH_FATAL.includes(error)) { give(error); return; }
     // No end event after an error (some browsers): start again anyway.
     if (!s.restart) s.restart = setTimer(() => { s.restart = 0; if (s.on) ended(); }, tickMs);
   }
@@ -133,9 +137,10 @@ export function speechKeeper({ make, onSession = () => {}, onResult = () => {}, 
     onFatal(error);
   }
 
-  function start() {
+  // `local`: on this device from the first session (known to work from an earlier turn-on).
+  function start({ local = false } = {}) {
     stop();
-    Object.assign(s, { on: true, heard: false, fails: 0, failingSince: 0, localFailed: false });
+    Object.assign(s, { on: true, local, heard: false, fails: 0, failingSince: 0, localFailed: false });
     spawn();
     s.tick = setTimer(watch, tickMs);
   }

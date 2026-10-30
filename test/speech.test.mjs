@@ -220,6 +220,44 @@ test("on-device recognition is used once available; a missing language pack fall
   assert.deepEqual(other.log.fatal, ["service-not-allowed"]);
 });
 
+test("on-device known to work starts there; failing without an end event still falls back within a second", () => {
+  const { clock, speech, log, keeper, latest } = setup();
+  let lost = 0;
+  const k2 = speechKeeper({ make: speech.make, now: clock.now, setTimer: clock.setTimer, clearTimer: clock.clearTimer, onLocalFailed: () => { lost++; }, onFatal: (e) => log.fatal.push(e) });
+  k2.start({ local: true });
+  assert.equal(latest().local, true, "on this device from the first session");
+  latest().onerror({ error: "language-not-supported" }); // and no end event
+  clock.advance(1000);
+  assert.equal(latest().local, false, "the browser's service within a second, not after the stall watchdog");
+  assert.equal(latest().running, true);
+  assert.equal(lost, 1, "the page hears that on-device did not work");
+  assert.deepEqual(log.fatal, []);
+  k2.stop();
+  keeper.stop();
+  assert.equal(speech.running().length, 0);
+});
+
+test("a recognizer that cannot be made or started turns it off at once, without a retry loop", () => {
+  for (const broken of ["make", "start"]) {
+    const clock = fakeClock();
+    const fatal = [];
+    let made = 0;
+    const keeper = speechKeeper({
+      make: () => {
+        made++;
+        if (broken === "make") throw new Error("no speech here");
+        return { start() { throw new DOMException("refused", "InvalidStateError"); }, abort() {} };
+      },
+      now: clock.now, setTimer: clock.setTimer, clearTimer: clock.clearTimer, onFatal: (e) => fatal.push(e),
+    });
+    keeper.start();
+    clock.advance(20_000);
+    assert.deepEqual(fatal, ["start-failed"], `${broken} throwing: off at once with its own message`);
+    assert.equal(made, 1, "no retries");
+    assert.equal(keeper.state.on, false);
+  }
+});
+
 test("speechOnDevice: on-device when the browser has it, installing a pack; the cloud otherwise", async () => {
   class Base { }
   const withLocal = (status, installs = true) => {

@@ -104,6 +104,7 @@ let voiceOn = false;
 let voiceState = followStart(-1); // where the voice is, after the final results so far (followWords)
 let voiceFinal = 0; // speech results already final and followed
 let voiceLocal = false; // this browser recognises speech on this device (no network needed)
+let voiceAsking = null; // the question whether it can, while it is asked
 let resumeAuto = false;
 let cues = []; // camera cues ({ size, position?, scene? }) by data-cue
 let cueAbove = null; // cue numbers above the reading line; null until the first look after render
@@ -746,7 +747,8 @@ function setCamframeOn(on) {
 
 // The CamFrame button says how the link is doing in its name and hover title (no status
 // text on screen): blinking orange while looking or reconnecting, lit orange when connected,
-// a quiet crossed-out camera when not found. Connected and not found are read out once.
+// a quiet crossed-out camera when not found. Connected (not after a reconnect) and not
+// found are read out once.
 const CAMFRAME_SAYS = {
   off: "CamFrame link: off",
   looking: "CamFrame link: looking for CamFrame",
@@ -763,7 +765,8 @@ function setCamframe(patch) {
   camframeBtn.setAttribute("aria-pressed", String(camframe.on));
   camframeBtn.setAttribute("aria-label", name);
   camframeBtn.title = camframe.state === "lost" ? name + CAMFRAME_LOST_HELP : name;
-  if (was !== camframe.state && (camframe.state === "on" || camframe.state === "lost")) setStatus(`${name}.`);
+  // Not again when it comes back from a missed check or two (reconnecting).
+  if (was !== camframe.state && ((camframe.state === "on" && was !== "reconnecting") || camframe.state === "lost")) setStatus(`${name}.`);
   updateSettingsBtn();
 }
 
@@ -1052,6 +1055,7 @@ const voiceKeeper = Recognition && speechKeeper({
   onSession() { voiceLinkAt = -1; voiceFinal = 0; }, // a new session numbers its results from 0 again
   onResult: onVoiceResult,
   onReconnecting(on) { if (on) showToast(RECONNECTING); else hideToast(); },
+  onLocalFailed() { voiceLocal = false; }, // its language pack went away: ask again next time
   onFatal(error) { stopVoice(VOICE_ERRORS[error] || "Follow my voice stopped. Turn it on again to retry."); },
 });
 
@@ -1059,12 +1063,15 @@ function startVoice() {
   voiceNotice.hidden = true;
   showAlert("");
   voiceOn = true;
-  voiceKeeper.start();
+  voiceKeeper.start({ local: voiceLocal });
   // On this device where the browser can (no network, so steadier); asked during the
   // click, as installing its language pack needs one. Until then, and otherwise, the
   // browser's own speech service.
-  if (!voiceLocal) speechOnDevice(Recognition, voiceLang()).then((local) => { voiceLocal = local; if (voiceOn) voiceKeeper.useLocal(local); });
-  else voiceKeeper.useLocal(true);
+  // One question at a time, even when voice is turned off and on quickly.
+  if (!voiceLocal) {
+    voiceAsking ||= speechOnDevice(Recognition, voiceLang()).finally(() => { voiceAsking = null; });
+    voiceAsking.then((local) => { voiceLocal = local; if (voiceOn) voiceKeeper.useLocal(local); });
+  }
   voiceLinkKey = "";
   voiceLinkAt = -1;
   voiceFinal = 0;
@@ -1129,6 +1136,7 @@ const VOICE_ERRORS = {
   "audio-capture": "No microphone found. Follow my voice is off.",
   network: "Your browser could not reach its speech service. Some browsers (like Vivaldi or Brave) cannot use it; try Chrome or Edge. Follow my voice is off.",
   "language-not-supported": "The browser's speech service does not support your language. Follow my voice is off.",
+  "start-failed": "Follow my voice could not start in this browser.",
 };
 
 // ---------- Link, paste and copy ----------

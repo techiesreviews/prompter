@@ -1786,7 +1786,7 @@ export async function run({ browser, base, mode, dist, out }) {
     const cs = getComputedStyle(el);
     const icon = [...el.querySelectorAll("svg")].find((svg) => getComputedStyle(svg).display !== "none");
     return { state: el.dataset.state, pressed: el.getAttribute("aria-pressed"), label: el.getAttribute("aria-label"), title: el.title, color: cs.color,
-      icon: icon.getAttribute("class"), fill: getComputedStyle(icon.querySelector("rect, path")).fill, animation: getComputedStyle(icon).animationName,
+      icon: icon.getAttribute("class"), fill: [...new Set([...icon.querySelectorAll("rect, path")].map((part) => getComputedStyle(part).fill))].join(" "), animation: getComputedStyle(icon).animationName,
       glow: cs.boxShadow !== "none" && !cs.boxShadow.includes("inset 0px 0px 0px 1.5px") , ring: cs.boxShadow.includes("1.5px"), outline: cs.outlineStyle };
   });
   const camOff = await camLook();
@@ -1859,6 +1859,7 @@ export async function run({ browser, base, mode, dist, out }) {
   // One missed check (Edge's calls to this computer fail now and then) is not "not found": it says
   // reconnecting (blinking orange), checks again a second later and is connected again.
   let dropChecks = 1;
+  await C.evaluate(() => { window.__camframeSaid = 0; });
   cam.answer = (path) => (path === "/camframe/status" && dropChecks-- > 0 ? { broken: true } : null);
   await C.keyboard.press("Escape");
   await (await dock(C, ".settings-btn")).click();
@@ -1868,6 +1869,8 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.deepEqual([camReconnecting.state, camReconnecting.label, camReconnecting.animation, camReconnecting.fill], ["reconnecting", "CamFrame link: reconnecting", "blink", "none"], "one miss: reconnecting, blinking orange, not lost");
   await shot(C, "camframe-reconnecting-desktop");
   await C.waitForFunction(() => document.querySelector(".camframe").dataset.state === "on", null, { timeout: 4000 });
+  await C.waitForTimeout(100);
+  assert.equal(await C.evaluate(() => window.__camframeSaid), 0, "back from reconnecting: connected is not read out again");
   cam.answer = null;
   await C.keyboard.press("Escape");
   // Down past the first cue: sent once, after a short settle.
@@ -2017,7 +2020,7 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.deepEqual(await C.evaluate(() => window.__camStates), ["reconnecting", "lost"], "reconnecting first; not found only after several missed checks in a row");
   await C.waitForTimeout(250);
   const camLost = await camLook();
-  assert.deepEqual([camLost.pressed, camLost.label, camLost.color, camLost.icon, camLost.animation, camLost.ring], ["true", "CamFrame link: not found", "oklch(0.763 0.027 282)", "i-cam-off", "none", true], "not found: a quiet crossed-out camera with a thin orange ring, no blinking");
+  assert.deepEqual([camLost.pressed, camLost.label, camLost.color, camLost.icon, camLost.fill, camLost.animation, camLost.ring], ["true", "CamFrame link: not found", "oklch(0.763 0.027 282)", "i-cam-off", "none", "none", true], "not found: a quiet crossed-out camera with a thin orange ring, no blinking");
   assert.equal(camLost.title, "CamFrame link: not found. Open CamFrame and turn on Prompter link in its Scenes settings. Chrome may ask once to let this page reach apps on this device: allow it.");
   assert.equal(await C.locator(".status").textContent(), "CamFrame link: not found.", "not found is read out once");
   await shot(C, "camframe-lost-desktop");
