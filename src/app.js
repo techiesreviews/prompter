@@ -108,9 +108,10 @@ let voiceRestarts = 0;
 let resumeAuto = false;
 let cues = []; // camera cues ({ size, position?, scene? }) by data-cue
 let cueAbove = null; // cue numbers above the reading line; null until the first look after render
-// False until the person does something on the page after a script opens: until then a scroll
+// False until the person first does something on the page after it loads: until then a scroll
 // (the browser putting a reloaded page back where it was, maybe after the first look) only moves
-// the starting point and sends nothing.
+// the starting point and sends nothing. Only a page load resets it, so a script opened later
+// (by the agent, say, while auto-scroll runs) sends its cues as usual.
 let cueArmed = false;
 let cueTimer = 0;
 // CamFrame link: off unless turned on in Settings. state: off, looking, on (CamFrame answered) or lost.
@@ -176,7 +177,6 @@ function showStart() {
   anchorKey = "";
   clearTimeout(settleTimer);
   cueAbove = null;
-  cueArmed = false;
   clearTimeout(cueTimer);
   hideHint();
   setStatus("");
@@ -280,7 +280,6 @@ function render() {
   clearTimeout(settleTimer);
   voiceState = followStart(-1);
   cueAbove = null;
-  cueArmed = false;
   clearTimeout(cueTimer);
   updateActive();
 }
