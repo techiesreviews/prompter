@@ -709,6 +709,10 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.deepEqual([await page.locator(".size-val").inputValue(), await page.locator(".speed-val").inputValue()], ["70", "120"], "the boxes show the sliders' values");
   assert.deepEqual(await sliderLook(page), ["none", 44, true, true, true], "the page's own slider across the whole box: the name on the left, the value on the right");
   assert.deepEqual(await settingsSliderHits(page), [["size", false], ["value", true]], "in Settings: the name presses the slider, the value takes typing");
+  const sizeName = await page.locator("#settings .size-field label:first-child").boundingBox();
+  await page.mouse.click(sizeName.x + sizeName.width / 2, sizeName.y + sizeName.height / 2);
+  assert.ok(Number(await page.locator(".size").inputValue()) < 70, "a press on the name inside Settings moves the slider there");
+  await page.locator(".size").fill("70");
   await page.locator(".size").hover();
   await shot(page, "settings-popover-desktop");
   await closeUp(page, "#settings", "settings-close-up-desktop");

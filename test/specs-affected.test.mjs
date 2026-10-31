@@ -18,6 +18,8 @@ test("each change runs the browser suites it can reach, and docs run none", () =
   assert.deepEqual(reached("wrangler.jsonc"), ["page"]);
   assert.deepEqual(reached("test/browser/page.mjs"), ["page"]);
   assert.deepEqual(reached("test/browser/range-field.mjs"), ["range-field"]);
+  assert.deepEqual(reached("scripts/agents/prompter-kit.mjs"), ["page", "range-field"], "the runner reaches every suite");
+  assert.deepEqual(reached("scripts/agents/specs-affected.mjs"), ["page", "range-field"]);
   for (const doc of ["src/ui/README.md", "docs/agents/kitchen-extras.md", "README.md"]) assert.deepEqual(reached(doc), [], doc);
   assert.deepEqual(suitesFor(["new-suite"], ["src/app.js"]), ["new-suite"], "a suite not named is reached by src/");
 });

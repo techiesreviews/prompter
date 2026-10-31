@@ -27,7 +27,8 @@ file wins.
 
 ## Visible changes
 
-- **Feature list:** none. **Screenshots:** `kit specs` (desktop 1366×900 and mobile 390×844).
+- **Feature list:** none. **Screenshots:** `kit specs` (the page suite at desktop 1366×900 and mobile
+  390×844; the range-field suite's close-ups smaller).
 - Colours: `test/contrast.test.mjs` checks every text colour of the page and of each shared
   component in `src/ui/`; a component's new colour fails until it is listed there (`UI_COLOURS`).
 
