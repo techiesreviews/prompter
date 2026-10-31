@@ -1,8 +1,8 @@
-# The unit tests on every push and pull request (`kit unit` runs the same files locally).
+# The unit tests on every push to dev or main and on every pull request (`kit unit` runs the same files locally).
 name: checks
 on:
   push:
-    branches: [main]
+    branches: [dev, main]
   pull_request:
 permissions:
   contents: read
