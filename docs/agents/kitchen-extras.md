@@ -5,7 +5,9 @@ file wins.
 
 ## Branches, checks and the shared file
 
-- **Landing and release branch `main`.** The live site is built from `main`. The preview,
+- **Landing branch `dev`, release branch `main`** (`branches` in `scripts/agents/kit.json`). Every
+  change lands on `dev` through `scripts/agents/kit pr`; `main` only takes `dev`, through
+  `scripts/agents/kit pr --release --base main`. The live site is built from `main`. The preview,
   https://preview.prompter.techies.tools, is its own Worker (`techies-prompter-preview`, `env.preview`
   in `wrangler.jsonc`); `npm run deploy:preview` puts the working folder's build there and never
   touches the live Worker.
@@ -35,7 +37,7 @@ file wins.
 ## After a merge
 
 - None by default. A test build for Lex goes to the preview (`npm run deploy:preview`, from the
-  branch or `main`), then a check that it loads:
+  branch or `dev`), then a check that it loads:
   `curl -s https://preview.prompter.techies.tools/ | grep -c <a string the change added>`.
 
 ## Microphone, voice and CamFrame tests
@@ -49,9 +51,9 @@ file wins.
 ## Release
 
 - **Lex lets the lead ship a finished feature without asking (2026-10-28):** after the checks and
-  the review pass, land it on `main`, then
-  `node scripts/build.mjs && npx --no-install --package wrangler wrangler deploy`, and send Lex the
-  live link. It deploys only the `techies-prompter` Worker on `prompter.techies.tools`; never touch
+  the review pass, land it on `dev`, release it to `main` (`scripts/agents/kit pr --release --base main`), then
+  from `main`: `node scripts/build.mjs && npx --no-install --package wrangler wrangler deploy`, and
+  send Lex the live link. It deploys only the `techies-prompter` Worker on `prompter.techies.tools`; never touch
   other Workers (for example `lex-prompter`), routes or domains.
 - First-hour check: `curl -s https://prompter.techies.tools/ | grep -c <a string the change added>`.
 
