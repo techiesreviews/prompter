@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { changedSince, REACHES, suitesFor } from "../scripts/agents/specs-affected.mjs";
 
 // `kit specs --affected` (run by kit pr) runs the browser suites a change can reach.
@@ -46,4 +47,11 @@ test("changes not yet committed count: staged, unstaged and new files, but not i
   writeFileSync(join(repo, "new.txt"), "1\n");
   writeFileSync(join(repo, "ignored.txt"), "1\n");
   assert.deepEqual(changedSince("main", repo).toSorted(), ["committed.txt", "edited.txt", "new.txt", "staged.txt"]);
+});
+
+test("kit specs --affected compares with the land branch in scripts/agents/kit.json by default", () => {
+  const root = new URL("..", import.meta.url);
+  const { branches } = JSON.parse(readFileSync(new URL("scripts/agents/kit.json", root), "utf8"));
+  const help = execFileSync(process.execPath, [fileURLToPath(new URL("scripts/agents/prompter-kit.mjs", root)), "specs", "--help"], { encoding: "utf8" });
+  assert.ok(help.includes(`default origin/${branches.land},`), help);
 });
