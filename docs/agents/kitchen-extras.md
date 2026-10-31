@@ -5,7 +5,10 @@ file wins.
 
 ## Branches, checks and the shared file
 
-- **Landing and release branch `main`.** The live site is built from `main`; there is no preview.
+- **Landing and release branch `main`.** The live site is built from `main`. The preview,
+  https://preview.prompter.techies.tools, is its own Worker (`techies-prompter-preview`, `env.preview`
+  in `wrangler.jsonc`); `npm run deploy:preview` puts the working folder's build there and never
+  touches the live Worker.
 - **Checks:** `kit unit` (all of `test/*.test.mjs`, about 2 s; `--affected` for a quick pass) on
   every change. The tests build the page themselves.
 - **Own check commands** (`scripts/agents/project.d/`):
@@ -30,7 +33,17 @@ file wins.
 
 ## After a merge
 
-- None: no preview. Lex tries changes live at https://prompter.techies.tools.
+- None by default. A test build for Lex goes to the preview (`npm run deploy:preview`, from the
+  branch or `main`), then a check that it loads:
+  `curl -s https://preview.prompter.techies.tools/ | grep -c <a string the change added>`.
+
+## Microphone, voice and CamFrame tests
+
+- Run them on https://preview.prompter.techies.tools or on `http://localhost` (`npx --no-install
+  --package wrangler wrangler dev`, or the server `kit specs` starts), never on a `file://` copy: a
+  file page asks for the microphone again after every restart and has no relay, while localhost
+  and the preview are secure contexts whose permission sticks. CamFrame accepts the live site,
+  the preview and localhost (`originAllowed` in CamFrame's `src/prompter-link.js`).
 
 ## Release
 

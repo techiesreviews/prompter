@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { build, FONTS, pageScript } from "../scripts/build.mjs";
+import { build, FONTS, LIVE_HOST, pageScript } from "../scripts/build.mjs";
 
 const dist = process.env.PROMPTER_DIST || build(resolve(import.meta.dirname, "../.scratch/test-dist")).dir;
 const html = readFileSync(join(dist, "index.html"), "utf8");
@@ -36,6 +36,16 @@ test("the CSP pins the hash of the inline script", () => {
   assert.doesNotMatch(headers, /nocookie/);
   assert.match(headers, /font-src 'self';/);
   assert.match(headers, /connect-src 'self' wss:\/\/prompter\.techies\.tools http:\/\/127\.0\.0\.1:47833;/, "calls only to this site and CamFrame on this computer");
+});
+
+test("the live build lets search engines in; a preview build allows its own relay and keeps them out", () => {
+  assert.equal(readFileSync(join(dist, "robots.txt"), "utf8"), "User-agent: *\nAllow: /\nDisallow: /mcp\n");
+  const preview = build(resolve(import.meta.dirname, "../.scratch/test-dist-preview"), { host: "preview.prompter.techies.tools" });
+  assert.match(preview.headers, /connect-src 'self' wss:\/\/preview\.prompter\.techies\.tools http:\/\/127\.0\.0\.1:47833;/);
+  assert.equal(preview.html, html, "the page itself is the same");
+  assert.equal(readFileSync(join(preview.dir, "robots.txt"), "utf8"), "User-agent: *\nDisallow: /\n");
+  assert.equal(build(resolve(import.meta.dirname, "../.scratch/test-dist-live"), { host: LIVE_HOST }).headers, headers);
+  for (const host of ["", "evil.example; script-src *", "x\n  Y: z", "localhost"]) assert.throws(() => build(resolve(import.meta.dirname, "../.scratch/test-dist-bad"), { host }), /not a host name/);
 });
 
 test("the fonts and their licence ship in dist/fonts; the page loads them only when served", () => {

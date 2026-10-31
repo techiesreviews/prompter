@@ -3,7 +3,9 @@
 // inlined, and the range field's styles), the _headers file whose
 // Content-Security-Policy pins that inline script's hash, and the two font files
 // (the page falls back to system fonts without them).
-// Usage: node scripts/build.mjs [outDir=dist]
+// Usage: node scripts/build.mjs [outDir=dist] [--host <host>]
+// --host names the address the page is served from (default the live prompter.techies.tools): the relay's
+// WebSocket is allowed there, and any other address (the preview) asks search engines to stay away.
 import { createHash } from "node:crypto";
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -32,7 +34,11 @@ export function pageScript() {
   return `\n(() => {\n${modules.join("\n")}\n${read("src/app.js")}\n})();\n`;
 }
 
-export function build(dir = join(root, "dist")) {
+/** The live address; a build for any other host (the preview) is kept out of search engines. */
+export const LIVE_HOST = "prompter.techies.tools";
+
+export function build(dir = join(root, "dist"), { host = LIVE_HOST } = {}) {
+  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(host)) throw new Error(`not a host name: ${host}`);
   const cssMarker = "/*@UI-CSS@*/";
   const page = read("src/page.html");
   if (!page.includes(cssMarker)) throw new Error(`src/page.html is missing ${cssMarker}`);
@@ -51,7 +57,7 @@ export function build(dir = join(root, "dist")) {
     "font-src 'self'",
     // Only the page's own calls: a token for Wait for MCP and the relay's WebSocket (wss: spelled out for
     // browsers whose 'self' does not cover it), plus CamFrame on this computer once the user turns on its link.
-    "connect-src 'self' wss://prompter.techies.tools http://127.0.0.1:47833",
+    `connect-src 'self' wss://${host} http://127.0.0.1:47833`,
     "frame-src https://www.youtube.com",
     "base-uri 'none'",
     "form-action 'none'",
@@ -68,13 +74,16 @@ export function build(dir = join(root, "dist")) {
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "index.html"), html);
   writeFileSync(join(dir, "_headers"), headers);
-  writeFileSync(join(dir, "robots.txt"), "User-agent: *\nAllow: /\nDisallow: /mcp\n");
+  writeFileSync(join(dir, "robots.txt"), host === LIVE_HOST ? "User-agent: *\nAllow: /\nDisallow: /mcp\n" : "User-agent: *\nDisallow: /\n");
   mkdirSync(join(dir, "fonts"), { recursive: true });
   for (const file of FONTS) copyFileSync(join(root, "fonts", file), join(dir, "fonts", file));
   return { html, headers, hash, dir };
 }
 
 if (import.meta.main) {
-  const { dir, html } = build(resolve(root, process.argv[2] || "dist"));
-  console.log(`Wrote ${dir}/index.html (${html.length} bytes), _headers, robots.txt, fonts/`);
+  const args = process.argv.slice(2);
+  const at = args.indexOf("--host");
+  const host = at < 0 ? LIVE_HOST : args.splice(at, 2)[1];
+  const { dir, html } = build(resolve(root, args[0] || "dist"), { host });
+  console.log(`Wrote ${dir}/index.html (${html.length} bytes), _headers, robots.txt, fonts/ for ${host}`);
 }

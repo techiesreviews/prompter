@@ -133,10 +133,10 @@ Opening `dist/index.html` directly also works (everything except `/mcp` and Wait
 It runs on the Cloudflare Workers **free plan**: one Worker serves the page as static assets and answers `/mcp` and `/api/*`, and two Durable Object classes (SQLite-backed, the kind the free plan allows) do the rate limiting (`McpLimiter`) and the live relay (`Relay`).
 
 1. Make a free Cloudflare account and log in: `npx wrangler login`.
-2. In `wrangler.jsonc`, change `"name"` if you like, and replace the `routes` entry `prompter.techies.tools` with your own domain (it must be a zone in your Cloudflare account). No domain? Remove `routes` and set `"workers_dev": true` to get a `*.workers.dev` address.
+2. In `wrangler.jsonc`, change `"name"` if you like, and replace the `routes` entry `prompter.techies.tools` with your own domain (it must be a zone in your Cloudflare account). No domain? Remove `routes` and set `"workers_dev": true` to get a `*.workers.dev` address. The `env.preview` block is this site's test copy on `preview.prompter.techies.tools` (`npm run deploy:preview`); remove it, or give it your own test address in its `routes` and its build's `--host`.
 3. Deploy: `node scripts/build.mjs && npx wrangler deploy`. The first deploy creates the Durable Object classes from the `migrations` entries.
 
-Links made by your copy, and the server address in its demo script, follow your own address automatically. A few places still name `prompter.techies.tools`; change them to yours: `SITE` in `src/core.mjs` (used by offline copies opened from a file), the `make_prompter_link` description and both `instructions` texts in `src/mcp.mjs`, and the `wss://` address in the `connect-src` line of `scripts/build.mjs` (keep its `http://127.0.0.1:47833` for the CamFrame link).
+Links made by your copy, and the server address in its demo script, follow your own address automatically. A few places still name `prompter.techies.tools`; change them to yours: `SITE` in `src/core.mjs` (used by offline copies opened from a file), the `make_prompter_link` description and both `instructions` texts in `src/mcp.mjs`, and `LIVE_HOST` in `scripts/build.mjs` (the `wss://` address the page may call; a build for any other host also keeps search engines out).
 
 ## Contributing
 

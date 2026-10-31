@@ -1,0 +1,8 @@
+{
+  "name": "techies-prompter",
+  "private": true,
+  "description": "Nothing to install: these are shortcuts. Wrangler comes from the npx cache.",
+  "scripts": {
+    "deploy:preview": "npx --no-install --package wrangler wrangler deploy --env preview"
+  }
+}
