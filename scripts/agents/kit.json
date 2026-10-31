@@ -1,0 +1,32 @@
+{
+  "project": "prompter",
+  "mainRoot": "/home/ubulex/Projects/techies-prompter",
+  "branches": {
+    "land": "main"
+  },
+  "commands": "scripts/agents/project.d",
+  "maps": "docs/wayfinder",
+  "rulebookExtras": "docs/agents/kitchen-extras.md",
+  "checks": {
+    "test": "scripts/agents/kit unit",
+    "doctor": [
+      "node scripts/agents/prompter-kit.mjs doctor"
+    ]
+  },
+  "unit": {
+    "run": "node --test",
+    "files": "test/*.test.mjs"
+  },
+  "playwright": "/home/ubulex/Projects/native-site-editor-dev/node_modules/playwright/index.mjs",
+  "standards": [
+    "AGENTS.md"
+  ],
+  "paths": {
+    "visible": [
+      "^src/page\\.html$",
+      "^src/app\\.js$",
+      "^src/ui/",
+      "^fonts/"
+    ]
+  }
+}

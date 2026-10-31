@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# kit: bytes of the built page and the Worker sources
+set -euo pipefail
+root=${KIT_ROOT:-$(git rev-parse --show-toplevel)}
+exec "${KIT_NODE:-node}" "$root/scripts/agents/prompter-kit.mjs" size "$@"

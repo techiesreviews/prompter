@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# kit: browser checks and screenshots, desktop and mobile (a name runs one suite: kit specs range-field)
+set -euo pipefail
+root=${KIT_ROOT:-$(git rev-parse --show-toplevel)}
+exec "${KIT_NODE:-node}" "$root/scripts/agents/prompter-kit.mjs" specs "$@"

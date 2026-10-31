@@ -1,21 +1,24 @@
 #!/usr/bin/env node
-// Project adapter for kit doctor, specs, shots and size.
+// This project's own kit commands: specs (browser checks) and size (scripts/agents/project.d/), and the extra
+// doctor checks (checks.doctor in scripts/agents/kit.json). Unit tests run through the shared `kit unit`.
 // Evidence: .scratch/prompter/<command>-<time>/. No installs, no deploys.
 import { execFileSync, spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { inspect } from "node:util";
 import { gzipSync } from "node:zlib";
-import { kitResult } from "./kit-lib.mjs";
 
 const [command, ...args] = process.argv.slice(2);
 const root = process.env.KIT_ROOT || resolve(import.meta.dirname, "../..");
-const modulePath = process.env.KIT_PLAYWRIGHT_MODULE || "/home/ubulex/Projects/native-site-editor-dev/node_modules/playwright/index.mjs";
+const settings = JSON.parse(readFileSync(join(root, "scripts/agents/kit.json"), "utf8"));
+const modulePath = process.env.KIT_PLAYWRIGHT_MODULE || settings.playwright;
+const oneLine = (text) => String(text).replace(/\s+/g, " ").trim();
+const kitResult = (status, text) => console.log(`RESULT: ${status} ${oneLine(text)}`);
 const usage = {
-  doctor: "Usage: kit doctor\nChecks Node >=24, git, the build, every kit command's help, Playwright + Chromium launch, cached Wrangler and conflict markers.",
-  specs: "Usage: kit specs [name-pattern]\nBuilds dist/ into scratch, then runs node:test files in test/ (parser, links inside a line, presets/checker, #s= round trip, MCP JSON-RPC, size cap, rate limits (in-isolate guard and Durable Object limiter, stubbed), agent tokens, the live relay (stubbed Durable Object: forwards calls, stores only its note, alarm, revoke, 4001/4003), /api routes, token-authorised /mcp (show_script, get_open_script, 401) and the Wait for MCP / Copy MCP messages against the server, build, review-runner model check, demo script (lex), voice following word by word and line by line, the speech recognition keeper (fresh recognizer per start, stall watchdog, no double starts, on-device where available), camera cues and the CamFrame link client (send once per pass), colour contrast (with the voice-follow line colours) and the read-text veil kept below 2:1).\nOptional pattern is passed to --test-name-pattern.",
-  shots: "Usage: kit shots [--static]\nServes the build through local `wrangler dev` (cached Wrangler only) or, with --static or without Wrangler, a local static server.\nCaptures desktop and mobile screenshots of the start screen (with and without Continue), the demo, a QL section of the example script opened from a #s= link (made by the local /mcp when Wrangler runs), the Open and Settings popovers above the floating control bar (Settings: the page's own sliders and three big buttons, Follow my voice, Main screen and CamFrame), Wait for MCP in the Open menu and on the start screen with a scripted agent on the local relay (Copied, Waiting for MCP, the agent's name, show_script opening the script, a second tab taking over and Use this tab, Disconnect MCP then 401, the manual-copy box), the offline Copy MCP, the narrow column, Follow my voice (stubbed speech API with interim results: line by line, white current line, dimmer lines after it; speech dropping, stalling and on-device recognition), inline links and links inside a sentence (normal, hovered, on the main screen) with the quiet link row, and the reading line dragged high (mouse, touch, keys) with the read text faded above it, and the CamFrame link against a fake CamFrame (off by default, CamFrame's button in Settings showing the link's state, cues sent once per pass); checks the moved line drives sections, links, voice and auto-scroll, the fonts load under the CSP, left-aligned text in a centred column, popover anchoring (also without CSS anchor positioning), clock restart, the control bar tucking away on scroll down and returning on scroll up or near the bottom edge, paste, Back to the start, offline file:// use and MCP basics, including a 429 from the local Durable Object limiter.\nBrowser tooling: KIT_PLAYWRIGHT_MODULE or " + modulePath + ".",
+  doctor: "Usage: node scripts/agents/prompter-kit.mjs doctor (run by kit doctor)\nChecks Node >=24, the required files, a scratch build, Playwright + Chromium launch, cached Wrangler (reported, not required) and conflict markers.",
+  specs: "Usage: kit specs [suite] [--affected [--base REF]] [--static]\nRuns the browser suites in test/browser/ with screenshots (each file one suite; a name runs only the suites whose file name holds it: kit specs range-field).\n--affected (kit pr uses it) runs the suites the branch's changes since --base (default origin/main) can reach: range-field for src/ui/, the page suite for the rest of src/, fonts/, the build and wrangler.jsonc; none for docs only.\nThe page suite (page.mjs) serves the build through local `wrangler dev` (cached Wrangler only) or, with --static or without Wrangler, a local static server; suites that need no server (range-field.mjs) skip it.\nWhat each suite checks: the comments and assertion messages in its file. A failure names error.txt (the full error with the values) in the evidence folder.\nPlaywright: KIT_PLAYWRIGHT_MODULE, else \"playwright\" in scripts/agents/kit.json.",
   size: "Usage: kit size\nReports raw and gzip bytes of the built page and the Worker sources. Report only; no budget.",
 };
 if (args.includes("--help") || args.includes("-h")) { console.log(usage[command] || "Unknown command"); process.exit(0); }
@@ -40,17 +43,16 @@ try {
   if (command === "doctor") {
     if (Number(process.versions.node.split(".")[0]) < 24) throw Error("Node >=24 required");
     run("git", ["rev-parse", "--verify", "HEAD"]);
-    for (const file of ["src/core.mjs", "src/agent.mjs", "src/mcp.mjs", "src/limiter.mjs", "src/relay.mjs", "src/token.mjs", "src/worker.mjs", "src/app.js", "src/page.html", "scripts/build.mjs", "wrangler.jsonc", "docs/agents/agent-scripts.md"]) {
+    for (const file of ["src/core.mjs", "src/agent.mjs", "src/mcp.mjs", "src/limiter.mjs", "src/relay.mjs", "src/token.mjs", "src/worker.mjs", "src/app.js", "src/page.html", "scripts/build.mjs", "wrangler.jsonc", "docs/agents/kitchen-extras.md"]) {
       if (!existsSync(join(root, file))) throw Error(`Missing ${file}`);
     }
-    for (const name of ["specs", "shots", "size", "review", "wait", "version"]) run(join(root, "scripts/agents/kit"), [name, "--help"]);
     const built = await buildInto(join(out, "dist"));
-    if (!existsSync(modulePath)) throw Error(`Missing Playwright at ${modulePath}`);
+    if (!modulePath || !existsSync(modulePath)) throw Error(`Missing Playwright at ${modulePath} (KIT_PLAYWRIGHT_MODULE or "playwright" in scripts/agents/kit.json)`);
     const { chromium } = await import(pathToFileURL(modulePath));
     const browser = await chromium.launch({ headless: true });
     await browser.close();
     const wrangler = findWrangler();
-    const wranglerVersion = wrangler ? run(wrangler, ["--version"]).trim() : "missing (shots will use a static server)";
+    const wranglerVersion = wrangler ? run(wrangler, ["--version"]).trim() : "missing (specs will use a static server)";
     let markers = "";
     try { markers = run("git", ["grep", "-n", "-E", "^(<<<<<<< |=======$|>>>>>>> )", "--", ":!scripts/agents"]).trim(); }
     catch (error) { if (error.status !== 1) throw error; }
@@ -59,34 +61,38 @@ try {
     writeFileSync(join(out, "doctor.json"), JSON.stringify(report, null, 2));
     console.log(JSON.stringify(report, null, 2));
   } else if (command === "specs") {
-    await buildInto(join(out, "dist"));
-    const pattern = args.find((a) => !a.startsWith("-"));
-    const testArgs = ["--test", "--test-reporter=spec", "--test-reporter-destination=stdout", "--test-reporter=tap", `--test-reporter-destination=${join(out, "specs.tap")}`, ...(pattern ? [`--test-name-pattern=${pattern}`] : []), "test/*.test.mjs"];
-    const code = await new Promise((accept) => {
-      const child = spawn(process.execPath, testArgs, { cwd: root, stdio: ["ignore", "inherit", "inherit"], env: { ...process.env, PROMPTER_DIST: join(out, "dist") } });
-      child.on("close", accept);
-    });
-    const tap = readFileSync(join(out, "specs.tap"), "utf8");
-    const count = (k) => Number(tap.match(new RegExp(`^# ${k} (\\d+)`, "m"))?.[1] ?? 0);
-    const summary = { tests: count("tests"), pass: count("pass"), fail: count("fail") };
-    writeFileSync(join(out, "specs.json"), JSON.stringify(summary, null, 2));
-    if (code !== 0 || summary.fail) throw Error(`${summary.fail} of ${summary.tests} tests failed`);
-    if (!summary.tests) throw Error("no tests ran");
-    console.log(`specs: ${summary.pass}/${summary.tests} passed`);
-  } else if (command === "shots") {
-    const suite = await import(pathToFileURL(join(root, "test/browser/shots.mjs")));
+    // One suite per file in test/browser/; a name runs only the suites whose file name holds it.
+    const base = args.includes("--base") ? args[args.indexOf("--base") + 1] : "origin/main";
+    const pick = args.find((a, i) => !a.startsWith("-") && args[i - 1] !== "--base");
+    let names = readdirSync(join(root, "test/browser")).filter((f) => f.endsWith(".mjs")).map((f) => f.slice(0, -4)).filter((n) => !pick || n.includes(pick));
+    if (args.includes("--affected")) {
+      const changed = run("git", ["diff", "--name-only", `${base}...HEAD`]).split("\n").filter(Boolean);
+      const reaches = { "range-field": /^(src\/ui\/|test\/browser\/range-field\.mjs$)/, page: /^(src\/|fonts\/|scripts\/build\.mjs$|wrangler\.jsonc$|test\/browser\/page\.mjs$)/ };
+      names = names.filter((n) => changed.some((f) => (reaches[n] || /^(src|test\/browser)\//).test(f)));
+      console.log(`affected since ${base}: ${names.join(", ") || "no browser suite"}`);
+      if (!names.length) { kitResult("ok", "specs no browser suite affected"); process.exit(0); }
+    }
+    if (!names.length) throw Error(`no browser suite matches ${pick}`);
+    const suites = await Promise.all(names.map(async (name) => [name, await import(pathToFileURL(join(root, "test/browser", `${name}.mjs`)))]));
     const dist = join(out, "dist");
     await buildInto(dist);
     const { chromium } = await import(pathToFileURL(modulePath));
-    const wrangler = args.includes("--static") ? null : findWrangler();
-    const server = wrangler ? await startWrangler(wrangler, dist) : await startStatic(dist);
-    cleanups.push(server.stop);
+    let server = { mode: "none" };
+    if (suites.some(([, suite]) => suite.needsServer !== false)) {
+      const wrangler = args.includes("--static") ? null : findWrangler();
+      server = wrangler ? await startWrangler(wrangler, dist) : await startStatic(dist);
+      cleanups.push(server.stop);
+    }
     const browser = await chromium.launch({ headless: true });
     cleanups.push(() => browser.close());
-    const report = await suite.run({ browser, base: server.base, mode: server.mode, dist, out });
-    writeFileSync(join(out, "shots.json"), JSON.stringify(report, null, 2));
-    console.log(`shots (${server.mode}): ${report.checks.length} checks passed; ${report.screenshots.length} screenshots`);
-    for (const shot of report.screenshots) console.log(`  ${shot}`);
+    const report = { mode: server.mode, suites: {} };
+    for (const [name, suite] of suites) {
+      report.suites[name] = await suite.run({ browser, base: server.base, mode: server.mode, dist, out });
+      writeFileSync(join(out, "specs.json"), JSON.stringify(report, null, 2));
+    }
+    const all = Object.values(report.suites);
+    console.log(`specs (${server.mode}; ${names.join(", ")}): ${all.flatMap((r) => r.checks).length} checks passed; ${all.flatMap((r) => r.screenshots).length} screenshots`);
+    for (const shot of all.flatMap((r) => r.screenshots)) console.log(`  ${shot}`);
   } else if (command === "size") {
     const dist = join(out, "dist");
     await buildInto(dist);
@@ -101,8 +107,13 @@ try {
   }
   kitResult("ok", `${command} evidence ${out}`);
 } catch (error) {
+  // An assertion with its own message leaves the values out of the message: keep them, and
+  // the whole error, in the evidence folder so a failure can be read without a rerun.
+  const values = "actual" in Object(error) ? `actual:   ${inspect(error.actual, { depth: 6 })}\nexpected: ${inspect(error.expected, { depth: 6 })}\n` : "";
+  writeFileSync(join(out, "error.txt"), `${error.details || ""}${values}${error.stack || error.message}\n`);
   console.error(error.stack || error.message);
-  kitResult("fail", `${command} ${String(error.message).split("\n")[0]}; evidence ${out}`);
+  if (values) console.log(values.trimEnd());
+  kitResult("fail", `${command} ${String(error.message).split("\n")[0]}; details ${join(out, "error.txt")}`);
   process.exitCode = 1;
 } finally {
   for (const stop of cleanups.reverse()) { try { await stop(); } catch { /* best effort */ } }
