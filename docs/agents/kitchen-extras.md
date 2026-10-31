@@ -54,9 +54,16 @@ file wins.
   other Workers (for example `lex-prompter`), routes or domains.
 - First-hour check: `curl -s https://prompter.techies.tools/ | grep -c <a string the change added>`.
 
+## Reviews
+
+- Claude reviews (`kit review`, and `kit pr`'s review), then the kit's second look (Grok, else the
+  free OpenCode model). Never GPT or Codex reviews (Lex: his GPT budget), whatever the agent.
+
 ## Other
 
 - **Tooling stays outside the repo:** Playwright from `"playwright"` in `scripts/agents/kit.json`
   (or `KIT_PLAYWRIGHT_MODULE`), with Chromium installed for it; Wrangler already cached
-  (`npx --no-install --package wrangler`). Nothing is installed here.
+  (`npx --no-install --package wrangler`). Nothing is installed here. `mainRoot` and `playwright` in
+  `scripts/agents/kit.json` are Lex's folders; on another computer set `KIT_MAIN_ROOT` and
+  `KIT_PLAYWRIGHT_MODULE` instead of editing them.
 - `.scratch/`, `dist/` and `.wrangler/` are git-ignored; only `dist/` is uploaded.

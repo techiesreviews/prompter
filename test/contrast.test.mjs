@@ -128,7 +128,7 @@ const UI_COLOURS = {
 };
 const COLOUR = /oklch\(|color-mix\(|currentColor|#[\da-f]{3,8}\b|rgba?\(|hsla?\(/i;
 const declarations = (text, selector) => {
-  const block = text.match(new RegExp(`${selector.replace(".", "\\.")} \\{([^}]*)\\}`));
+  const block = text.match(new RegExp(`${selector.replaceAll(".", "\\.")} \\{([^}]*)\\}`));
   return block ? Object.fromEntries([...block[1].matchAll(/(--[\w-]+):\s*([^;]+);/g)].map((m) => [m[1], m[2].trim()])) : {};
 };
 // A colour as [gamma sRGB, alpha]: oklch(), var() and color-mix(in oklch, var(--x) N%, transparent).
@@ -157,7 +157,7 @@ function colourProblems(name, source, { selector, text, under, other }) {
     ...colours.filter((k) => !listed.includes(k)).map((k) => `${name}.css: list ${k} in UI_COLOURS as text, under (text sits on it) or other`),
     ...listed.filter((k) => !colours.includes(k)).map((k) => `${name}.css: ${k} is in UI_COLOURS but not set as a colour in ${selector} { }`),
   ];
-  const main = source.match(new RegExp(`${selector.replace(".", "\\.")} \\{[^}]*\\}`))?.[0] ?? "";
+  const main = source.match(new RegExp(`${selector.replaceAll(".", "\\.")} \\{[^}]*\\}`))?.[0] ?? "";
   const rest = source.replace(main, "").replace(/\/\*[\s\S]*?\*\//g, "");
   for (const literal of rest.match(new RegExp(COLOUR.source, "gi")) || []) problems.push(`${name}.css: the colour ${literal} outside ${selector} { }; set it there as a --rf-* property listed in UI_COLOURS`);
   return problems;

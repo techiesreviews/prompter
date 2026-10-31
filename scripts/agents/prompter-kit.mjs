@@ -18,7 +18,7 @@ const oneLine = (text) => String(text).replace(/\s+/g, " ").trim();
 const kitResult = (status, text) => console.log(`RESULT: ${status} ${oneLine(text)}`);
 const usage = {
   doctor: "Usage: node scripts/agents/prompter-kit.mjs doctor (run by kit doctor)\nChecks Node >=24, the required files, a scratch build, Playwright + Chromium launch, cached Wrangler (reported, not required) and conflict markers.",
-  specs: "Usage: kit specs [suite] [--affected [--base REF]] [--static]\nRuns the browser suites in test/browser/ with screenshots (each file one suite; a name runs only the suites whose file name holds it: kit specs range-field).\n--affected (kit pr uses it) runs the suites the changes since --base (default origin/main; committed or not, new files too) can reach, as test/browser/affected.json says: range-field for src/ui/, the page suite for anything under src/ (src/ui/ too), fonts/, the build and wrangler.jsonc; none for docs only.\nThe page suite (page.mjs) serves the build through local `wrangler dev` (cached Wrangler only) or, with --static or without Wrangler, a local static server; suites that need no server (range-field.mjs) skip it.\nWhat each suite checks: the comments and assertion messages in its file. A failure names error.txt (the full error with the values) in the evidence folder.\nPlaywright: KIT_PLAYWRIGHT_MODULE, else \"playwright\" in scripts/agents/kit.json.",
+  specs: "Usage: kit specs [suite] [--affected [--base REF]] [--static]\nRuns the browser suites in test/browser/ with screenshots (each file one suite; a name runs only the suites whose file name holds it: kit specs range-field).\n--affected (kit pr uses it) runs the suites the changes since --base (default origin/main; committed or not, new files too) can reach, as scripts/agents/specs-affected.mjs says: range-field for src/ui/, the page suite for anything under src/ (src/ui/ too), fonts/, the build and wrangler.jsonc; none for docs (.md) only.\nThe page suite (page.mjs) serves the build through local `wrangler dev` (cached Wrangler only) or, with --static or without Wrangler, a local static server; suites that need no server (range-field.mjs) skip it.\nWhat each suite checks: the comments and assertion messages in its file. A failure names error.txt (the full error with the values) in the evidence folder.\nPlaywright: KIT_PLAYWRIGHT_MODULE, else \"playwright\" in scripts/agents/kit.json.",
   size: "Usage: kit size\nReports raw and gzip bytes of the built page and the Worker sources. Report only; no budget.",
 };
 if (args.includes("--help") || args.includes("-h")) { console.log(usage[command] || "Unknown command"); process.exit(0); }
@@ -66,11 +66,8 @@ try {
     const pick = args.find((a, i) => !a.startsWith("-") && args[i - 1] !== "--base");
     let names = readdirSync(join(root, "test/browser")).filter((f) => f.endsWith(".mjs")).map((f) => f.slice(0, -4)).filter((n) => !pick || n.includes(pick));
     if (args.includes("--affected")) {
-      // Committed, staged and unstaged changes since the branch left base, and new files not yet added.
-      const since = run("git", ["merge-base", base, "HEAD"]).trim();
-      const changed = [...run("git", ["diff", "--name-only", since]).split("\n"), ...run("git", ["ls-files", "--others", "--exclude-standard"]).split("\n")].filter(Boolean);
-      const reaches = JSON.parse(readFileSync(join(root, "test/browser/affected.json"), "utf8"));
-      names = names.filter((n) => changed.some((f) => new RegExp(reaches[n] || reaches["*"]).test(f)));
+      const { changedSince, suitesFor } = await import(pathToFileURL(join(root, "scripts/agents/specs-affected.mjs")));
+      names = suitesFor(names, changedSince(base, root));
       console.log(`affected since ${base}: ${names.join(", ") || "no browser suite"}`);
       if (!names.length) { kitResult("ok", "specs no browser suite affected"); process.exit(0); }
     }
