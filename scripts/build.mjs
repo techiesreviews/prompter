@@ -3,7 +3,7 @@
 // inlined, and the range field's styles), the _headers file whose
 // Content-Security-Policy pins that inline script's hash, and the two font files
 // (the page falls back to system fonts without them).
-// Usage: node scripts/build.mjs [outDir=dist] [--host <host>]
+// Usage: node scripts/build.mjs [outDir=dist] [--host <host> | --host=<host>]
 // --host names the address the page is served from (default the live prompter.techies.tools): the relay's
 // WebSocket is allowed there, and any other address (the preview) asks search engines to stay away.
 import { createHash } from "node:crypto";
@@ -81,9 +81,16 @@ export function build(dir = join(root, "dist"), { host = LIVE_HOST } = {}) {
 }
 
 if (import.meta.main) {
+  // A --host with no value, or any other flag, stops the build rather than quietly building for the live site.
   const args = process.argv.slice(2);
-  const at = args.indexOf("--host");
-  const host = at < 0 ? LIVE_HOST : args.splice(at, 2)[1];
-  const { dir, html } = build(resolve(root, args[0] || "dist"), { host });
+  let host = LIVE_HOST;
+  const dirs = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--host" && args[i + 1] && !args[i + 1].startsWith("-")) host = args[++i];
+    else if (args[i].startsWith("--host=")) host = args[i].slice("--host=".length);
+    else if (args[i].startsWith("-") || dirs.length) { console.error(`Usage: node scripts/build.mjs [outDir=dist] [--host <host>] (not: ${args.slice(i).join(" ")})`); process.exit(2); }
+    else dirs.push(args[i]);
+  }
+  const { dir, html } = build(resolve(root, dirs[0] || "dist"), { host });
   console.log(`Wrote ${dir}/index.html (${html.length} bytes), _headers, robots.txt, fonts/ for ${host}`);
 }

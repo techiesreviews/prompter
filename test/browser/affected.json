@@ -1,0 +1,5 @@
+{
+  "range-field": "^(src/ui/|test/browser/range-field\\.mjs$)",
+  "page": "^(src/|fonts/|scripts/build\\.mjs$|wrangler\\.jsonc$|test/browser/page\\.mjs$)",
+  "*": "^(src|test/browser)/"
+}

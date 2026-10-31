@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { build, FONTS, LIVE_HOST, pageScript } from "../scripts/build.mjs";
 
@@ -46,6 +47,34 @@ test("the live build lets search engines in; a preview build allows its own rela
   assert.equal(readFileSync(join(preview.dir, "robots.txt"), "utf8"), "User-agent: *\nDisallow: /\n");
   assert.equal(build(resolve(import.meta.dirname, "../.scratch/test-dist-live"), { host: LIVE_HOST }).headers, headers);
   for (const host of ["", "evil.example; script-src *", "x\n  Y: z", "localhost"]) assert.throws(() => build(resolve(import.meta.dirname, "../.scratch/test-dist-bad"), { host }), /not a host name/);
+});
+
+test("the build's command line: --host and --host=, and a bad flag stops it instead of building for the live site", () => {
+  const script = resolve(import.meta.dirname, "../scripts/build.mjs");
+  const out = resolve(import.meta.dirname, "../.scratch/test-dist-cli");
+  const runBuild = (...args) => spawnSync(process.execPath, [script, ...args], { encoding: "utf8" });
+  for (const args of [[out, "--host", "preview.prompter.techies.tools"], ["--host=preview.prompter.techies.tools", out]]) {
+    rmSync(out, { recursive: true, force: true });
+    assert.equal(runBuild(...args).status, 0, args.join(" "));
+    assert.equal(readFileSync(join(out, "robots.txt"), "utf8"), "User-agent: *\nDisallow: /\n", args.join(" "));
+  }
+  for (const args of [[out, "--host"], [out, "--host", "--other"], [out, "--hots", "x.example"], [out, "extra"], [out, "--host="]]) {
+    rmSync(out, { recursive: true, force: true });
+    assert.notEqual(runBuild(...args).status, 0, args.join(" "));
+    assert.ok(!existsSync(join(out, "robots.txt")), `${args.join(" ")} built nothing`);
+  }
+});
+
+test("the preview Worker is its own, on its own address, with the live Worker's Durable Objects", () => {
+  const config = JSON.parse(readFileSync(resolve(import.meta.dirname, "../wrangler.jsonc"), "utf8").replace(/^\s*\/\/.*$/gm, ""));
+  const preview = config.env.preview;
+  assert.equal(config.name, "techies-prompter");
+  assert.notEqual(preview.name, config.name, "a test build must never replace the live Worker");
+  assert.deepEqual(preview.durable_objects, config.durable_objects, "Wrangler does not carry Durable Objects into an env");
+  assert.deepEqual(preview.routes, [{ pattern: "preview.prompter.techies.tools", custom_domain: true }]);
+  assert.deepEqual(config.routes, [{ pattern: LIVE_HOST, custom_domain: true }]);
+  assert.equal(preview.build.command, `node scripts/build.mjs --host ${preview.routes[0].pattern}`, "the preview's build names its own address");
+  assert.equal(config.build.command, "node scripts/build.mjs");
 });
 
 test("the fonts and their licence ship in dist/fonts; the page loads them only when served", () => {
