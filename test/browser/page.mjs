@@ -1,4 +1,4 @@
-// Browser checks and screenshots for `kit shots`. Runs against a local server
+// Browser checks and screenshots for `kit specs` (the whole page). Runs against a local server
 // (wrangler dev or a static server) and against dist/index.html via file://.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -231,6 +231,12 @@ export async function run({ browser, base, mode, dist, out }) {
     await page.waitForTimeout(300); // let the 200 ms colour change finish
     const file = join(out, `${name}.png`);
     await page.screenshot({ path: file, fullPage });
+    screenshots.push(file);
+  };
+  // Just one element, for a change that only touches it: far smaller to look at than a whole page.
+  const closeUp = async (page, sel, name) => {
+    const file = join(out, `${name}.png`);
+    await page.locator(sel).screenshot({ path: file });
     screenshots.push(file);
   };
 
@@ -679,9 +685,9 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.ok(screenBox.height >= dockHeight && screenBox.height <= dockHeight + 24, `about as tall as the control bar: ${screenBox.height} vs ${dockHeight}`);
   assert.deepEqual(await page.locator("#settings .screen").evaluate((el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).color]), ["oklch(0.33 0.096 282)", "oklch(0.763 0.027 282)"], "not connected: quiet indigo");
   assert.equal(await page.locator("#settings .screen rect").evaluate((r) => getComputedStyle(r).fill), "none", "not connected: an outline icon");
-  // Sliders: range fields (src/ui/range-field.css: one 44px box that is all slider, the name
-  // on the left and the value on the right on top of it; see the screenshots).
-  // Slider parts cannot be read with getComputedStyle.
+  // Sliders: range fields (src/ui/). Their own behaviour and close-ups: range-field.mjs here;
+  // this checks the page's sliders keep that shape inside Settings. Slider parts cannot be read
+  // with getComputedStyle.
   const sliderLook = (p) => p.locator("#settings .size-field").evaluate((el) => [
     getComputedStyle(el.querySelector('input[type="range"]')).appearance, el.getBoundingClientRect().height,
     el.querySelector('input[type="range"]').getBoundingClientRect().width === el.getBoundingClientRect().width,
@@ -694,45 +700,9 @@ export async function run({ browser, base, mode, dist, out }) {
   await page.locator('#settings .seg label:has-text("Narrow")').click();
   assert.deepEqual([await page.locator(".size-val").inputValue(), await page.locator(".speed-val").inputValue()], ["70", "120"], "the boxes show the sliders' values");
   assert.deepEqual(await sliderLook(page), ["none", 44, true, true, true], "the page's own slider across the whole box: the name on the left, the value on the right");
-  // The whole box is the slider: a press on the name reaches it; the value sits on top
-  // for typing, to the box's end. The grip is faint at rest and bright on hover and focus.
-  const hitAt = (p, sel) => p.locator(`#settings .size-field ${sel}`).evaluate((el) => {
-    const r = el.getBoundingClientRect();
-    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-    const edge = document.elementFromPoint(r.right - 2, r.top + r.height / 2);
-    return [hit.closest(".range-value") ? "value" : hit.id, edge.closest(".range-value") !== null];
-  });
-  assert.deepEqual(await hitAt(page, "label:first-child"), ["size", false], "a press on the name lands on the slider");
-  assert.deepEqual(await hitAt(page, ".range-value"), ["value", true], "the value (to the box's edge) takes presses for typing");
-  const nameBox = await page.locator("#settings .size-field label:first-child").boundingBox();
-  await page.mouse.click(nameBox.x + nameBox.width / 2, nameBox.y + nameBox.height / 2);
-  const pressed = [await page.locator(".size").inputValue(), await page.locator(".size-val").inputValue()];
-  assert.ok(pressed[0] === pressed[1] && Number(pressed[0]) < 70, `a press on the name moves the fill there: ${pressed}`);
-  const valueBox = await page.locator("#settings .size-field .range-value").boundingBox();
-  for (const [x, y] of [[valueBox.width - 3, valueBox.height / 2], [valueBox.width - 5, 3]]) {
-    await page.locator("#settings legend").click();
-    await page.mouse.click(valueBox.x + x, valueBox.y + y);
-    assert.deepEqual([await page.evaluate(() => document.activeElement.className), await page.locator(".size").inputValue()], ["size-val", pressed[0]], `a press on the value's clear border (${x}, ${y}) focuses it for typing; the slider stays`);
-  }
-  // Back to 70, not focused, for the grip checks.
-  await page.locator(".size").fill("70");
-  await page.locator(".size").evaluate((el) => el.blur());
-  const grip = (p) => p.locator("#settings .size-field").evaluate((el) => [getComputedStyle(el).getPropertyValue("--rf-grip-size").trim(), getComputedStyle(el).getPropertyValue("--rf-grip-now").includes("color-mix")]);
-  await page.locator("#settings legend").hover();
-  assert.deepEqual(await grip(page), ["3px 34%", true], "faint grip at rest");
-  await page.locator(".size").hover();
-  assert.deepEqual(await grip(page), ["3px 50%", false], "bright on hover");
-  await page.locator("#settings legend").hover();
-  await page.locator(".size").focus();
-  assert.deepEqual(await grip(page), ["3px 50%", false], "and when focused");
-  // The fill reaches both ends, passing under the name and the value.
-  await page.locator(".size").fill("20");
-  await page.locator(".speed").fill("300");
-  await page.locator("#settings").screenshot({ path: join(out, "range-field-ends-desktop.png") });
-  await page.locator(".size").fill("70");
-  await page.locator(".speed").fill("120");
   await page.locator(".size").hover();
   await shot(page, "settings-popover-desktop");
+  await closeUp(page, "#settings", "settings-close-up-desktop");
   await page.locator(".size").focus();
   await page.keyboard.press("ArrowRight");
   assert.deepEqual([await page.locator(".size").inputValue(), await page.locator(".size").evaluate((el) => getComputedStyle(el).outlineStyle)], ["72", "none"], "arrow keys move it");
@@ -1648,23 +1618,7 @@ export async function run({ browser, base, mode, dist, out }) {
     assert.ok(box.height >= 44 && box.x >= 0 && box.x + box.width <= 390, `${sel} fits a phone as a 44px target: ${JSON.stringify(box)}`);
   }
   await shot(m, "settings-popover-mobile");
-  const mobileValues = [await m.locator(".size").inputValue(), await m.locator(".speed").inputValue()];
-  await m.locator(".size").fill("20");
-  await m.locator(".speed").fill("300");
-  await m.locator("#settings").screenshot({ path: join(out, "range-field-ends-mobile.png") });
-  await m.locator(".size").fill(mobileValues[0]);
-  await m.locator(".speed").fill(mobileValues[1]);
-  // On a phone too: a tap on the name moves the fill there; a tap on the value is for typing.
-  await m.locator(".size").fill("80");
-  const mName = await m.locator("#settings .size-field label:first-child").boundingBox();
-  await m.touchscreen.tap(mName.x + mName.width / 2, mName.y + mName.height / 2);
-  const nameTap = [await m.locator(".size").inputValue(), await m.locator(".size-val").inputValue()];
-  assert.ok(nameTap[0] === nameTap[1] && Number(nameTap[0]) < 80, `a tap on the name moves the fill there: ${nameTap}`);
-  const mValue = await m.locator("#settings .size-field .range-value").boundingBox();
-  await m.touchscreen.tap(mValue.x + mValue.width / 2, mValue.y + mValue.height / 2);
-  assert.equal(await m.evaluate(() => document.activeElement.className), "size-val", "a tap on the value focuses it for typing");
-  await m.locator(".size-val").fill(mobileValues[0]);
-  await m.locator(".size-val").press("Enter");
+  await closeUp(m, "#settings", "settings-close-up-mobile");
   await m.mouse.click(195, 120);
   assert.equal(await m.locator("#settings:popover-open").count(), 0, "tapping the page closes Settings");
   await viaSettings(m, ".voice");

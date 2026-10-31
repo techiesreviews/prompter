@@ -112,22 +112,59 @@ const veil = root.match(/--read-veil:\s*oklch\(([\d.]+)%\s+([\d.]+)\s+([\d.]+)\s
 const gamma = (t) => linear(t).map((v) => (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055));
 const fromGamma = (rgb) => rgb.map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)).reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
 
-// Range fields (src/ui/range-field.css): the value sits on top of the slider, so
-// its patch (--rf-value-patch, the page colour at some alpha) may lie over the
-// fill (--chip) or the empty track (--bg). Text and the muted unit stay AA there.
-test("a range field's value stays AA on its patch, over the fill or the track", () => {
-  const ui = readFileSync(new URL("../src/ui/range-field.css", import.meta.url), "utf8");
-  const mix = ui.match(/--rf-value-patch:\s*color-mix\(in oklch, var\(--rf-bg\) ([\d.]+)%, transparent\)/);
-  assert.ok(mix, "--rf-value-patch is the page colour (--rf-bg) at some alpha");
-  assert.match(css, /\.range-field \{[^}]*--rf-bg: var\(--bg\);[^}]*--rf-fill: var\(--chip\);/, "the page's range fields use --bg and --chip");
-  assert.doesNotMatch(css, /--rf-value-patch/, "the page keeps the component's patch");
-  const alpha = Number(mix[1]) / 100;
-  const patch = gamma(tokens.bg);
-  for (const under of ["chip", "bg"]) {
-    const back = fromGamma(gamma(tokens[under]).map((v, i) => v * (1 - alpha) + patch[i] * alpha));
-    for (const fg of ["text", "muted"]) {
-      const ratio = (luminance(tokens[fg]) + 0.05) / (back + 0.05);
-      assert.ok(ratio >= 4.5, `--${fg} on the value patch over --${under} is ${ratio.toFixed(2)}:1`);
+// Shared components (src/ui/*.css) carry their own colours, which a page may replace with its
+// tokens. UI_COLOURS names every colour each one sets: text, what text may sit on (a translucent
+// patch is laid over each of the others) and the rest (not text). A colour that is not listed
+// fails, so text on a new colour is checked before it ships. Text is the page's own --text (the
+// components inherit it) and each listed text colour; all must be AA in the page's colours and
+// in the component's own defaults (on the page's --text, as any dark page would set it).
+const UI_COLOURS = {
+  "range-field": {
+    selector: ".range-field",
+    text: ["--rf-muted"],
+    under: ["--rf-bg", "--rf-fill", "--rf-value-patch"],
+    other: ["--rf-grip", "--rf-tick", "--rf-focus", "--rf-grip-now"],
+  },
+};
+const COLOUR = /oklch\(|color-mix\(|currentColor|#[\da-f]{3,8}\b|rgba?\(|hsla?\(/i;
+const declarations = (text, selector) => {
+  const block = text.match(new RegExp(`${selector.replace(".", "\\.")} \\{([^}]*)\\}`));
+  return block ? Object.fromEntries([...block[1].matchAll(/(--[\w-]+):\s*([^;]+);/g)].map((m) => [m[1], m[2].trim()])) : {};
+};
+// A colour as [gamma sRGB, alpha]: oklch(), var() and color-mix(in oklch, var(--x) N%, transparent).
+function resolve(value, scope, seen = []) {
+  const ok = value.match(/^oklch\(([\d.]+)%\s+([\d.]+)\s+([\d.]+|none)(?:\s*\/\s*([\d.]+))?\)$/);
+  if (ok) return [gamma([Number(ok[1]) / 100, Number(ok[2]), ok[3] === "none" ? 0 : Number(ok[3])]), ok[4] === undefined ? 1 : Number(ok[4])];
+  const ref = value.match(/^var\((--[\w-]+)\)$/);
+  if (ref) {
+    assert.ok(!seen.includes(ref[1]) && ref[1] in scope, `${ref[1]} is unknown or circular`);
+    return resolve(scope[ref[1]], scope, [...seen, ref[1]]);
+  }
+  const mix = value.match(/^color-mix\(in oklch, (.+) ([\d.]+)%, transparent\)$/);
+  if (mix) { const [rgb, alpha] = resolve(mix[1], scope, seen); return [rgb, alpha * Number(mix[2]) / 100]; }
+  assert.fail(`cannot read the colour ${value}; teach resolve() its form`);
+}
+const over = ([top, alpha], [under]) => [top.map((v, i) => v * alpha + under[i] * (1 - alpha)), 1];
+const ratioOf = ([a], [b]) => { const [hi, lo] = [fromGamma(a), fromGamma(b)].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05); };
+
+test("every colour a shared component sets is known, and its text is AA in the page's colours and its own", () => {
+  const pageScope = Object.fromEntries(Object.entries(declarations(css, ":root")));
+  for (const [name, { selector, text, under, other }] of Object.entries(UI_COLOURS)) {
+    const own = declarations(readFileSync(new URL(`../src/ui/${name}.css`, import.meta.url), "utf8"), selector);
+    const colours = Object.keys(own).filter((k) => COLOUR.test(own[k]) && !/^(linear|repeating-linear|radial)-gradient/.test(own[k]));
+    assert.deepEqual(colours.toSorted(), [...text, ...under, ...other].toSorted(), `${name}.css: list each colour in UI_COLOURS as text, under (text sits on it) or other`);
+    for (const [label, scope] of [["the page's colours", { ...pageScope, ...own, ...declarations(css, selector) }], ["its own defaults", { ...pageScope, ...own }]]) {
+      const solid = under.map((k) => [k, resolve(scope[k], scope)]).filter(([, c]) => c[1] === 1);
+      const backs = under.flatMap((k) => {
+        const c = resolve(scope[k], scope);
+        return c[1] === 1 ? [[k, c]] : solid.map(([s, b]) => [`${k} over ${s}`, over(c, b)]);
+      });
+      for (const fg of ["--text", ...text]) {
+        for (const [where, back] of backs) {
+          const ratio = ratioOf(resolve(scope[fg], scope), back);
+          assert.ok(ratio >= 4.5, `${name} in ${label}: ${fg} on ${where} is ${ratio.toFixed(2)}:1, needs 4.5:1`);
+        }
+      }
     }
   }
 });

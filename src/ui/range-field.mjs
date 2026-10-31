@@ -1,13 +1,7 @@
-// Range field (see range-field.css): keeps a slider and its typed value in step.
-// Dragging the slider shows its value in the box; typing any value between the
-// box's own min and max (which may reach past the slider's ends) moves the
-// slider, which stops at its ends, and keeps the exact number (screen readers
-// hear it too, with the unit). Enter or leaving the box (Tab, Escape, a click
-// elsewhere) tidies the text into range and onto the box's step, except that
-// leaving with a value still being typed (below the minimum) or an empty box
-// goes back to the last value. onValue(number) hears every new
-// value. Returns a setter for values that change elsewhere (a shortcut key, a
-// saved setting); it does not call onValue. Import-free so a page can inline it.
+// Range field (README.md): keeps a slider and its typed value in step; the typing rules
+// are in the README. onValue(number) hears every new value. Returns a setter for values
+// that change elsewhere (a shortcut key, a saved setting); it does not call onValue.
+// Import-free so a page can inline it.
 export function rangeField(field, onValue = () => {}) {
   const range = field.querySelector('input[type="range"]');
   const box = field.querySelector('input[type="number"]');

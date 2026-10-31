@@ -31,3 +31,5 @@ A slider with its name inside and an exact value you can type: one box that is a
 - Restyle with custom properties on `.range-field`: `--rf-height` (44px), `--rf-radius`, `--rf-thumb` (the fill's rounded end, which carries the grip), `--rf-ticks` (how many steps; a tick between each two, none at the ends), `--rf-bg`, `--rf-fill`, `--rf-grip`, `--rf-tick`, `--rf-muted` (the unit), `--rf-focus` (the ring), `--rf-value-patch` (behind the value while hovered or typed in: the field's background colour at half strength, so small text stays readable over the fill). The font size comes from the page.
 
 The prompter's build (`scripts/build.mjs`) inlines both files into its one-file page; `src/page.html` sets the colours.
+
+Checks: `test/range-field.test.mjs` (typing, with stub inputs), `kit specs range-field` (`test/browser/range-field.mjs`: presses, grip, typing and close-ups in a real browser, a few seconds) and `test/contrast.test.mjs` (every colour listed in `UI_COLOURS`; text on each background AA, the patch laid over the fill and the track).
