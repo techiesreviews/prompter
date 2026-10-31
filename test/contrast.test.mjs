@@ -126,7 +126,8 @@ const UI_COLOURS = {
     other: ["--rf-grip", "--rf-tick", "--rf-focus", "--rf-grip-now"],
   },
 };
-const COLOUR = /oklch\(|color-mix\(|currentColor|#[\da-f]{3,8}\b|rgba?\(|hsla?\(/i;
+// Colour values: functions, hex, currentColor and named or system colours (not transparent or inherit).
+const COLOUR = /oklch\(|color-mix\(|currentColor|#[\da-f]{3,8}\b|rgba?\(|hsla?\(|(?<![\w-])(white|black|red|green|blue|yellow|orange|purple|pink|gr[ae]y|silver|navy|teal|Canvas|CanvasText|Highlight|HighlightText|LinkText|ButtonFace|ButtonText|Field|FieldText|GrayText|Mark|MarkText|AccentColor|AccentColorText)(?![\w-])/i;
 const declarations = (text, selector) => {
   const block = text.match(new RegExp(`${selector.replaceAll(".", "\\.")} \\{([^}]*)\\}`));
   return block ? Object.fromEntries([...block[1].matchAll(/(--[\w-]+):\s*([^;]+);/g)].map((m) => [m[1], m[2].trim()])) : {};
@@ -150,6 +151,7 @@ const ratioOf = ([a], [b]) => { const [hi, lo] = [fromGamma(a), fromGamma(b)].so
 // A component's colours are set only as custom properties in its main block, each listed in UI_COLOURS;
 // every other rule uses them through var() and names no colour of its own. Returns what breaks that.
 function colourProblems(name, source, { selector, text, under, other }) {
+  source = source.replace(/\/\*[\s\S]*?\*\//g, "");
   const own = declarations(source, selector);
   const colours = Object.keys(own).filter((k) => COLOUR.test(own[k]) && !/^(linear|repeating-linear|radial)-gradient/.test(own[k]));
   const listed = [...text, ...under, ...other];
@@ -158,7 +160,7 @@ function colourProblems(name, source, { selector, text, under, other }) {
     ...listed.filter((k) => !colours.includes(k)).map((k) => `${name}.css: ${k} is in UI_COLOURS but not set as a colour in ${selector} { }`),
   ];
   const main = source.match(new RegExp(`${selector.replaceAll(".", "\\.")} \\{[^}]*\\}`))?.[0] ?? "";
-  const rest = source.replace(main, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  const rest = source.replace(main, "");
   for (const literal of rest.match(new RegExp(COLOUR.source, "gi")) || []) problems.push(`${name}.css: the colour ${literal} outside ${selector} { }; set it there as a --rf-* property listed in UI_COLOURS`);
   return problems;
 }
@@ -171,6 +173,10 @@ test("a shared component's colour that is not listed, or set outside its main bl
   assert.match(colourProblems("range-field", newProperty, spec).join("\n"), /list --rf-new in UI_COLOURS/);
   const directColour = `${source}\n.range-value > input { color: oklch(50% 0 0); }\n`;
   assert.match(colourProblems("range-field", directColour, spec).join("\n"), /the colour oklch\( outside \.range-field/);
+  const namedColour = `${source}\n.range-value > input { color: white; }\n`;
+  assert.match(colourProblems("range-field", namedColour, spec).join("\n"), /the colour white outside \.range-field/);
+  const commentedOut = source.replace("--rf-bg:", "/* --rf-old: oklch(50% 0 0); */\n  --rf-bg:");
+  assert.deepEqual(colourProblems("range-field", commentedOut, spec), [], "a commented-out colour is not a colour");
 });
 
 test("every colour a shared component sets is known, and its text is AA in the page's colours and its own", () => {

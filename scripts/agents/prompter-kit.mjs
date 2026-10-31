@@ -62,7 +62,9 @@ try {
     console.log(JSON.stringify(report, null, 2));
   } else if (command === "specs") {
     // One suite per file in test/browser/; a name runs only the suites whose file name holds it.
-    const base = args.includes("--base") ? args[args.indexOf("--base") + 1] : "origin/main";
+    const at = args.indexOf("--base");
+    const base = at < 0 ? "origin/main" : args[at + 1];
+    if (at >= 0 && (!base || base.startsWith("-") || !args.includes("--affected"))) throw Error(`--base needs a branch or commit after it, and --affected beside it (${usage.specs.split("\n")[0]})`);
     const pick = args.find((a, i) => !a.startsWith("-") && args[i - 1] !== "--base");
     let names = readdirSync(join(root, "test/browser")).filter((f) => f.endsWith(".mjs")).map((f) => f.slice(0, -4)).filter((n) => !pick || n.includes(pick));
     if (args.includes("--affected")) {

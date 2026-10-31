@@ -75,6 +75,8 @@ test("the preview Worker is its own, on its own address, with the live Worker's 
   assert.deepEqual(config.routes, [{ pattern: LIVE_HOST, custom_domain: true }]);
   assert.equal(preview.build.command, `node scripts/build.mjs --host ${preview.routes[0].pattern}`, "the preview's build names its own address");
   assert.equal(config.build.command, "node scripts/build.mjs");
+  for (const key of ["observability", "logpush", "tail_consumers"]) assert.ok(!(key in preview), `the preview must not set ${key}: it inherits request logs off`);
+  assert.deepEqual(config.observability, { enabled: false });
 });
 
 test("the fonts and their licence ship in dist/fonts; the page loads them only when served", () => {

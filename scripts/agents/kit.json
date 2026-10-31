@@ -26,6 +26,8 @@
       "^src/page\\.html$",
       "^src/app\\.js$",
       "^src/ui/",
+      "^src/(core|camframe|speech|agent|follow)\\.mjs$",
+      "^scripts/build\\.mjs$",
       "^fonts/"
     ]
   }

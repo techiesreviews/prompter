@@ -144,7 +144,7 @@ Issues and pull requests are welcome. Please keep the promises above: scripts ne
 
 ## Maintainer tooling
 
-`scripts/agents/` holds the Agent Kit, the maintainer's development tooling for AI coding agents (checks, browser screenshots and reviews). It runs the shared [Agent Kit](https://github.com/techiesreviews/agent-kit); this project's notes are in [`docs/agents/kitchen-extras.md`](docs/agents/kitchen-extras.md). You don't need it to build, test or deploy: `node --test test/*.test.mjs` runs the tests.
+`scripts/agents/` holds the maintainer's development tooling for AI coding agents: a launcher that runs the shared [Agent Kit](https://github.com/techiesreviews/agent-kit), and this project's own browser checks and size report (`project.d/`); this project's notes are in [`docs/agents/kitchen-extras.md`](docs/agents/kitchen-extras.md). You don't need it to build, test or deploy: `node --test test/*.test.mjs` runs the tests.
 
 ## License
 
