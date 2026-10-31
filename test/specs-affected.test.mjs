@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -49,9 +49,28 @@ test("changes not yet committed count: staged, unstaged and new files, but not i
   assert.deepEqual(changedSince("main", repo).toSorted(), ["committed.txt", "edited.txt", "new.txt", "staged.txt"]);
 });
 
-test("kit specs --affected compares with the land branch in scripts/agents/kit.json by default", () => {
+test("kit specs --affected compares with origin/<branches.land> by default, origin/main without one", (t) => {
   const root = new URL("..", import.meta.url);
+  const kit = fileURLToPath(new URL("scripts/agents/prompter-kit.mjs", root));
+  const help = execFileSync(process.execPath, [kit, "specs", "--help"], { encoding: "utf8" });
   const { branches } = JSON.parse(readFileSync(new URL("scripts/agents/kit.json", root), "utf8"));
-  const help = execFileSync(process.execPath, [fileURLToPath(new URL("scripts/agents/prompter-kit.mjs", root)), "specs", "--help"], { encoding: "utf8" });
   assert.ok(help.includes(`default origin/${branches.land},`), help);
+  for (const [land, base] of [["dev", "origin/dev"], [undefined, "origin/main"]]) {
+    const repo = mkdtempSync(join(tmpdir(), "prompter-specs-base-"));
+    t.after(() => rmSync(repo, { recursive: true, force: true }));
+    const git = (...args) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.invalid", ...args], { cwd: repo, stdio: "ignore" });
+    mkdirSync(join(repo, "scripts/agents"), { recursive: true });
+    mkdirSync(join(repo, "test/browser"), { recursive: true });
+    copyFileSync(fileURLToPath(new URL("scripts/agents/specs-affected.mjs", root)), join(repo, "scripts/agents/specs-affected.mjs"));
+    writeFileSync(join(repo, "scripts/agents/kit.json"), JSON.stringify(land ? { branches: { land } } : {}));
+    writeFileSync(join(repo, "test/browser/page.mjs"), "\n");
+    writeFileSync(join(repo, ".gitignore"), ".scratch/\n");
+    git("init", "-q", "-b", "work");
+    git("add", "-A");
+    git("commit", "-q", "-m", "base");
+    git("update-ref", `refs/remotes/${base}`, "HEAD");
+    writeFileSync(join(repo, "notes.md"), "docs only\n");
+    const out = execFileSync(process.execPath, [kit, "specs", "--affected"], { encoding: "utf8", env: { ...process.env, KIT_ROOT: repo } });
+    assert.ok(out.includes(`affected since ${base}: no browser suite`), out);
+  }
 });
