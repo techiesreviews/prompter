@@ -37,5 +37,26 @@
   ],
   // No request logs: scripts must never be recorded.
   "observability": { "enabled": false },
-  "build": { "command": "node scripts/build.mjs" }
+  "build": { "command": "node scripts/build.mjs" },
+  // The preview (Lex, 2026-10-31): its own Worker, techies-prompter-preview, on
+  // preview.prompter.techies.tools, so a test build never touches the live one.
+  // `npm run deploy:preview` (wrangler deploy --env preview). Its build allows
+  // its own relay address and keeps search engines out (scripts/build.mjs --host).
+  // Durable Objects are not inherited from the top, so they are named again; the
+  // preview's objects are its own, empty, apart from the live ones.
+  "env": {
+    "preview": {
+      "name": "techies-prompter-preview",
+      "routes": [
+        { "pattern": "preview.prompter.techies.tools", "custom_domain": true }
+      ],
+      "durable_objects": {
+        "bindings": [
+          { "name": "MCP_LIMITER", "class_name": "McpLimiter" },
+          { "name": "RELAY", "class_name": "Relay" }
+        ]
+      },
+      "build": { "command": "node scripts/build.mjs --host preview.prompter.techies.tools" }
+    }
+  }
 }
