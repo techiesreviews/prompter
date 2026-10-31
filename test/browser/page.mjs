@@ -10,6 +10,14 @@ import { DEMO_SCRIPT, EXAMPLE_SCRIPT, makeLink, parse } from "../../src/core.mjs
 
 const DESKTOP = { viewport: { width: 1366, height: 900 } };
 const MOBILE = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 };
+// Inside the real Settings popover (page CSS around it), a press on the text size's name lands on its
+// slider and the value, to the box's edge, takes presses for typing (as range-field.mjs checks alone).
+const settingsSliderHits = (p) => Promise.all(["label:first-child", ".range-value"].map((sel) => p.locator(`#settings .size-field ${sel}`).evaluate((el) => {
+  const r = el.getBoundingClientRect();
+  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  const edge = document.elementFromPoint(r.right - 2, r.top + r.height / 2);
+  return [hit.closest(".range-value") ? "value" : hit.id, edge.closest(".range-value") !== null];
+})));
 const DEMO_SECTIONS = parse(DEMO_SCRIPT).length;
 
 // Replaces the browser's speech recognition with one the test drives:
@@ -700,6 +708,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await page.locator('#settings .seg label:has-text("Narrow")').click();
   assert.deepEqual([await page.locator(".size-val").inputValue(), await page.locator(".speed-val").inputValue()], ["70", "120"], "the boxes show the sliders' values");
   assert.deepEqual(await sliderLook(page), ["none", 44, true, true, true], "the page's own slider across the whole box: the name on the left, the value on the right");
+  assert.deepEqual(await settingsSliderHits(page), [["size", false], ["value", true]], "in Settings: the name presses the slider, the value takes typing");
   await page.locator(".size").hover();
   await shot(page, "settings-popover-desktop");
   await closeUp(page, "#settings", "settings-close-up-desktop");
@@ -1617,6 +1626,10 @@ export async function run({ browser, base, mode, dist, out }) {
     const box = await m.locator(sel).boundingBox();
     assert.ok(box.height >= 44 && box.x >= 0 && box.x + box.width <= 390, `${sel} fits a phone as a 44px target: ${JSON.stringify(box)}`);
   }
+  assert.deepEqual(await settingsSliderHits(m), [["size", false], ["value", true]], "mobile Settings: the name presses the slider, the value takes typing");
+  await m.locator("#settings .size-field .range-value").tap();
+  assert.equal(await m.evaluate(() => document.activeElement.classList.contains("size-val")), true, "a tap on the value opens it for typing");
+  await m.locator('#settings .seg label:has-text("Narrow")').click();
   await shot(m, "settings-popover-mobile");
   await closeUp(m, "#settings", "settings-close-up-mobile");
   await m.mouse.click(195, 120);
