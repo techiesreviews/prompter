@@ -147,12 +147,38 @@ function resolve(value, scope, seen = []) {
 const over = ([top, alpha], [under]) => [top.map((v, i) => v * alpha + under[i] * (1 - alpha)), 1];
 const ratioOf = ([a], [b]) => { const [hi, lo] = [fromGamma(a), fromGamma(b)].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05); };
 
+// A component's colours are set only as custom properties in its main block, each listed in UI_COLOURS;
+// every other rule uses them through var() and names no colour of its own. Returns what breaks that.
+function colourProblems(name, source, { selector, text, under, other }) {
+  const own = declarations(source, selector);
+  const colours = Object.keys(own).filter((k) => COLOUR.test(own[k]) && !/^(linear|repeating-linear|radial)-gradient/.test(own[k]));
+  const listed = [...text, ...under, ...other];
+  const problems = [
+    ...colours.filter((k) => !listed.includes(k)).map((k) => `${name}.css: list ${k} in UI_COLOURS as text, under (text sits on it) or other`),
+    ...listed.filter((k) => !colours.includes(k)).map((k) => `${name}.css: ${k} is in UI_COLOURS but not set as a colour in ${selector} { }`),
+  ];
+  const main = source.match(new RegExp(`${selector.replace(".", "\\.")} \\{[^}]*\\}`))?.[0] ?? "";
+  const rest = source.replace(main, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  for (const literal of rest.match(new RegExp(COLOUR.source, "gi")) || []) problems.push(`${name}.css: the colour ${literal} outside ${selector} { }; set it there as a --rf-* property listed in UI_COLOURS`);
+  return problems;
+}
+
+test("a shared component's colour that is not listed, or set outside its main block, fails the check", () => {
+  const source = readFileSync(new URL("../src/ui/range-field.css", import.meta.url), "utf8");
+  const spec = UI_COLOURS["range-field"];
+  assert.deepEqual(colourProblems("range-field", source, spec), []);
+  const newProperty = source.replace("--rf-bg:", "--rf-new: oklch(50% 0 0);\n  --rf-bg:");
+  assert.match(colourProblems("range-field", newProperty, spec).join("\n"), /list --rf-new in UI_COLOURS/);
+  const directColour = `${source}\n.range-value > input { color: oklch(50% 0 0); }\n`;
+  assert.match(colourProblems("range-field", directColour, spec).join("\n"), /the colour oklch\( outside \.range-field/);
+});
+
 test("every colour a shared component sets is known, and its text is AA in the page's colours and its own", () => {
   const pageScope = Object.fromEntries(Object.entries(declarations(css, ":root")));
   for (const [name, { selector, text, under, other }] of Object.entries(UI_COLOURS)) {
-    const own = declarations(readFileSync(new URL(`../src/ui/${name}.css`, import.meta.url), "utf8"), selector);
-    const colours = Object.keys(own).filter((k) => COLOUR.test(own[k]) && !/^(linear|repeating-linear|radial)-gradient/.test(own[k]));
-    assert.deepEqual(colours.toSorted(), [...text, ...under, ...other].toSorted(), `${name}.css: list each colour in UI_COLOURS as text, under (text sits on it) or other`);
+    const source = readFileSync(new URL(`../src/ui/${name}.css`, import.meta.url), "utf8");
+    assert.deepEqual(colourProblems(name, source, { selector, text, under, other }), []);
+    const own = declarations(source, selector);
     for (const [label, scope] of [["the page's colours", { ...pageScope, ...own, ...declarations(css, selector) }], ["its own defaults", { ...pageScope, ...own }]]) {
       const solid = under.map((k) => [k, resolve(scope[k], scope)]).filter(([, c]) => c[1] === 1);
       const backs = under.flatMap((k) => {
