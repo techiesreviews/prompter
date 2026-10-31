@@ -2,7 +2,8 @@
   "project": "prompter",
   "mainRoot": "/home/ubulex/Projects/techies-prompter",
   "branches": {
-    "land": "main"
+    "land": "dev",
+    "release": "main"
   },
   "commands": "scripts/agents/project.d",
   "maps": "docs/wayfinder",
