@@ -52,7 +52,8 @@ file wins.
 
 - **Lex lets the lead ship a finished feature without asking (2026-10-28):** after the checks and
   the review pass, land it on `dev`, release it to `main`
-  (`scripts/agents/kit pr --release --base main`), then from a clean checkout of `origin/main`:
+  (`scripts/agents/kit pr --release --base main` opens the pull request but does not merge it),
+  merge that pull request once CI passes, then from a clean checkout of the new `origin/main`:
   `scripts/agents/kit release-check && node scripts/build.mjs && npx --no-install --package
   wrangler wrangler deploy`, and send Lex the live link. It deploys only the `techies-prompter`
   Worker on `prompter.techies.tools`; never touch other Workers (for example `lex-prompter`),
