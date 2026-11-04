@@ -829,7 +829,7 @@ export async function run({ browser, base, mode, dist, out }) {
     await page.waitForTimeout(150);
     const now = await secState();
     assert.equal(now[0], secBefore[0], `after Next, ${name}: the same section stays active`);
-    assert.ok(now[1] <= 4, `after Next, ${name}: the section's top is not pushed below the reading line (${now[1]})`);
+    assert.ok(Math.abs(now[1]) <= 4, `after Next, ${name}: the section's top is not pushed below the reading line (${now[1]})`);
   }
   await page.evaluate(() => {
     const gap = document.querySelector(".gap");
@@ -1045,6 +1045,17 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.deepEqual(await curAtLine(), ["Short lines guide your eyes.", true], "spacious, mid-move: the line being read is at the reading line");
   await v.evaluate(() => document.querySelector('input[name="spacing"][value="normal"]').click());
   assert.deepEqual(await curAtLine(), ["Short lines guide your eyes.", true], "and back to normal");
+  // Voice on, then Next, then a spacing change: the section just reached stays active and in place.
+  await (await dock(v, ".next")).click();
+  await v.waitForTimeout(500);
+  const voiceSec = () => v.evaluate(() => { const a = document.querySelector(".section.active"); return [a.dataset.i, Math.round(a.getBoundingClientRect().top - document.querySelector(".reading-line").getBoundingClientRect().top)]; });
+  const voiceSecBefore = await voiceSec();
+  await v.evaluate(() => document.querySelector('input[name="spacing"][value="spacious"]').click());
+  await v.waitForTimeout(300);
+  const voiceSecAfter = await voiceSec();
+  assert.equal(voiceSecAfter[0], voiceSecBefore[0], "voice on, after Next: the same section stays active");
+  assert.ok(Math.abs(voiceSecAfter[1] - voiceSecBefore[1]) <= 4, `voice on, after Next: it stays in place (${voiceSecBefore[1]} → ${voiceSecAfter[1]})`);
+  await v.evaluate(() => document.querySelector('input[name="spacing"][value="normal"]').click());
   await v.evaluate(() => window.__speech.fail("not-allowed"));
   await v.locator(".note-row.alert:not([hidden])").waitFor();
   assert.match(await v.locator(".alert-text").textContent(), /microphone is blocked/);
