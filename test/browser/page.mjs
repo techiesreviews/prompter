@@ -713,14 +713,14 @@ export async function run({ browser, base, mode, dist, out }) {
   });
   const wrapGap = () => page.locator(".script").evaluate((el) => parseFloat(getComputedStyle(el).lineHeight) / parseFloat(getComputedStyle(el).fontSize));
   assert.ok(Math.abs(await wrapGap() - 1.3) < 0.01, "normal keeps the old line height");
-  const compactGap = await lineGap();
+  const normalGap = await lineGap();
   await page.locator('#settings .spacing .seg label:has-text("Spacious")').click();
   const spaciousGap = await lineGap();
   assert.ok(Math.abs(await wrapGap() - 1.7) < 0.01, "spacious: a line that wraps has taller lines too");
-  assert.ok(spaciousGap > compactGap + 20, `spacious lines sit further apart: ${compactGap} → ${spaciousGap}`);
+  assert.ok(spaciousGap > normalGap + 20, `spacious lines sit further apart: ${normalGap} → ${spaciousGap}`);
   await page.locator('#settings .spacing .seg label:has-text("Roomy")').click();
   const roomyGap = await lineGap();
-  assert.ok(roomyGap > compactGap && roomyGap < spaciousGap, `roomy is in between: ${compactGap} < ${roomyGap} < ${spaciousGap}`);
+  assert.ok(roomyGap > normalGap && roomyGap < spaciousGap, `roomy is in between: ${normalGap} < ${roomyGap} < ${spaciousGap}`);
   await page.locator(".size").fill("70");
   await page.locator(".speed").fill("120");
   await page.locator('#settings .seg label:has-text("Narrow")').click();
@@ -763,17 +763,33 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.ok(fullCol > 1300, `full column is ${fullCol}px`);
   await page.locator('#settings .seg label:has-text("Medium")').click();
   // Changing the line spacing keeps the line at the reading line where it was.
+  // What sits at the reading line: the paragraph and the word under it.
   const atLine = () => page.evaluate(() => {
     const y = document.querySelector(".reading-line").getBoundingClientRect().top;
     const p = [...document.querySelectorAll(".script p")].find((el) => el.getBoundingClientRect().bottom > y);
-    return [p.textContent, Math.round(p.getBoundingClientRect().top)];
+    const r = p.getBoundingClientRect();
+    const hit = document.caretRangeFromPoint(r.left + 8, Math.min(y, r.bottom - 1));
+    const t = hit?.startContainer?.textContent ?? "";
+    return [p.textContent, t.slice(Math.max(0, t.lastIndexOf(" ", hit.startOffset) + 1)).split(" ")[0]];
   });
   const lineBefore = await atLine();
   await page.locator('#settings .spacing .seg label:has-text("Spacious")').click();
-  const lineAfter = await atLine();
-  assert.equal(lineAfter[0], lineBefore[0], "the same line is at the reading line");
-  assert.ok(Math.abs(lineAfter[1] - lineBefore[1]) <= 2, `and has not moved: ${lineBefore[1]} → ${lineAfter[1]}`);
+  assert.deepEqual(await atLine(), lineBefore, "the same line is at the reading line");
   await page.locator('#settings .spacing .seg label:has-text("Normal")').click();
+  assert.deepEqual(await atLine(), lineBefore, "and back");
+  // A paragraph that wraps onto several rows, with the reading line on its third row.
+  await page.locator('input[name="width"][value="narrow"]').evaluate((el) => el.click());
+  await page.locator(".size-val").fill("70");
+  await page.evaluate(() => {
+    const p = [...document.querySelectorAll(".script p.say")].reduce((a, b) => (b.getBoundingClientRect().height > a.getBoundingClientRect().height ? b : a));
+    const r = p.getBoundingClientRect();
+    window.scrollBy(0, r.top + r.height * 0.8 - document.querySelector(".reading-line").getBoundingClientRect().top);
+  });
+  const rowBefore = await atLine();
+  for (const name of ["Spacious", "Normal", "Roomy", "Normal"]) {
+    await page.locator(`#settings .spacing .seg label:has-text("${name}")`).click();
+    assert.deepEqual(await atLine(), rowBefore, `wrapped row: the same word stays at the reading line (${name})`);
+  }
   // At the very top too: the page cannot scroll above 0, so check both ways there.
   await scrollToSection(page, 0);
   const topBefore = await atLine();
@@ -973,12 +989,16 @@ export async function run({ browser, base, mode, dist, out }) {
   // Changing the line spacing while the voice moves the page on: the line being read goes to the reading line.
   const curAtLine = () => v.evaluate(() => [document.querySelector("p.cur")?.textContent,
     Math.abs(document.querySelector("p.cur").getBoundingClientRect().top - document.querySelector(".reading-line").getBoundingClientRect().top) < 12]);
+  // Start the move with words of the next line so a smooth scroll is under way when the spacing changes.
   await v.evaluate(() => { window.__speech.say("you answer not recite"); document.querySelector('input[name="spacing"][value="spacious"]').click(); });
-  await v.waitForTimeout(600);
-  const [curNow] = await curAtLine();
-  assert.deepEqual(await curAtLine(), [curNow, true], "spacious, mid-move: the line being read is at the reading line");
+  await v.waitForFunction(() => document.querySelector("p.cur") && Math.abs(document.querySelector("p.cur").getBoundingClientRect().top - document.querySelector(".reading-line").getBoundingClientRect().top) < 12);
+  const [curNow, onLine] = await curAtLine();
+  assert.ok(curNow && onLine, `spacious, mid-move: the line being read (${curNow}) is at the reading line`);
   await v.evaluate(() => document.querySelector('input[name="spacing"][value="normal"]').click());
   assert.deepEqual(await curAtLine(), [curNow, true], "and back to normal");
+  await v.evaluate(() => window.__speech.say("one question keeps you focused"));
+  await v.waitForFunction(() => document.querySelector("p.cur")?.textContent === "One question keeps you focused.");
+  assert.equal(await v.locator("p.cur").count(), 1, "the voice still moves on after the spacing changed");
   await v.evaluate(() => window.__speech.fail("not-allowed"));
   await v.locator(".note-row.alert:not([hidden])").waitFor();
   assert.match(await v.locator(".alert-text").textContent(), /microphone is blocked/);
@@ -1681,8 +1701,10 @@ export async function run({ browser, base, mode, dist, out }) {
   await m.locator('#settings .seg label:has-text("Narrow")').click();
   assert.deepEqual(await bigButtons(m), [["Follow my voice", ""], ["Connect main screen", ""], ["CamFrame link: off", ""]]);
   for (const sel of ["#settings .voice", "#settings .screen", "#settings .camframe", "#settings .size", "#settings .speed", "#settings .width label", "#settings .spacing label"]) {
-    const box = await m.locator(sel).first().boundingBox();
-    assert.ok(box.height >= 44 && box.x >= 0 && box.x + box.width <= 390, `${sel} fits a phone as a 44px target: ${JSON.stringify(box)}`);
+    for (const loc of await m.locator(sel).all()) {
+      const box = await loc.boundingBox();
+      assert.ok(box.height >= 44 && box.x >= 0 && box.x + box.width <= 390, `${sel} fits a phone as a 44px target: ${JSON.stringify(box)}`);
+    }
   }
   assert.deepEqual(await settingsSliderHits(m), [["size", false], ["value", true]], "mobile Settings: the name presses the slider, the value takes typing");
   await m.locator("#settings .size-field .range-value").tap();
