@@ -797,6 +797,21 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal((await atLine())[0], topBefore[0], "at the top, the same line stays at the reading line");
   await page.locator('#settings .spacing .seg label:has-text("Normal")').click();
   assert.equal((await atLine())[0], topBefore[0], "and after going back");
+  // The reading line on a section's row of links: that row stays under it.
+  await page.evaluate(() => {
+    const l = document.querySelector(".links");
+    window.scrollBy(0, l.getBoundingClientRect().top + l.getBoundingClientRect().height / 2 - document.querySelector(".reading-line").getBoundingClientRect().top);
+  });
+  const underLine = () => page.evaluate(() => {
+    const y = document.querySelector(".reading-line").getBoundingClientRect().top;
+    const r = document.querySelector(".links").getBoundingClientRect();
+    return r.top <= y && r.bottom > y;
+  });
+  assert.equal(await underLine(), true, "the links row starts under the reading line");
+  for (const name of ["Spacious", "Roomy", "Normal"]) {
+    await page.locator(`#settings .spacing .seg label:has-text("${name}")`).click();
+    assert.equal(await underLine(), true, `links row: still under the reading line (${name})`);
+  }
   // Just after Next (the section's top at the reading line) and with the line in a gap between lines:
   // the section stays the active one and nothing moves under the line.
   await (await dock(page, ".next")).click();

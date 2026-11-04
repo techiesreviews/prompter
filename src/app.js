@@ -984,7 +984,7 @@ function setWidth(name) {
 function setSpacing(name) {
   const v = SPACINGS.includes(name) ? name : "normal";
   const cur = voiceOn && main.querySelector("p.cur");
-  const keep = cur || [...main.querySelectorAll("p, .mark")].find((p) => p.getBoundingClientRect().bottom > readingLineY());
+  const keep = cur || [...main.querySelectorAll("p, .mark, .links")].find((p) => p.getBoundingClientRect().bottom > readingLineY());
   // Where the reading line falls on that line: inside it, a share of its height (its rows grow too);
   // above it (a heading, a link row or a gap, which do not grow), the same distance in pixels.
   const kr = keep?.getBoundingClientRect();
@@ -997,6 +997,8 @@ function setSpacing(name) {
   if (cur) window.scrollTo({ top: cur.getBoundingClientRect().top + window.scrollY - readingLineY() + 2 });
   else if (keep) { const r = keep.getBoundingClientRect(); window.scrollBy(0, r.top + (inside ? frac * r.height : dist) - readingLineY()); }
   // (The voice path scrolls at once, not smoothly: this is a settings change, not a move on.)
+  updateActive(); // the page may not have scrolled (at the top), so no scroll event will do it
+  if (voiceOn) voiceFromReadingLine();
 }
 
 function goSection(delta) {
