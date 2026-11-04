@@ -983,11 +983,10 @@ function setWidth(name) {
 // stays there (with Follow my voice on, the line being read goes to it).
 function setSpacing(name) {
   const v = SPACINGS.includes(name) ? name : "normal";
-  // With Follow my voice on, the line being read goes to the reading line when it is there or
-  // on its way (a smooth move under way); otherwise keep what is under the line, as with it off.
+  // With Follow my voice on and a move to the next line under way (a smooth scroll), that line goes
+  // to the reading line; otherwise keep what is under the line, as with it off.
   const y = readingLineY();
-  let cur = voiceOn ? main.querySelector("p.cur") : null;
-  if (cur) { const c = cur.getBoundingClientRect(); if (!voiceScrolling && !(c.top <= y + 4 && c.bottom > y)) cur = null; }
+  const cur = voiceOn && voiceScrolling ? main.querySelector("p.cur") : null;
   const lines = [...main.querySelectorAll("p, .mark, .links")];
   // Below the last line (the page scrolls into the bottom padding): hold the last line's distance.
   const keep = cur || lines.find((p) => p.getBoundingClientRect().bottom > y) || lines.at(-1);
