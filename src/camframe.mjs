@@ -172,6 +172,9 @@ export function layoutPlan(status) {
   };
 }
 
+/** A save that CamFrame's status does not show, whatever it answered. */
+export const LAYOUT_NOT_KEPT = "CamFrame did not keep the layouts. Open Camera layouts again to try once more.";
+
 /** A refused save (`{ ok: false, body }`) or a missed one (null) in plain words. */
 export function layoutProblem(answer) {
   if (!answer) return "CamFrame did not answer. Check it is open with Prompter link on, then open Camera layouts again.";
@@ -196,9 +199,20 @@ export function layoutNote(plan) {
   return `Saving what is missing would fill CamFrame: ${plan.room.has + plan.room.need} of ${plan.room.limit} Scenes, with no spare slot, and the next Scene saved by hand there drops its oldest. Not saved yet: press Save to save anyway, or delete a Scene you do not use in CamFrame and open Camera layouts again.`;
 }
 
-/** What a save leaves, in plain words: "saved" only when both layouts are ready. */
+/** A layout saved at an older size, in plain words: the 1.5 times sum, or CamFrame's limit when that passes it. */
+export function layoutResizedWords(row, smallSize) {
+  const would = Math.round(smallSize * 1.5) > row.scene.size
+    ? `1.5 × today's small camera is more than CamFrame allows, so the largest it can be is ${row.scene.size} px`
+    : `1.5 × today's small camera would be ${row.scene.size} px`;
+  return `Saved at ${row.saved} px; ${would}. Replace it?`;
+}
+
+/** What a save leaves, in plain words: "saved" only when both layouts are saved, naming one at an older size. */
 export function layoutResultWords(plan) {
-  if (plan.done) return "Camera layouts saved in CamFrame.";
+  if (plan.done) {
+    const older = plan.rows.filter((r) => r.state === "resized").map((r) => ` ${r.name} is still at ${r.saved} px.`);
+    return `Camera layouts saved in CamFrame.${older.join("")}`;
+  }
   const left = plan.rows.filter((r) => r.state === "missing" || r.state === "different").map((r) => `${r.name} ${r.state === "different" ? "needs Replace" : "is not saved"}`);
   return `Camera layouts: ${left.join("; ")}.`;
 }

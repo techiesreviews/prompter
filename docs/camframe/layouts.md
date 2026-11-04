@@ -28,14 +28,15 @@ only when he works on them.
   `/camframe/small-size`: the small size is whatever CamFrame has now, shown in the window.
 - Room: CamFrame keeps at most `sceneLimit` (6) Scenes, shared with Lex's own. When the missing
   layouts do not all fit, none is saved and the window says how many Scenes to delete in CamFrame.
-  The window and its read-out say "saved" only when both layouts are ready; otherwise they name
-  what is left.
+  The window and its read-out say "saved" only when both layouts are saved, naming one at an older
+  size; otherwise they name what is left.
 - A Scene with a layout's name that holds something else (a snapshot Scene, another size or place) is
   replaced only after Lex presses Replace in the window (`replace: true` for that one Scene).
   The window opens with focus on Close, so Replace and Save take a deliberate move.
 - A hand resize in CamFrame changes its small size. The large layout, saved at the older size, still
   works and shows no dot; its row says "Saved at 432 px; 1.5 × today's small camera would be 450 px.
-  Replace it?", and only Replace changes it.
+  Replace it?", and only Replace changes it. When 1.5 × would pass CamFrame's largest camera (640 px),
+  the row says so and offers 640 px.
 - Spoken results: a save made by itself on connecting is not read out (that would talk over "CamFrame
   link: connected"); a problem shows as a dot on the Open menu's item and a note in the window. While
   the window is open, every result goes to a spoken status element inside it, because a modal window
