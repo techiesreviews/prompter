@@ -62,6 +62,7 @@ const toastText = $(".toast-text");
 const camframeBtn = $(".big-toggle.camframe"); // in Settings
 const layoutsItem = $(".layouts-item"); // in the Open menu, only for a CamFrame that can save layouts
 const layoutsDialog = $(".layouts-dialog");
+const layoutsStatus = $(".layouts-status"); // the status line while that window is open: a modal window hides the page's from screen readers
 const WINDOW_NAME = "prompter-main-screen";
 const SETTLE_MS = 700; // wait this long on a section before changing the main screen
 const LAST_KEY = "prompter-last-script";
@@ -782,10 +783,10 @@ function setCamframe(patch) {
   camframeBtn.setAttribute("aria-pressed", String(camframe.on));
   camframeBtn.setAttribute("aria-label", name);
   camframeBtn.title = camframe.state === "lost" ? name + CAMFRAME_LOST_HELP : name;
+  updateSettingsBtn();
+  showLayouts(); // first: not found closes that window, and is then said on the page
   // Not again when it comes back from a missed check or two (reconnecting).
   if (was !== camframe.state && ((camframe.state === "on" && was !== "reconnecting") || camframe.state === "lost")) setStatus(`${name}.`);
-  updateSettingsBtn();
-  showLayouts();
 }
 
 // ---------- Camera layouts (CamFrame API 2) ----------
@@ -799,17 +800,23 @@ function setCamframe(patch) {
 // problem; opening it reads CamFrame again and saves what is still missing, with focus on Close,
 // so Replace and Save take a deliberate move.
 function seeLayouts(body) {
+  // A room note follows CamFrame; a refusal's stays until both layouts are there.
+  const roomNote = layouts.status && !layoutsSaving() ? layoutNote(layoutPlan(layouts.status)) : null;
+  const follows = roomNote === layouts.note;
   layouts.status = layoutsSupported(body) ? body : null;
-  // Both there (saved by hand, or a save whose check missed): an older problem is gone.
-  if (layouts.status && !layoutsSaving() && layoutPlan(layouts.status).done) layouts.note = "";
+  const plan = layouts.status && layoutPlan(layouts.status);
+  if (plan && !layoutsSaving() && (follows || plan.done)) layouts.note = layoutNote(plan);
   showLayouts();
   // Not read out: it would talk over "CamFrame link: connected" from the same check.
-  if (layouts.status && layouts.auto !== camframe.session) saveLayouts({ quiet: true });
+  if (plan && layouts.auto !== camframe.session) saveLayouts({ quiet: true });
+  // Room was made in CamFrame with the window open, saying it waited for that.
+  else if (plan && follows && roomNote && layoutsDialog.open && plan.auto.length) saveLayouts();
 }
 
 async function openLayouts() {
   layouts.note = "";
   if (layoutsSaving()) layouts.quiet = false; // the window is open now: read the running save's result out
+  layoutsStatus.textContent = ""; // the same result next time is news again
   showDialog(layoutsDialog);
   showLayouts();
   layoutsDialog.querySelector('[data-action="close-dialog"]').focus();
@@ -880,11 +887,9 @@ async function saveLayouts({ replace = "", quiet = false, deliberate = false } =
   layouts.stamp++;
   if (!current()) { showLayouts(); return; }
   if (body) layouts.status = layoutsSupported(body) ? body : null;
-  else {
-    // The check missed: CamFrame's yes to a save counts for now, and it checks again soon.
-    layouts.status = layoutsWithSaved(layouts.status, yes);
-    camframe.retry = setTimeout(() => { if (document.visibilityState === "visible") checkCamframe(); }, CAMFRAME_RETRY_MS[0]);
-  }
+  // The read missed: CamFrame's yes to a save counts for now (unless it answers as an older one by now).
+  else if (layouts.status) layouts.status = layoutsWithSaved(layouts.status, yes);
+  afterCheck(body); // this read is a check like any other: a miss checks again soon, an answer ends reconnecting
   const after = layouts.status && layoutPlan(layouts.status);
   const states = after ? todo.map((scene) => after.rows.find((r) => r.name === scene.name)?.state) : [];
   // A Scene saved under the same name meanwhile shows as different, with Replace: that row says it.
@@ -1056,8 +1061,9 @@ function showLink(si, li, fromUser) {
 let statusSeq = 0;
 function setStatus(t) {
   const n = ++statusSeq;
-  if (t && statusEl.textContent === t) { statusEl.textContent = ""; requestAnimationFrame(() => { if (n === statusSeq) statusEl.textContent = t; }); }
-  else statusEl.textContent = t;
+  const el = layoutsDialog.open ? layoutsStatus : statusEl;
+  if (t && el.textContent === t) { el.textContent = ""; requestAnimationFrame(() => { if (n === statusSeq) el.textContent = t; }); }
+  else el.textContent = t;
 }
 
 /** A message that must not be missed (errors). Empty text hides it. */
