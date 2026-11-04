@@ -794,7 +794,8 @@ function setCamframe(patch) {
 function seeLayouts(body) {
   layouts.status = layoutsSupported(body) ? body : null;
   showLayouts();
-  if (layouts.status && layouts.auto !== camframe.session) saveLayouts();
+  // Not read out: it would talk over "CamFrame link: connected" from the same check.
+  if (layouts.status && layouts.auto !== camframe.session) saveLayouts({ quiet: true });
 }
 
 async function openLayouts() {
@@ -810,9 +811,11 @@ async function openLayouts() {
   saveLayouts();
 }
 
-// Saves the missing layouts, or replaces the one named `replace` after Lex's yes. No automatic
-// second try: a save whose answer was lost may have worked, so the status is read again instead.
-async function saveLayouts(replace = "") {
+// Saves the missing layouts, or replaces the one named `replace` after Lex's yes; `quiet` reads
+// nothing out. No automatic second try: a save whose answer was lost may have worked, so the
+// status is read again instead.
+async function saveLayouts({ replace = "", quiet = false } = {}) {
+  const say = (text) => { if (!quiet) setStatus(text); };
   if (layouts.busy || !layouts.status) { showLayouts(); return; }
   const session = camframe.session;
   const current = () => camframe.on && camframe.session === session;
@@ -826,7 +829,7 @@ async function saveLayouts(replace = "") {
   layouts.busy = true;
   layouts.note = "";
   showLayouts();
-  setStatus(`Saving camera layouts in CamFrame. Small camera: ${plan.smallSize} px.`);
+  say(`Saving camera layouts in CamFrame. Small camera: ${plan.smallSize} px.`);
   let problem = "";
   for (const scene of todo) {
     let answer = null;
@@ -842,11 +845,13 @@ async function saveLayouts(replace = "") {
   if (!current()) return;
   if (body) layouts.status = layoutsSupported(body) ? body : null;
   const after = layouts.status && layoutPlan(layouts.status);
-  const kept = after && todo.every((scene) => after.rows.find((r) => r.name === scene.name)?.state === "ready");
-  if (kept) problem = "";
+  const states = after ? todo.map((scene) => after.rows.find((r) => r.name === scene.name)?.state) : [];
+  // A Scene saved under the same name meanwhile shows as different, with Replace: that row says it.
+  if (states.length && states.every((st) => st === "ready" || st === "different")) problem = "";
   else if (!problem) problem = "CamFrame did not keep the layouts. Open Camera layouts again to try once more.";
   layouts.note = problem;
-  setStatus(problem ? `Camera layouts: ${problem}` : "Camera layouts saved in CamFrame.");
+  if (problem) say(`Camera layouts: ${problem}`);
+  else say(states.includes("different") ? "Camera layouts: CamFrame has a different Scene with a layout's name." : "Camera layouts saved in CamFrame.");
   showLayouts();
 }
 
@@ -865,20 +870,26 @@ function showLayouts() {
   layoutsItem.setAttribute("aria-label", attention ? "Camera layouts: needs a look" : "Camera layouts");
   layoutsDialog.querySelector(".layouts-size").textContent =
     `Small camera: ${plan.smallSize} px, as CamFrame has it now; the Prompter never changes it. Live small corner follows it; Live right large is ${plan.largeSize} px.`;
-  // Rebuilt only when something changed, so a status check every 10 s keeps focus on Replace.
-  const key = JSON.stringify([layouts.busy, plan.rows.map((r) => r.state)]);
+  // Rows are rebuilt only when a row's state changes, so a status check every 10 s or a save
+  // under way keeps focus on Replace; a focused Replace that goes away hands focus to Close.
+  const key = plan.rows.map((r) => r.state).join();
   const list = layoutsDialog.querySelector(".layouts-rows");
   if (list.dataset.key !== key) {
+    const hadFocus = list.contains(document.activeElement);
     list.dataset.key = key;
     list.replaceChildren(...layoutRows(plan));
+    if (hadFocus) (list.querySelector(".layout-replace") || layoutsDialog.querySelector('[data-action="close-dialog"]')).focus();
+  }
+  for (const row of list.children) {
+    if (row.dataset.state === "missing") row.querySelector(".layout-state").textContent = layouts.busy ? "Saving…" : "Not saved yet";
   }
   const note = layoutsDialog.querySelector(".layouts-note");
-  note.textContent = layouts.note;
+  if (note.textContent !== layouts.note) note.textContent = layouts.note;
   note.hidden = !layouts.note;
 }
 
 function layoutRows(plan) {
-  const words = { ready: "Saved in CamFrame", missing: layouts.busy ? "Saving…" : "Not saved yet", different: "CamFrame has a different Scene with this name. Replace it with this layout?" };
+  const words = { ready: "Saved in CamFrame", missing: "Not saved yet", different: "CamFrame has a different Scene with this name. Replace it with this layout?" };
   return plan.rows.map((r) => {
     const li = document.createElement("li");
     li.dataset.state = r.state;
@@ -886,7 +897,7 @@ function layoutRows(plan) {
     name.className = "layout-name";
     name.textContent = r.name;
     const state = document.createElement("span");
-    state.className = "layout-state";
+    state.className = r.state === "different" ? "layout-state layout-ask" : "layout-state";
     state.textContent = words[r.state];
     li.append(name, state);
     if (r.state === "different") {
@@ -895,7 +906,6 @@ function layoutRows(plan) {
       yes.type = "button";
       yes.dataset.action = "layout-replace";
       yes.dataset.name = r.name;
-      yes.disabled = layouts.busy;
       yes.textContent = "Replace";
       yes.setAttribute("aria-label", `Replace ${r.name}`);
       li.append(yes);
@@ -1427,7 +1437,7 @@ document.addEventListener("click", (e) => {
   else if (action === "open-paste") submitPaste();
   else if (action === "close-dialog") button.closest("dialog").close();
   else if (action === "layouts") openLayouts();
-  else if (action === "layout-replace") saveLayouts(button.dataset.name);
+  else if (action === "layout-replace") saveLayouts({ replace: button.dataset.name });
   else if (action === "copy-link") copyLink(button);
   else if (action === "start") { showAlert(""); history.pushState(null, "", plainAddress()); showStart(); }
   else if (action === "demo") { showAlert(""); openDemo(); }
