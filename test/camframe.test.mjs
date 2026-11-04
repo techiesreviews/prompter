@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CAMFRAME_MISSES, CAMFRAME_ORIGIN, CAMFRAME_RETRY_MS, camframeAfterCheck, camframeCall, cueCrossing, cueRest, cueWords, LAYOUT_LARGE, LAYOUT_SMALL, layoutMatches, layoutPlan, layoutProblem, layoutRoomWords, layoutsSupported, layoutWants } from "../src/camframe.mjs";
+import { CAMFRAME_MISSES, CAMFRAME_ORIGIN, CAMFRAME_RETRY_MS, camframeAfterCheck, camframeCall, cueCrossing, cueRest, cueWords, LAYOUT_LARGE, LAYOUT_SMALL, layoutMatches, layoutPlan, layoutProblem, layoutResultWords, layoutRoomWords, layoutsWithSaved, layoutsSupported, layoutWants } from "../src/camframe.mjs";
 import { check, classify, faceCue, FACE_SPOTS, formatGuide, parse } from "../src/core.mjs";
 
 test("faceCue: Lex's existing cue lines still work", () => {
@@ -236,9 +236,36 @@ test("layoutProblem: CamFrame's refusals and a missed call in plain words", () =
   assert.match(layoutProblem(null), /CamFrame did not answer/);
 });
 
-test("layoutRoomWords: how many Scenes to delete in CamFrame, in plain words", () => {
+test("layoutRoomWords: how many Scenes to delete in CamFrame, true also after another layout was saved", () => {
   assert.equal(layoutRoomWords({ has: 1, limit: 6, need: 2, ok: true, free: 5 }), "");
-  assert.equal(layoutRoomWords({ has: 5, limit: 6, need: 2, ok: false, free: 1 }), "CamFrame keeps at most 6 Scenes and has 5; the layouts need 2 more. Delete 1 Scene you do not use in CamFrame, then open Camera layouts again. Nothing was saved.");
+  assert.equal(layoutRoomWords({ has: 5, limit: 6, need: 2, ok: false, free: 1 }), "No room to save what is missing: CamFrame keeps at most 6 Scenes and has 5, and 2 more are needed. Delete 1 Scene you do not use in CamFrame, then open Camera layouts again.");
+  assert.match(layoutRoomWords({ has: 6, limit: 6, need: 1, ok: false, free: 0 }), /has 6, and 1 more is needed\. Delete 1 Scene /);
   assert.match(layoutRoomWords({ has: 6, limit: 6, need: 2, ok: false, free: 0 }), /Delete 2 Scenes /);
-  assert.match(layoutRoomWords({ has: 8, limit: 6, need: 2, ok: false, free: 0 }), /has 8; .* Delete 4 Scenes /, "more Scenes than the limit: all of the extra ones count");
+  assert.match(layoutRoomWords({ has: 8, limit: 6, need: 2, ok: false, free: 0 }), /has 8, .* Delete 4 Scenes /, "more Scenes than the limit: all of the extra ones count");
+});
+
+test("layoutPlan: both layouts ready needs no room, even with more Scenes than the limit", () => {
+  const eight = ["A", "B", "C", "D", "E", "F"];
+  const plan = layoutPlan(api2({ scenes: [...eight, "Live small corner", "Live right large"], sceneDetails: [...eight.map((name) => ({ name, kind: "snapshot" })), SMALL_DETAIL, LARGE_DETAIL] }));
+  assert.equal(plan.room.ok, true);
+  assert.equal(layoutRoomWords(plan.room), "");
+});
+
+test("layoutResultWords: says saved only when both layouts are ready, otherwise names what is left", () => {
+  const both = layoutPlan(api2({ scenes: ["Live small corner", "Live right large"], sceneDetails: [SMALL_DETAIL, LARGE_DETAIL] }));
+  assert.equal(layoutResultWords(both), "Camera layouts saved in CamFrame.");
+  const largeDifferent = layoutPlan(api2({ scenes: ["Live small corner", "Live right large"], sceneDetails: [SMALL_DETAIL, { ...LARGE_DETAIL, kind: "snapshot" }] }));
+  assert.equal(layoutResultWords(largeDifferent), "Camera layouts: Live right large needs Replace.");
+  const smallMissing = layoutPlan(api2({ scenes: ["Live right large"], sceneDetails: [LARGE_DETAIL] }));
+  assert.equal(layoutResultWords(smallMissing), "Camera layouts: Live small corner is not saved.");
+  assert.equal(layoutResultWords(layoutPlan(api2())), "Camera layouts: Live small corner is not saved; Live right large is not saved.");
+});
+
+test("layoutsWithSaved: CamFrame's yes counts when the check after it missed, without changing the old status", () => {
+  const before = api2({ scenes: ["Interview", "live right large"], sceneDetails: [{ id: "i", name: "Interview", kind: "snapshot" }, { name: "live right large", kind: "snapshot" }] });
+  const after = layoutsWithSaved(before, [SMALL_DETAIL, LARGE_DETAIL]);
+  assert.deepEqual(after.scenes, ["Interview", "Live right large", "Live small corner"], "added, or replaced in place whatever the case");
+  assert.deepEqual(layoutPlan(after).rows.map((r) => r.state), ["ready", "ready"]);
+  assert.deepEqual(before.scenes, ["Interview", "live right large"], "the old status is left as it was");
+  assert.equal(before.sceneDetails[1].kind, "snapshot");
 });
