@@ -80,7 +80,8 @@ export function camframeAfterCheck(state, misses, answered) {
 // the left, `[Face: Live small corner]` (the same as `[Face small, bottom
 // right]`) on plugin and advisory screens. A layout Scene changes only the
 // camera's size and place, never the camera, shape, style or crop. The page
-// saves what is missing when CamFrame connects; it never replaces a Scene
+// saves what is missing when CamFrame connects, unless that would leave no
+// spare slot (then only after Save in its window); it never replaces a Scene
 // without a yes, never moves the camera while saving and never changes
 // CamFrame's small size.
 
@@ -129,7 +130,9 @@ const sameName = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
  * `different` for a Scene with its name that holds something else), the
  * missing ones to save (small first), and the room: CamFrame keeps at most
  * `sceneLimit` Scenes, shared with Lex's own, so both missing ones must fit
- * before anything is saved.
+ * before anything is saved. `save` is what a deliberate Save sends, `auto`
+ * what goes by itself: nothing when it would fill CamFrame (`tight`), because
+ * the next Scene saved by hand there drops its oldest, maybe one of Lex's.
  */
 export function layoutPlan(status) {
   const smallSize = Number.isFinite(status.smallSize) && status.smallSize > 0 ? status.smallSize : LAYOUT_SMALL_SIZE;
@@ -145,11 +148,14 @@ export function layoutPlan(status) {
   const has = names.length;
   const limit = status.sceneLimit;
   const ok = !missing.length || has + missing.length <= limit;
+  const tight = ok && missing.length > 0 && has + missing.length >= limit;
   return {
     smallSize,
     largeSize: wants[1].size,
     rows,
     save: ok ? missing : [],
+    auto: ok && !tight ? missing : [],
+    tight,
     room: { has, limit, need: missing.length, ok, free: Math.max(0, limit - has) },
     done: rows.every((r) => r.state === "ready"),
   };
@@ -171,6 +177,12 @@ export function layoutRoomWords(room) {
   const scenes = (n) => `${n} Scene${n === 1 ? "" : "s"}`;
   const over = room.has + room.need - room.limit;
   return `No room to save what is missing: CamFrame keeps at most ${scenes(room.limit)} and has ${room.has}, and ${room.need} more ${room.need === 1 ? "is" : "are"} needed. Delete ${scenes(over)} you do not use in CamFrame, then open Camera layouts again.`;
+}
+
+/** Why the missing layouts wait, in plain words ("" when they do not). */
+export function layoutNote(plan) {
+  if (!plan.tight) return layoutRoomWords(plan.room);
+  return `Saving what is missing would fill CamFrame: ${plan.room.has + plan.room.need} of ${plan.room.limit} Scenes, with no spare slot, and the next Scene saved by hand there drops its oldest. Not saved yet: press Save to save anyway, or delete a Scene you do not use in CamFrame and open Camera layouts again.`;
 }
 
 /** What a save leaves, in plain words: "saved" only when both layouts are ready. */
