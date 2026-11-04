@@ -2339,6 +2339,21 @@ export async function run({ browser, base, mode, dist, out }) {
   await LY.waitForTimeout(300);
   assert.deepEqual(await rowStates(), [["Live small corner", "ready", "Saved in CamFrame"], ["Live right large", "different", "CamFrame has a different Scene with this name. Replace it with this layout?"]]);
   assert.deepEqual(cam.saves(), [], "opening the window does not replace it either");
+  assert.equal(await LY.evaluate(() => document.activeElement.dataset.action), "close-dialog", "the window opens with focus on Close, not on Replace");
+  // Enter on the menu item and Enter again only opens and closes the window: never a yes by accident.
+  await LY.keyboard.press("Escape");
+  await (await dock(LY, ".open-btn")).click();
+  await LY.locator("#open-menu:popover-open").waitFor();
+  await LY.locator(".layouts-item").focus();
+  await LY.keyboard.press("Enter");
+  await LY.locator(".layouts-dialog[open]").waitFor();
+  await LY.waitForTimeout(200);
+  await LY.keyboard.press("Enter");
+  await LY.waitForTimeout(200);
+  assert.equal(await LY.locator(".layouts-dialog").evaluate((d) => d.open), false, "the second Enter pressed Close");
+  assert.deepEqual(cam.saves(), [], "nothing replaced");
+  await openWindow();
+  await LY.waitForTimeout(300);
   await shot(LY, "camframe-layouts-different-desktop");
   // A Replace that CamFrame refuses says why; the row keeps asking.
   cam.answer = (path) => (path === "/camframe/scenes" ? { status: 503, body: { ok: false, error: "CamFrame is not ready.", code: "not-ready" } } : null);
@@ -2372,9 +2387,39 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.deepEqual((await rowStates()).map((r) => r[1]), ["missing", "missing"]);
   assert.equal(await dotShown(), true);
   await shot(LY, "camframe-layouts-no-room-desktop");
-  // One deleted in CamFrame: opening the window again saves both.
-  cam.layouts.details.pop();
+  assert.equal(await LY.locator(".layouts-save").isHidden(), true, "no room at all: no Save to press");
   await LY.keyboard.press("Escape");
+
+  // Saving would fill CamFrame (4 + 2 of 6): not by itself, not by opening the window; Save does it.
+  cam.layouts.details = ["A", "B", "C", "D"].map(snapshot);
+  cam.seen.length = 0;
+  await openLayoutsLoad();
+  await LY.waitForTimeout(500);
+  assert.deepEqual(cam.saves(), [], "no spare slot would be left: no automatic save");
+  assert.equal(await dotShown(), true, "the item has a dot: the window needs a look");
+  await openWindow();
+  await LY.waitForFunction(() => document.querySelector(".status").textContent.includes("Saving what is missing would fill CamFrame"));
+  assert.deepEqual(cam.saves(), [], "opening the window does not fill it either");
+  assert.equal(await LY.locator(".layouts-note").textContent(), "Saving what is missing would fill CamFrame: 6 of 6 Scenes, with no spare slot, and the next Scene saved by hand there drops its oldest. Not saved yet: press Save to save anyway, or delete a Scene you do not use in CamFrame and open Camera layouts again.");
+  assert.deepEqual((await rowStates()).map((r) => r[1]), ["missing", "missing"]);
+  assert.equal(await LY.locator(".layouts-save").isVisible(), true, "the window offers Save");
+  await shot(LY, "camframe-layouts-tight-desktop");
+  await LY.locator(".layouts-save").click();
+  await LY.waitForFunction(() => document.querySelector(".status").textContent === "Camera layouts saved in CamFrame.");
+  assert.deepEqual(cam.saves(), [SMALL, LARGE], "after Save: both, small first");
+  assert.equal(await LY.locator(".layouts-note").isHidden(), true);
+  assert.equal(await LY.locator(".layouts-save").isHidden(), true);
+  assert.equal(await LY.evaluate(() => document.activeElement.dataset.action), "close-dialog", "Save gone: keyboard focus on Close");
+  assert.equal(await dotShown(), false);
+  await LY.keyboard.press("Escape");
+
+  // One slot spare after saving (3 + 2 of 6): opening the window after freeing a slot saves both.
+  cam.layouts.details = ["A", "B", "C", "D"].map(snapshot);
+  cam.seen.length = 0;
+  await openLayoutsLoad();
+  await LY.waitForTimeout(300);
+  assert.deepEqual(cam.saves(), []);
+  cam.layouts.details.pop();
   await openWindow();
   await LY.waitForFunction(() => document.querySelector(".status").textContent === "Camera layouts saved in CamFrame.");
   assert.deepEqual(cam.saves(), [SMALL, LARGE]);
@@ -2496,6 +2541,44 @@ export async function run({ browser, base, mode, dist, out }) {
   cam.answer = null;
   await LY.keyboard.press("Escape");
 
+  // The window's own status read, slow, sent before a Replace and answered after it: dropped too.
+  cam.layouts.details = [snapshot("Interview"), { id: "s", name: "Live small corner", kind: "layout", size: 288, followsSmallSize: true, position: "bottom-right" }, snapshot("Live right large")];
+  cam.seen.length = 0;
+  await openLayoutsLoad();
+  await LY.waitForTimeout(300);
+  cam.answer = (() => { let once = true; return (path) => (path === "/camframe/status" && once ? ((once = false), { delay: 1500 }) : null); })();
+  await openWindow();
+  await LY.locator(".layout-replace").click();
+  await LY.waitForFunction(() => document.querySelector(".status").textContent === "Camera layouts saved in CamFrame.");
+  await LY.waitForTimeout(1700);
+  assert.deepEqual((await rowStates()).map((r) => r[1]), ["ready", "ready"], "the old answer does not bring Replace back");
+  assert.equal(await dotShown(), false, "no dot after saved");
+  assert.equal(await LY.locator(".status").textContent(), "Camera layouts saved in CamFrame.");
+  assert.deepEqual(cam.saves(), [{ ...LARGE, replace: true }]);
+  cam.answer = null;
+  await LY.keyboard.press("Escape");
+
+  // The follow-up check after a missed read: only with the page in view (the link rule).
+  for (const [view, more] of [["visible", true], ["hidden", false]]) {
+    cam.layouts.details = [snapshot("Interview"), { id: "l", name: "Live right large", kind: "layout", size: 432, followsSmallSize: false, position: "right", withinRight: 0.3 }];
+    cam.seen.length = 0;
+    await openLayoutsLoad();
+    await LY.waitForTimeout(600);
+    cam.layouts.details = cam.layouts.details.filter((d) => d.name !== "Live small corner");
+    cam.seen.length = 0;
+    let missOnce = true;
+    cam.answer = (path) => (path === "/camframe/status" && cam.saves().length === 1 && missOnce ? ((missOnce = false), { broken: true }) : null);
+    await LY.evaluate((v) => Object.defineProperty(document, "visibilityState", { get: () => v, configurable: true }), view);
+    await openWindow();
+    await savesReach(1);
+    const checks = cam.seen.filter((r) => r.path === "/camframe/status").length;
+    await LY.waitForTimeout(1400);
+    assert.equal(cam.seen.filter((r) => r.path === "/camframe/status").length > checks, more, `page ${view}: ${more ? "checks again after about 1 s" : "no extra check"}`);
+    await LY.evaluate(() => Object.defineProperty(document, "visibilityState", { get: () => "visible", configurable: true }));
+    cam.answer = null;
+    await LY.keyboard.press("Escape");
+  }
+
   // The link turned off and on while a save waits for its answer: the new session saves by
   // itself and nothing is left saying "Saving…".
   cam.layouts.details = [snapshot("Interview")];
@@ -2552,7 +2635,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await shot(LM, "camframe-layouts-different-mobile");
   await layPhone.close();
   await cam.stop();
-  ok("Camera layouts: an older CamFrame shows no Camera layouts item and gets no save; a CamFrame with API 2 gets the two layout Scenes saved by themselves when it connects (Live small corner, following the small size, then Live right large at 1.5 times it, inside the right 30%), never with replace or apply, no cue and no small-size call, and not read out over \"connected\"; later checks save nothing more; the window says the small size in use and each layout's state; a different Scene with a layout's name is replaced only after Replace, in place, with keyboard focus kept in the window; no room for both saves nothing and says how many Scenes to delete; \"saved\" is said only with both layouts ready, otherwise what is left is named and the room note stays, also after a Replace worked; a layout gone from CamFrame shows the dot; a pressed Replace says Saving… and looks disabled, and a second press sends nothing; a slow check from before a save does not bring old rows back; a refusal stops and is said in plain words, with no automatic second try, and opening the window tries again; a lost answer is not repeated blindly, and a lost save that did not land shows the dot; the item has a dot when the window needs a look; the window fits a phone");
+  ok("Camera layouts: an older CamFrame shows no Camera layouts item and gets no save; a CamFrame with API 2 gets the two layout Scenes saved by themselves when it connects (Live small corner, following the small size, then Live right large at 1.5 times it, inside the right 30%), never with replace or apply, no cue and no small-size call, and not read out over \"connected\"; later checks save nothing more; the window says the small size in use and each layout's state; a different Scene with a layout's name is replaced only after Replace, in place, with keyboard focus kept in the window; no room for both saves nothing and says how many Scenes to delete; saving that would leave no spare slot waits for Save in the window; the window opens with focus on Close, so Enter twice never replaces; \"saved\" is said only with both layouts ready, otherwise what is left is named and the room note stays, also after a Replace worked; a layout gone from CamFrame shows the dot; a pressed Replace says Saving… and looks disabled, and a second press sends nothing; a slow check from before a save does not bring old rows back; a refusal stops and is said in plain words, with no automatic second try, and opening the window tries again; a lost answer is not repeated blindly, and a lost save that did not land shows the dot; the item has a dot when the window needs a look; the window fits a phone");
 
   // ---- Offline (file://) ----
   const offline = await browser.newContext(DESKTOP);
