@@ -797,6 +797,37 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal((await atLine())[0], topBefore[0], "at the top, the same line stays at the reading line");
   await page.locator('#settings .spacing .seg label:has-text("Normal")').click();
   assert.equal((await atLine())[0], topBefore[0], "and after going back");
+  // Just after Next (the section's top at the reading line) and with the line in a gap between lines:
+  // the section stays the active one and nothing moves under the line.
+  await (await dock(page, ".next")).click();
+  await page.waitForTimeout(400);
+  const secState = () => page.evaluate(() => {
+    const a = document.querySelector(".section.active");
+    return [a.dataset.i, Math.round(a.getBoundingClientRect().top - document.querySelector(".reading-line").getBoundingClientRect().top)];
+  });
+  const secBefore = await secState();
+  for (const name of ["Roomy", "Spacious", "Normal"]) {
+    await page.locator(`#settings .spacing .seg label:has-text("${name}")`).click();
+    await page.waitForTimeout(150);
+    const now = await secState();
+    assert.equal(now[0], secBefore[0], `after Next, ${name}: the same section stays active`);
+    assert.ok(now[1] <= 4, `after Next, ${name}: the section's top is not pushed below the reading line (${now[1]})`);
+  }
+  await page.evaluate(() => {
+    const gap = document.querySelector(".gap");
+    window.scrollBy(0, gap.getBoundingClientRect().top + gap.getBoundingClientRect().height / 2 - document.querySelector(".reading-line").getBoundingClientRect().top);
+  });
+  const belowGap = () => page.evaluate(() => {
+    const y = document.querySelector(".reading-line").getBoundingClientRect().top;
+    const p = [...document.querySelectorAll(".script p")].find((el) => el.getBoundingClientRect().top > y);
+    return [p.textContent, Math.round(p.getBoundingClientRect().top - y)];
+  });
+  const gapBefore = await belowGap();
+  await page.locator('#settings .spacing .seg label:has-text("Spacious")').click();
+  const gapAfter = await belowGap();
+  assert.equal(gapAfter[0], gapBefore[0], "in a gap: the same line is next below the reading line");
+  assert.ok(Math.abs(gapAfter[1] - gapBefore[1]) < 4, `in a gap: it is no further away (${gapBefore[1]} → ${gapAfter[1]})`);
+  await page.locator('#settings .spacing .seg label:has-text("Normal")').click();
   // An unknown remembered value falls back to normal.
   await page.evaluate(() => localStorage.setItem("prompter-spacing", "huge"));
   await page.reload();
