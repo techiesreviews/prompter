@@ -713,6 +713,7 @@ export async function run({ browser, base, mode, dist, out }) {
   });
   const wrapGap = () => page.locator(".script").evaluate((el) => parseFloat(getComputedStyle(el).lineHeight) / parseFloat(getComputedStyle(el).fontSize));
   assert.ok(Math.abs(await wrapGap() - 1.3) < 0.01, "normal keeps the old line height");
+  assert.equal(await page.evaluate(() => localStorage.getItem("prompter-spacing")), null, "a first visit stores nothing for the spacing");
   const normalGap = await lineGap();
   await page.locator('#settings .spacing .seg label:has-text("Spacious")').click();
   const spaciousGap = await lineGap();
@@ -1768,6 +1769,7 @@ export async function run({ browser, base, mode, dist, out }) {
   const dockTop = (await m.locator(".dock").boundingBox()).y;
   assert.ok(sideBox.y + sideBox.height <= dockTop, `landscape phone: Settings bottom ${Math.round(sideBox.y + sideBox.height)} is above the bar ${Math.round(dockTop)}`);
   assert.ok(await m.locator("#settings").evaluate((el) => el.scrollHeight > el.clientHeight), "landscape phone: Settings scrolls");
+  assert.equal(await m.locator("#settings").evaluate((el) => getComputedStyle(el).overscrollBehaviorY), "contain", "landscape phone: scrolling past the end of Settings does not move the page behind it");
   await m.locator("#settings").evaluate((el) => { el.scrollTop = el.scrollHeight; });
   const [tg, st] = [await m.locator("#settings .big-toggles").boundingBox(), await m.locator("#settings").boundingBox()];
   assert.ok(tg.y >= st.y && tg.y + tg.height <= st.y + st.height, "landscape phone: the last row can be scrolled into view");
