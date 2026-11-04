@@ -16,9 +16,10 @@ export const CAMFRAME_RETRY_MS = [1000, 2000];
 export const CUE_RETRY_MS = 400;
 
 /**
- * Ask CamFrame: `camframeCall("status")` for { app, version, scenes }, or
- * `camframeCall("cue", { size, position?, scene? })`. Resolves to
- * { ok, body } (ok false when CamFrame refused the cue, with body.error);
+ * Ask CamFrame: `camframeCall("status")` for { app, version, scenes, … },
+ * `camframeCall("cue", { size, position?, scene? })`, or (API 2)
+ * `camframeCall("scenes", layout)` to save a camera layout. Resolves to
+ * { ok, body } (ok false when CamFrame refused, with body.error and body.code);
  * rejects when CamFrame is not there, is turned off or the browser blocked it.
  */
 export async function camframeCall(path, cue) {
@@ -71,4 +72,102 @@ export function camframeAfterCheck(state, misses, answered) {
   const n = misses + 1;
   if (n >= CAMFRAME_MISSES) return { state: "lost", misses: n, retry: -1 };
   return { state: state === "looking" ? "looking" : "reconnecting", misses: n, retry: CAMFRAME_RETRY_MS[n - 1] };
+}
+
+// ---- Camera layouts ----
+// Two layout Scenes the page saves in CamFrame (API 2) for Lex's livestream
+// cue lines: `[Face: Live right large]` on branded pages with the content on
+// the left, `[Face: Live small corner]` (the same as `[Face small, bottom
+// right]`) on plugin and advisory screens. A layout Scene changes only the
+// camera's size and place, never the camera, shape, style or crop. The page
+// saves what is missing when CamFrame connects; it never replaces a Scene
+// without a yes, never moves the camera while saving and never changes
+// CamFrame's small size.
+
+export const LAYOUT_SMALL = "Live small corner";
+export const LAYOUT_LARGE = "Live right large";
+/** CamFrame's standard small size, used only when the status gives none. */
+export const LAYOUT_SMALL_SIZE = 288;
+/** The large layout stays inside this share of the display's right side. */
+export const LAYOUT_WITHIN_RIGHT = 0.3;
+
+/**
+ * A CamFrame that can save layout Scenes: API 2 or later, with its Scene
+ * list in full (a file:// copy gets only app, version, scenes and api, and
+ * CamFrame refuses its saves).
+ */
+export function layoutsSupported(status) {
+  return Boolean(status) && Number(status.api) >= 2 && Array.isArray(status.scenes) && Array.isArray(status.sceneDetails) && Number.isFinite(status.sceneLimit);
+}
+
+/**
+ * The two layouts as `POST /camframe/scenes` bodies, for this small size: the
+ * small corner follows CamFrame's small size; the large one is 1.5 times it
+ * (180–640 px, CamFrame's camera sizes), on the right, vertically centred.
+ */
+export function layoutWants(smallSize) {
+  const small = Number.isFinite(smallSize) && smallSize > 0 ? smallSize : LAYOUT_SMALL_SIZE;
+  const large = Math.min(640, Math.max(180, Math.round(small * 1.5)));
+  return [
+    { name: LAYOUT_SMALL, size: "small", position: "bottom-right" },
+    { name: LAYOUT_LARGE, size: large, position: "right", withinRight: LAYOUT_WITHIN_RIGHT },
+  ];
+}
+
+/** Does `detail` (one of the status's sceneDetails) already hold the layout `want`? */
+export function layoutMatches(detail, want) {
+  if (!detail || detail.kind !== "layout" || detail.position !== want.position) return false;
+  if ((detail.withinRight ?? null) !== (want.withinRight ?? null)) return false;
+  return want.size === "small" ? detail.followsSmallSize === true : detail.followsSmallSize !== true && detail.size === want.size;
+}
+
+const sameName = (a, b) => String(a).toLocaleLowerCase() === String(b).toLocaleLowerCase();
+
+/**
+ * From CamFrame's status: each layout's row (`ready`, `missing`, or
+ * `different` for a Scene with its name that holds something else), the
+ * missing ones to save (small first), and the room: CamFrame keeps at most
+ * `sceneLimit` Scenes, shared with Lex's own, so both missing ones must fit
+ * before anything is saved.
+ */
+export function layoutPlan(status) {
+  const smallSize = Number.isFinite(status.smallSize) ? status.smallSize : LAYOUT_SMALL_SIZE;
+  const wants = layoutWants(smallSize);
+  const names = status.scenes || [];
+  const details = status.sceneDetails || [];
+  const rows = wants.map((scene) => {
+    if (!names.some((n) => sameName(n, scene.name))) return { name: scene.name, state: "missing", scene };
+    const detail = details.find((d) => sameName(d.name, scene.name));
+    return { name: scene.name, state: layoutMatches(detail, scene) ? "ready" : "different", scene };
+  });
+  const missing = rows.filter((r) => r.state === "missing").map((r) => r.scene);
+  const has = names.length;
+  const limit = status.sceneLimit;
+  const ok = has + missing.length <= limit;
+  return {
+    smallSize,
+    largeSize: wants[1].size,
+    rows,
+    save: ok ? missing : [],
+    room: { has, limit, need: missing.length, ok, free: Math.max(0, limit - has) },
+    done: rows.every((r) => r.state === "ready"),
+  };
+}
+
+/** A refused save (`{ ok: false, body }`) or a missed one (null) in plain words. */
+export function layoutProblem(answer) {
+  if (!answer) return "CamFrame did not answer. Check it is open with Prompter link on, then open Camera layouts again.";
+  const code = answer.body?.code;
+  if (code === "scene-limit") return "CamFrame has no room for another Scene. Delete one you do not use in CamFrame, then open Camera layouts again.";
+  if (code === "scene-exists") return "CamFrame already has a Scene with this name.";
+  if (code === "not-ready") return "CamFrame's window is not open yet. Open it, then open Camera layouts again.";
+  return `CamFrame refused: ${answer.body?.error || "no reason given"}`;
+}
+
+/** Not enough room for the missing layouts, in plain words ("" when there is room). */
+export function layoutRoomWords(room) {
+  if (room.ok) return "";
+  const scenes = (n) => `${n} Scene${n === 1 ? "" : "s"}`;
+  const over = room.need - room.free;
+  return `CamFrame keeps at most ${scenes(room.limit)} and has ${room.has}; the layouts need ${room.need} more. Delete ${scenes(over)} you do not use in CamFrame, then open Camera layouts again. Nothing was saved.`;
 }
