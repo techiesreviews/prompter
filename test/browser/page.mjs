@@ -2359,6 +2359,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await openWindow();
   await LY.waitForTimeout(300);
   assert.deepEqual(cam.saves(), [], "opening the window saves nothing either");
+  await LY.waitForFunction(() => document.querySelector(".status").textContent.startsWith("Camera layouts: CamFrame keeps at most 6 Scenes"));
   assert.equal(await LY.locator(".layouts-note").textContent(), "CamFrame keeps at most 6 Scenes and has 5; the layouts need 2 more. Delete 1 Scene you do not use in CamFrame, then open Camera layouts again. Nothing was saved.");
   assert.deepEqual((await rowStates()).map((r) => r[1]), ["missing", "missing"]);
   assert.equal(await dotShown(), true);
@@ -2411,6 +2412,16 @@ export async function run({ browser, base, mode, dist, out }) {
   await savesReach(2);
   await LY.waitForFunction(() => !document.querySelector(".layouts-dot").hidden);
   assert.deepEqual(cam.saves(), [SMALL, LARGE], "no blind repeat");
+  cam.answer = null;
+  // Both saves answered yes, then the check after them missed: no false problem.
+  cam.layouts.details = [snapshot("Interview")];
+  let missAfter = true;
+  cam.answer = (path) => (path === "/camframe/status" && cam.saves().length === 2 && missAfter ? ((missAfter = false), { broken: true }) : null);
+  cam.seen.length = 0;
+  await openLayoutsLoad();
+  await savesReach(2);
+  assert.equal(missAfter, false, "the check after the saves missed");
+  assert.equal(await dotShown(), false, "CamFrame said yes to both: no dot, no note");
   cam.answer = null;
 
   // Back to an older CamFrame: the item hides again.
