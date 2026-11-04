@@ -33,9 +33,12 @@ only when he works on them.
 - A Scene with a layout's name that holds something else (a snapshot Scene, another size or place) is
   replaced only after Lex presses Replace in the window (`replace: true` for that one Scene).
   The window opens with focus on Close, so Replace and Save take a deliberate move.
-- Saves made by themselves on connecting are not read out (that would talk over "CamFrame link:
-  connected"); a problem shows as a dot on the Open menu's item and a note in the window. Saves from
-  the window (opening it, Replace) are read out through the status line.
+- Spoken results: a save made by itself on connecting is not read out (that would talk over "CamFrame
+  link: connected"); a problem shows as a dot on the Open menu's item and a note in the window. While
+  the window is open, every result goes to a spoken status element inside it, because a modal window
+  hides the page's status line from screen readers. **A real screen reader has not been tried:** the
+  browser checks read Chromium's accessibility tree, which shows the text can be reached, not how it
+  sounds.
 - A refused save stops and is said in plain words; a lost answer is not repeated blindly: the
   status is read again. Opening the Camera layouts window reads CamFrame again and saves what is
   still missing. The item shows a dot when the window needs a look.
