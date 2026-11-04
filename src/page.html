@@ -52,7 +52,7 @@
   :root[data-width="full"] { --col: none; }
   /* Line spacing (Settings): taller lines (also inside a line that wraps) and
      extra space between script lines, as a share of the text size. */
-  :root { --line-height: 1.3; --line-room: 0; }
+  :root { --line-height: 1.3; --line-room: 0; --room: calc(var(--size) * var(--line-room)); }
   :root[data-spacing="roomy"] { --line-height: 1.5; --line-room: 0.2; }
   :root[data-spacing="spacious"] { --line-height: 1.7; --line-room: 0.45; }
 
@@ -162,7 +162,7 @@
   .title::before { content: ""; flex: none; inline-size: 0.6em; block-size: 0.6em; border-radius: 50%; background: var(--c-now); }
   .time:empty { display: none; }
   .time { flex: none; margin-inline-start: auto; color: var(--muted); background: var(--chip); border-radius: 999px; padding: 0.2em 0.7em; font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
-  .script p { margin: 0 0 calc(0.25em + var(--size) * var(--line-room)); }
+  .script p { margin: 0 0 calc(0.25em + var(--room)); }
   .bullet::before { content: "• "; color: var(--c-now); }
   .next { color: var(--c-next); }
   .now b { color: var(--c-now); }
@@ -178,7 +178,7 @@
   .cue { font-size: 0.56em; }
   .cue-icon { margin-inline-end: 0.35em; vertical-align: -0.12em; color: var(--c-now); }
   .cue-what { color: var(--c-say); font-weight: 700; }
-  .gap { block-size: calc(0.6em + var(--size) * var(--line-room)); }
+  .gap { block-size: calc(0.6em + var(--room)); }
   /* Follow my voice: the line being read is pure white, the lines after it in
      its section a little dimmer (still AA); they fade between the two with
      the section colours above. Next: and reminder lines keep their colours. */
@@ -194,7 +194,7 @@
      moves between these states. */
   .link, .mark, .inlink { border: 1px solid transparent; border-radius: 0.3em; cursor: pointer; }
   .links {
-    display: flex; flex-wrap: wrap; gap: 0 0.2em; margin: 0 calc(-0.45em - 1px) calc(0.5em + var(--size) * var(--line-room));
+    display: flex; flex-wrap: wrap; gap: 0 0.2em; margin: 0 calc(-0.45em - 1px) calc(0.5em + var(--room));
     font: 500 max(13px, 0.3em)/1.3 var(--font-body); letter-spacing: 0;
   }
   .link, .mark {
@@ -206,7 +206,7 @@
   /* A link on its own line mid-section: opens when it reaches the reading line. */
   .mark {
     display: flex; inline-size: fit-content; max-inline-size: calc(100% + 0.9em + 2px);
-    margin: 0 calc(-0.45em - 1px) calc(0.25em + var(--size) * var(--line-room)); font: 500 max(13px, 0.3em)/1.3 var(--font-body); letter-spacing: 0;
+    margin: 0 calc(-0.45em - 1px) calc(0.25em + var(--room)); font: 500 max(13px, 0.3em)/1.3 var(--font-body); letter-spacing: 0;
   }
   .inlink {
     color: inherit; font: inherit; padding: 0 0.1em; margin-inline: calc(-0.1em - 1px);
@@ -330,7 +330,7 @@
   @media (pointer: coarse) { .item { min-block-size: 44px; } } /* Disconnect MCP and the rest: 44px targets on phones */
   .pop-sep { block-size: 1px; margin: 6px 4px; background: var(--border); }
   .settings-pop { inline-size: 340px; padding: 16px 16px 14px; max-block-size: calc(100vh - 96px); max-block-size: calc(100dvh - 96px - env(safe-area-inset-bottom, 0px)); overflow-y: auto; }
-  /* 96px: the bar (56) with its gap (16) and the popover margin (12), plus a little room above; a short screen scrolls Settings. */
+  /* 96px: the bar (56) with its gap (16) and the popover margin (12), plus 12 above; a short screen scrolls Settings. */
   .setting + .setting { margin-block-start: 16px; }
   .range-field + .range-field { margin-block-start: 8px; }
   .setting legend { padding: 0; margin: 0 0 6px; font-weight: 600; font-size: 14px; }
