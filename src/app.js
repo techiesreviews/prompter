@@ -60,6 +60,8 @@ const spacingInputs = document.querySelectorAll('input[name="spacing"]');
 const toastEl = $(".toast");
 const toastText = $(".toast-text");
 const camframeBtn = $(".big-toggle.camframe"); // in Settings
+const layoutsItem = $(".layouts-item"); // in the Open menu, only for a CamFrame that can save layouts
+const layoutsDialog = $(".layouts-dialog");
 const WINDOW_NAME = "prompter-main-screen";
 const SETTLE_MS = 700; // wait this long on a section before changing the main screen
 const LAST_KEY = "prompter-last-script";
@@ -120,6 +122,9 @@ let cueTimer = 0;
 // reconnecting (a check or two missed after it answered) or lost (several missed in a row).
 // session counts turns on and off, so a cue sent before that is not news after it.
 const camframe = { on: store.get(CAMFRAME_KEY) === "on", state: "off", timer: 0, retry: 0, seq: 0, misses: 0, session: 0 };
+// Camera layouts: CamFrame's last status when it can save layouts (API 2), a save under way,
+// the link session the layouts were last saved for by themselves, and the last problem.
+const layouts = { status: null, busy: false, auto: -1, note: "" };
 
 // ---------- Opening scripts ----------
 const isEmpty = () => root.dataset.view === "empty";
@@ -722,7 +727,10 @@ async function checkCamframe() {
   const n = ++camframe.seq;
   let body = null;
   try { ({ body } = await camframeCall("status")); } catch { /* a miss */ }
-  if (camframe.on && n === camframe.seq) afterCheck(body);
+  if (camframe.on && n === camframe.seq) {
+    afterCheck(body);
+    if (body) seeLayouts(body);
+  }
 }
 
 // A missed check or two only say reconnecting and check again soon; several in a row say not found.
@@ -741,6 +749,8 @@ function setCamframeOn(on) {
   if (on) store.set(CAMFRAME_KEY, "on"); else store.del(CAMFRAME_KEY);
   clearInterval(camframe.timer);
   clearTimeout(camframe.retry);
+  layouts.status = null;
+  layouts.note = "";
   if (!on) { setCamframe({ state: "off", misses: 0 }); return; }
   setCamframe({ state: "looking", misses: 0 });
   checkCamframe();
@@ -770,6 +780,128 @@ function setCamframe(patch) {
   // Not again when it comes back from a missed check or two (reconnecting).
   if (was !== camframe.state && ((camframe.state === "on" && was !== "reconnecting") || camframe.state === "lost")) setStatus(`${name}.`);
   updateSettingsBtn();
+  showLayouts();
+}
+
+// ---------- Camera layouts (CamFrame API 2) ----------
+// The two layout Scenes for Lex's cue lines (layoutPlan in src/camframe.mjs). Approved by Lex
+// (2026-11-04): when a CamFrame that can save layouts connects, the page saves the missing ones
+// by itself, once per link session, small first; it blocks up front when CamFrame has no room
+// for both, never replaces a Scene without a yes (Replace in the window), never moves the camera
+// and never changes CamFrame's small size. The Open menu's Camera layouts item (hidden for an
+// older CamFrame) opens a window with each layout's state, the small size in use, and any
+// problem; opening it reads CamFrame again and saves what is still missing.
+function seeLayouts(body) {
+  layouts.status = layoutsSupported(body) ? body : null;
+  showLayouts();
+  if (layouts.status && layouts.auto !== camframe.session) saveLayouts();
+}
+
+async function openLayouts() {
+  layouts.note = "";
+  showDialog(layoutsDialog);
+  showLayouts();
+  const session = camframe.session;
+  let body = null;
+  try { ({ body } = await camframeCall("status")); } catch { /* not there */ }
+  if (!camframe.on || camframe.session !== session) return;
+  if (!body) { layouts.note = layoutProblem(null); showLayouts(); return; }
+  layouts.status = layoutsSupported(body) ? body : null;
+  saveLayouts();
+}
+
+// Saves the missing layouts, or replaces the one named `replace` after Lex's yes. No automatic
+// second try: a save whose answer was lost may have worked, so the status is read again instead.
+async function saveLayouts(replace = "") {
+  if (layouts.busy || !layouts.status) { showLayouts(); return; }
+  const session = camframe.session;
+  const current = () => camframe.on && camframe.session === session;
+  const plan = layoutPlan(layouts.status);
+  layouts.auto = session;
+  const todo = replace
+    ? plan.rows.filter((r) => r.name === replace && r.state === "different").map((r) => ({ ...r.scene, replace: true }))
+    : plan.save;
+  if (!replace) layouts.note = layoutRoomWords(plan.room);
+  if (!todo.length) { showLayouts(); return; }
+  layouts.busy = true;
+  layouts.note = "";
+  showLayouts();
+  setStatus(`Saving camera layouts in CamFrame. Small camera: ${plan.smallSize} px.`);
+  let problem = "";
+  for (const scene of todo) {
+    let answer = null;
+    try { answer = await camframeCall("scenes", scene); } catch { /* lost: the status says */ }
+    if (!current()) { layouts.busy = false; return; }
+    if (answer?.ok || answer?.body?.code === "scene-exists") continue; // saved meanwhile: the status says what it holds
+    problem = layoutProblem(answer);
+    if (answer) break;
+  }
+  let body = null;
+  try { ({ body } = await camframeCall("status")); } catch { /* not there */ }
+  layouts.busy = false;
+  if (!current()) return;
+  if (body) layouts.status = layoutsSupported(body) ? body : null;
+  const after = layouts.status && layoutPlan(layouts.status);
+  const kept = after && todo.every((scene) => after.rows.find((r) => r.name === scene.name)?.state === "ready");
+  if (kept) problem = "";
+  else if (!problem) problem = "CamFrame did not keep the layouts. Open Camera layouts again to try once more.";
+  layouts.note = problem;
+  setStatus(problem ? `Camera layouts: ${problem}` : "Camera layouts saved in CamFrame.");
+  showLayouts();
+}
+
+// The Open menu's item (with a dot when the window needs a look) and the window's rows.
+function showLayouts() {
+  const status = layouts.status;
+  const live = Boolean(status) && camframe.on && (camframe.state === "on" || camframe.state === "reconnecting");
+  layoutsItem.hidden = !live;
+  if (!live) {
+    if (layoutsDialog.open && !layouts.note) layoutsDialog.close();
+    return;
+  }
+  const plan = layoutPlan(status);
+  const attention = Boolean(layouts.note) || plan.rows.some((r) => r.state === "different");
+  layoutsItem.querySelector(".layouts-dot").hidden = !attention;
+  layoutsItem.setAttribute("aria-label", attention ? "Camera layouts: needs a look" : "Camera layouts");
+  layoutsDialog.querySelector(".layouts-size").textContent =
+    `Small camera: ${plan.smallSize} px, as CamFrame has it now; the Prompter never changes it. Live small corner follows it; Live right large is ${plan.largeSize} px.`;
+  // Rebuilt only when something changed, so a status check every 10 s keeps focus on Replace.
+  const key = JSON.stringify([layouts.busy, plan.rows.map((r) => r.state)]);
+  const list = layoutsDialog.querySelector(".layouts-rows");
+  if (list.dataset.key !== key) {
+    list.dataset.key = key;
+    list.replaceChildren(...layoutRows(plan));
+  }
+  const note = layoutsDialog.querySelector(".layouts-note");
+  note.textContent = layouts.note;
+  note.hidden = !layouts.note;
+}
+
+function layoutRows(plan) {
+  const words = { ready: "Saved in CamFrame", missing: layouts.busy ? "Saving…" : "Not saved yet", different: "CamFrame has a different Scene with this name. Replace it with this layout?" };
+  return plan.rows.map((r) => {
+    const li = document.createElement("li");
+    li.dataset.state = r.state;
+    const name = document.createElement("span");
+    name.className = "layout-name";
+    name.textContent = r.name;
+    const state = document.createElement("span");
+    state.className = "layout-state";
+    state.textContent = words[r.state];
+    li.append(name, state);
+    if (r.state === "different") {
+      const yes = document.createElement("button");
+      yes.className = "btn layout-replace";
+      yes.type = "button";
+      yes.dataset.action = "layout-replace";
+      yes.dataset.name = r.name;
+      yes.disabled = layouts.busy;
+      yes.textContent = "Replace";
+      yes.setAttribute("aria-label", `Replace ${r.name}`);
+      li.append(yes);
+    }
+    return li;
+  });
 }
 
 // ---------- Main screen ----------
@@ -1294,6 +1426,8 @@ document.addEventListener("click", (e) => {
   else if (action === "paste") openPaste();
   else if (action === "open-paste") submitPaste();
   else if (action === "close-dialog") button.closest("dialog").close();
+  else if (action === "layouts") openLayouts();
+  else if (action === "layout-replace") saveLayouts(button.dataset.name);
   else if (action === "copy-link") copyLink(button);
   else if (action === "start") { showAlert(""); history.pushState(null, "", plainAddress()); showStart(); }
   else if (action === "demo") { showAlert(""); openDemo(); }

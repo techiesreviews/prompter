@@ -190,10 +190,29 @@ ${CUE_FILL}
 // A stand-in for CamFrame on 127.0.0.1:47833 with the Scenes `scenes`. `answer(path, body)`
 // may return { status, body, delay } to answer differently (a refused cue, a slow check), or
 // { broken: true } to answer with something that is not CamFrame's (a call that did not get
-// through: cutting the connection instead would be retried by the browser itself).
+// through: cutting the connection instead would be retried by the browser itself; with
+// `saved: true` a layout is saved first, an answer lost on its way back).
+// `layouts` null is an older CamFrame; { smallSize, sceneLimit, details } is one with API 2,
+// whose Scenes are `details` and which saves layouts as CamFrame does (prompter-link-api.md).
 function fakeCamFrame() {
   const seen = [];
-  const api = { answer: null, scenes: ["Demo", "Talking head"] };
+  const api = { answer: null, scenes: ["Demo", "Talking head"], layouts: null };
+  const same = (a, b) => a.toLowerCase() === b.toLowerCase();
+  const status = () => {
+    const l = api.layouts;
+    if (!l) return { app: "camframe", version: "test", scenes: api.scenes };
+    return { app: "camframe", version: "test", scenes: l.details.map((d) => d.name), api: 2, sceneLimit: l.sceneLimit, smallSize: l.smallSize, margin: 32, sceneDetails: l.details };
+  };
+  const saveScene = (b) => {
+    const l = api.layouts;
+    if (!l) return { status: 404, body: { ok: false, error: "Not found." } };
+    const at = l.details.findIndex((d) => same(d.name, b.name));
+    if (at >= 0 && b.replace !== true) return { status: 409, body: { ok: false, error: "exists", code: "scene-exists" } };
+    if (at < 0 && l.details.length >= l.sceneLimit) return { status: 409, body: { ok: false, error: "full", code: "scene-limit" } };
+    const scene = { id: `s${seen.length}`, name: b.name, kind: "layout", size: b.size === "small" ? l.smallSize : b.size, followsSmallSize: b.size === "small", position: b.position, ...(b.withinRight ? { withinRight: b.withinRight } : {}), keepsLiveLook: true };
+    if (at >= 0) l.details[at] = scene; else l.details.push(scene);
+    return { status: 200, body: { ok: true, scene, replaced: at >= 0 } };
+  };
   const server = createServer((req, res) => {
     const cors = { "Access-Control-Allow-Origin": req.headers.origin || "*", Vary: "Origin" };
     if (req.method === "OPTIONS") {
@@ -209,15 +228,21 @@ function fakeCamFrame() {
       seen.push({ method: req.method, path: req.url, origin: req.headers.origin, body: body ? JSON.parse(body) : undefined });
       const parsed = seen.at(-1).body;
       const custom = api.answer?.(req.url, parsed);
-      if (custom?.broken) { res.writeHead(200, cors).end("<html>no answer</html>"); return; }
-      const reply = custom?.body ?? (req.url === "/camframe/status" ? { app: "camframe", version: "test", scenes: api.scenes } : { ok: true, cue: parsed });
-      const write = () => res.writeHead(custom?.status ?? 200, { ...cors, "Content-Type": "application/json" }).end(JSON.stringify(reply));
+      if (custom?.broken) {
+        if (custom.saved && req.url === "/camframe/scenes") saveScene(parsed);
+        res.writeHead(200, cors).end("<html>no answer</html>");
+        return;
+      }
+      const saved = !custom?.body && req.url === "/camframe/scenes" ? saveScene(parsed) : null;
+      const reply = custom?.body ?? saved?.body ?? (req.url === "/camframe/status" ? status() : { ok: true, cue: parsed });
+      const write = () => res.writeHead(custom?.status ?? saved?.status ?? 200, { ...cors, "Content-Type": "application/json" }).end(JSON.stringify(reply));
       if (custom?.delay) setTimeout(write, custom.delay); else write();
     });
   });
   return Object.assign(api, {
     seen,
     cues: () => seen.filter((r) => r.path === "/camframe/cue").map((r) => r.body),
+    saves: () => seen.filter((r) => r.path === "/camframe/scenes").map((r) => r.body),
     // unref: a failed check must not leave this server holding the run open.
     start: () => new Promise((ok, fail) => { server.once("error", fail); server.listen(47833, "127.0.0.1", ok); server.unref(); }),
     stop: () => new Promise((ok) => { server.close(ok); server.closeAllConnections(); }),
@@ -444,7 +469,7 @@ export async function run({ browser, base, mode, dist, out }) {
   // The Open popover: above its button; Escape closes it and focus returns.
   await (await dock(page, ".open-btn")).click();
   await popAbove(page, "#open-menu", ".open-btn", "desktop Open");
-  assert.deepEqual(await page.locator("#open-menu .item").allTextContents(), ["Open a script file", "Paste a script", "Copy link", "Wait for MCP", "Back to the start"]);
+  assert.deepEqual(await page.locator("#open-menu .item:not([hidden])").allTextContents(), ["Open a script file", "Paste a script", "Copy link", "Wait for MCP", "Back to the start"], "Camera layouts stays hidden without a CamFrame that can save layouts");
   await page.locator('#open-menu [data-action="open-file"]').focus();
   await shot(page, "open-popover-desktop");
   await page.keyboard.press("Escape");
@@ -2230,6 +2255,167 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await C.evaluate(() => localStorage.getItem("prompter-camframe")), null);
   await camCtx.close();
   ok("CamFrame link: cue lines read as a camera instruction (a camera mark, \"Camera: face small\" bright and bold, the line's other words muted) whether or not the link is on; off by default (no calls at all); CamFrame's big button in Settings, beside Follow my voice and the main screen and built like them (Enter, Space or a click turn the same remembered setting on and off), says its state in its name and title: off a quiet outline camera, looking or reconnecting a blinking orange camera (reduced motion: a dashed ring, no blinking), connected a filled orange camera with a steady glow (and a dot on Settings), not found a quiet crossed-out camera with a thin orange ring and the permission help in its title; connected and not found are read out once, not on every check; a cue line sends its cue to 127.0.0.1:47833 once per pass down (by hand, a section jump sending only the last cue it passed, auto-scroll, and Follow my voice), again after scrolling back above it, never the script; a refused cue keeps the link on; a reload with the link remembered connects by itself and sends nothing for cues already above; one missed check says reconnecting and connects again by itself, several in a row say not found; a cue that does not get through is sent once more, and twice not through reconnects; a cue still on its way when the link is turned off and on changes nothing; no note pops up for a cue (switched, refused or not reached)", reloadNote);
+
+  // ---- Camera layouts: the Prompter saves the two layout Scenes in a CamFrame with API 2 ----
+  await cam.start();
+  cam.seen.length = 0;
+  cam.answer = null;
+  const layCtx = await browser.newContext(DESKTOP);
+  await layCtx.addInitScript(() => { if (location.protocol.startsWith("http")) localStorage.setItem("prompter-camframe", "on"); });
+  const LY = await layCtx.newPage();
+  LY.on("pageerror", (e) => errors.push(`layouts pageerror: ${e.message}`));
+  LY.on("console", (m) => {
+    // A refused save is a 4xx/5xx answer, logged by the browser as a failed resource.
+    const refusedSave = /status of (409|503)/.test(m.text()) && m.location()?.url?.startsWith("http://127.0.0.1:47833/camframe/scenes");
+    if (m.type() === "error" && !refusedSave) errors.push(`layouts console: ${m.text()}`);
+  });
+  const layoutsLink = await makeLink(CUE_SCRIPT, "lex", base);
+  // A fresh load each time (the link differs only after #, so going to it again would not reload).
+  const openLayoutsLoad = async () => {
+    await LY.goto("about:blank");
+    await LY.goto(layoutsLink);
+    await LY.locator(".section").first().waitFor();
+    await LY.waitForFunction(() => document.querySelector(".camframe").dataset.state === "on");
+  };
+  const itemShown = () => LY.locator(".layouts-item").evaluate((el) => !el.hidden);
+  const dotShown = () => LY.locator(".layouts-dot").evaluate((el) => !el.hidden);
+  const rowStates = () => LY.locator(".layouts-rows li").evaluateAll((els) => els.map((el) => [el.querySelector(".layout-name").textContent, el.dataset.state, el.querySelector(".layout-state").textContent]));
+  const openWindow = async () => {
+    await (await dock(LY, ".open-btn")).click();
+    await LY.locator("#open-menu:popover-open").waitFor();
+    await LY.locator(".layouts-item").click();
+    await LY.locator(".layouts-dialog[open]").waitFor();
+  };
+  const SMALL = { name: "Live small corner", size: "small", position: "bottom-right" };
+  const LARGE = { name: "Live right large", size: 432, position: "right", withinRight: 0.3 };
+  const snapshot = (name) => ({ id: name, name, kind: "snapshot", size: 400, position: { x: 28, y: 104 } });
+
+  // An older CamFrame (no api field): the window stays hidden and nothing is saved.
+  await openLayoutsLoad();
+  await LY.waitForTimeout(300);
+  assert.equal(await itemShown(), false, "older CamFrame: no Camera layouts item");
+  assert.deepEqual(cam.saves(), [], "older CamFrame: nothing saved");
+
+  // API 2 with one Scene of Lex's own: on connecting, the two layouts are saved by themselves,
+  // small first, without replace or apply, and no cue is sent.
+  cam.layouts = { smallSize: 288, sceneLimit: 6, details: [snapshot("Interview")] };
+  await openLayoutsLoad();
+  await LY.waitForFunction(() => document.querySelector(".status").textContent === "Camera layouts saved in CamFrame.");
+  assert.deepEqual(cam.saves(), [SMALL, LARGE], "both saved, small corner first, never replace or apply");
+  assert.deepEqual(cam.cues(), [], "saving sends no cue: the camera does not move");
+  assert.equal(await itemShown(), true, "API 2: the Camera layouts item shows in the Open menu");
+  assert.equal(await dotShown(), false, "nothing needs a look");
+  await openWindow();
+  assert.deepEqual(await rowStates(), [["Live small corner", "ready", "Saved in CamFrame"], ["Live right large", "ready", "Saved in CamFrame"]]);
+  assert.match(await LY.locator(".layouts-size").textContent(), /^Small camera: 288 px, as CamFrame has it now; the Prompter never changes it\. .* Live right large is 432 px\.$/, "says the small size in use");
+  assert.equal(await LY.locator(".layouts-note").isHidden(), true);
+  assert.equal(await LY.locator(".layout-replace").count(), 0);
+  await shot(LY, "camframe-layouts-saved-desktop");
+  assert.deepEqual(cam.saves().length, 2, "both ready: opening the window saves nothing more");
+  assert.equal(cam.seen.some((r) => r.path === "/camframe/small-size"), false, "never changes CamFrame's small size");
+  await LY.keyboard.press("Escape");
+  // Later status checks do not save again.
+  await (await dock(LY, ".settings-btn")).click();
+  await LY.locator("#settings:popover-open").waitFor();
+  await LY.waitForTimeout(400);
+  await LY.keyboard.press("Escape");
+  assert.equal(cam.saves().length, 2, "a later status check saves nothing more");
+
+  // A Scene of Lex's own with a layout's name: never replaced without a yes.
+  cam.layouts.details = [snapshot("Interview"), { id: "s", name: "Live small corner", kind: "layout", size: 288, followsSmallSize: true, position: "bottom-right" }, snapshot("Live right large")];
+  cam.seen.length = 0;
+  await openLayoutsLoad();
+  await LY.waitForTimeout(500);
+  assert.deepEqual(cam.saves(), [], "the different one is not saved over");
+  assert.equal(await dotShown(), true, "the item has a dot: the window needs a look");
+  assert.equal(await LY.locator(".layouts-item").getAttribute("aria-label"), "Camera layouts: needs a look");
+  await openWindow();
+  await LY.waitForTimeout(300);
+  assert.deepEqual(await rowStates(), [["Live small corner", "ready", "Saved in CamFrame"], ["Live right large", "different", "CamFrame has a different Scene with this name. Replace it with this layout?"]]);
+  assert.deepEqual(cam.saves(), [], "opening the window does not replace it either");
+  await shot(LY, "camframe-layouts-different-desktop");
+  await LY.locator(".layout-replace").click();
+  await LY.waitForFunction(() => document.querySelector(".status").textContent === "Camera layouts saved in CamFrame.");
+  assert.deepEqual(cam.saves(), [{ ...LARGE, replace: true }], "after the yes: only that one, with replace");
+  assert.deepEqual(await rowStates(), [["Live small corner", "ready", "Saved in CamFrame"], ["Live right large", "ready", "Saved in CamFrame"]]);
+  assert.equal(await dotShown(), false);
+  assert.equal(cam.layouts.details.length, 3, "replaced in place, nothing added or deleted");
+  await LY.keyboard.press("Escape");
+
+  // No room for both: nothing is saved, and the window says how many Scenes to delete.
+  cam.layouts.details = ["A", "B", "C", "D", "E"].map(snapshot);
+  cam.seen.length = 0;
+  await openLayoutsLoad();
+  await LY.waitForTimeout(500);
+  assert.deepEqual(cam.saves(), [], "no room for both: not even the first one is saved");
+  await openWindow();
+  await LY.waitForTimeout(300);
+  assert.deepEqual(cam.saves(), [], "opening the window saves nothing either");
+  assert.equal(await LY.locator(".layouts-note").textContent(), "CamFrame keeps at most 6 Scenes and has 5; the layouts need 2 more. Delete 1 Scene you do not use in CamFrame, then open Camera layouts again. Nothing was saved.");
+  assert.deepEqual((await rowStates()).map((r) => r[1]), ["missing", "missing"]);
+  assert.equal(await dotShown(), true);
+  await shot(LY, "camframe-layouts-no-room-desktop");
+  // One deleted in CamFrame: opening the window again saves both.
+  cam.layouts.details.pop();
+  await LY.keyboard.press("Escape");
+  await openWindow();
+  await LY.waitForFunction(() => document.querySelector(".status").textContent === "Camera layouts saved in CamFrame.");
+  assert.deepEqual(cam.saves(), [SMALL, LARGE]);
+  assert.equal(await LY.locator(".layouts-note").isHidden(), true);
+  await LY.keyboard.press("Escape");
+
+  // CamFrame refuses (its window is not open yet): said in plain words, nothing tried again by itself.
+  cam.layouts.details = [snapshot("Interview")];
+  cam.answer = (path) => (path === "/camframe/scenes" ? { status: 503, body: { ok: false, error: "CamFrame is not ready.", code: "not-ready" } } : null);
+  cam.seen.length = 0;
+  await openLayoutsLoad();
+  await LY.waitForFunction(() => /^Camera layouts: CamFrame's window is not open yet/.test(document.querySelector(".status").textContent));
+  assert.deepEqual(cam.saves(), [SMALL], "stops at the first refusal");
+  await LY.waitForTimeout(400);
+  assert.deepEqual(cam.saves(), [SMALL], "no automatic second try");
+  assert.equal(await dotShown(), true);
+  cam.answer = null;
+  await openWindow();
+  await LY.waitForFunction(() => document.querySelector(".status").textContent === "Camera layouts saved in CamFrame.");
+  assert.deepEqual(cam.saves(), [SMALL, SMALL, LARGE], "opening the window tries again");
+  assert.equal(await dotShown(), false);
+  await LY.keyboard.press("Escape");
+
+  // An answer lost on its way back after CamFrame saved: no blind repeat; the status shows it saved.
+  cam.layouts.details = [snapshot("Interview")];
+  cam.answer = (path) => (path === "/camframe/scenes" ? { broken: true, saved: true } : null);
+  cam.seen.length = 0;
+  await openLayoutsLoad();
+  await LY.waitForFunction(() => document.querySelector(".status").textContent === "Camera layouts saved in CamFrame.");
+  assert.deepEqual(cam.saves(), [SMALL, LARGE], "each sent once; the status read after says both are there");
+  cam.answer = null;
+
+  // Back to an older CamFrame: the item hides again.
+  cam.layouts = null;
+  await (await dock(LY, ".settings-btn")).click();
+  await LY.locator("#settings:popover-open").waitFor();
+  await LY.waitForFunction(() => document.querySelector(".layouts-item").hidden);
+  await LY.keyboard.press("Escape");
+  await layCtx.close();
+
+  // Phone width: the window fits.
+  cam.layouts = { smallSize: 288, sceneLimit: 6, details: [snapshot("Interview"), snapshot("Live right large")] };
+  const layPhone = await browser.newContext(MOBILE);
+  await layPhone.addInitScript(() => { localStorage.setItem("prompter-camframe", "on"); });
+  const LM = await layPhone.newPage();
+  LM.on("pageerror", (e) => errors.push(`layouts phone pageerror: ${e.message}`));
+  await LM.goto(layoutsLink);
+  await LM.locator(".section").first().waitFor();
+  await LM.waitForFunction(() => !document.querySelector(".layouts-item").hidden);
+  await LM.evaluate(() => document.querySelector(".layouts-item").click());
+  await LM.locator(".layouts-dialog[open]").waitFor();
+  await LM.waitForTimeout(300);
+  const fits = await LM.evaluate(() => { const r = document.querySelector(".layouts-dialog").getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && document.documentElement.scrollWidth <= innerWidth; });
+  assert.equal(fits, true, "phone: the window fits, nothing scrolls sideways");
+  await shot(LM, "camframe-layouts-different-mobile");
+  await layPhone.close();
+  await cam.stop();
+  ok("Camera layouts: an older CamFrame shows no Camera layouts item and gets no save; a CamFrame with API 2 gets the two layout Scenes saved by themselves when it connects (Live small corner, following the small size, then Live right large at 1.5 times it, inside the right 30%), never with replace or apply, no cue and no small-size call; later checks save nothing more; the window says the small size in use and each layout's state; a different Scene with a layout's name is replaced only after Replace, in place; no room for both saves nothing and says how many Scenes to delete; a refusal stops and is said in plain words, with no automatic second try, and opening the window tries again; a lost answer is not repeated blindly; the item has a dot when the window needs a look; the window fits a phone");
 
   // ---- Offline (file://) ----
   const offline = await browser.newContext(DESKTOP);

@@ -1,0 +1,44 @@
+# CamFrame camera layouts
+
+Two layout Scenes the Prompter saves in CamFrame for Lex's livestream cue lines (fleet issue
+techiesreviews/fleet#4; Lex's decisions of 2026-11-04). CamFrame's side is its Prompter link API 2
+(`docs/prompter-link-api.md` in the CamFrame repo). Code: `layoutPlan` and its helpers in
+`src/camframe.mjs`, the glue in `src/app.js` (Camera layouts section); what is checked: the layout
+tests in `test/camframe.test.mjs` and the Camera layouts block in `test/browser/page.mjs`.
+
+## The two layouts
+
+| Scene | Saved as (`POST /camframe/scenes`) | Use in the script |
+| --- | --- | --- |
+| Live small corner | `{"name":"Live small corner","size":"small","position":"bottom-right"}`: follows CamFrame's small size | Plugin and advisory screens: `[Face: Live small corner]` or `[Face small, bottom right]` (same result, also after the large one) |
+| Live right large | `{"name":"Live right large","size":<1.5 × small>,"position":"right","withinRight":0.3}`: 432 px for the standard 288 | Branded pages with the content on the left: `[Face: Live right large]` |
+
+`[Face full]` stays between examples. A bare `[Face small]` right after the large layout only shrinks
+the camera where it is; use one of the two small lines above instead. Lex's scripts change one by one,
+only when he works on them.
+
+## What the Prompter does
+
+- Only with a CamFrame that answers `"api": 2` (or later) with its full Scene list. With an older
+  CamFrame, or a `file://` copy, nothing changes and the Open menu has no Camera layouts item.
+- When CamFrame connects, it saves the missing layouts by itself, once per link session, small first.
+  It never sends `replace` or `apply` on its own, never sends a cue while saving, and never calls
+  `/camframe/small-size`: the small size is whatever CamFrame has now, shown in the window.
+- Room: CamFrame keeps at most `sceneLimit` (6) Scenes, shared with Lex's own. When both missing
+  layouts do not fit, nothing is saved and the window says how many Scenes to delete in CamFrame.
+- A Scene with a layout's name that holds something else (a snapshot Scene, another size or place) is
+  replaced only after Lex presses Replace in the window (`replace: true` for that one Scene).
+- A refused save stops and is said in plain words; a lost answer is not repeated blindly: the
+  status is read again. Opening the Camera layouts window reads CamFrame again and saves what is
+  still missing. The item shows a dot when the window needs a look.
+- Saving a 7th Scene by hand in CamFrame's own settings drops its oldest Scene, which may be one of
+  these two (CamFrame KG-14): keep a spare slot.
+
+## Still to prove on the streaming PC (CamFrame W-30)
+
+Needs a released CamFrame with API 2 on Lex's Windows PC, off-air, with the Prompter on the preview
+site: the saves land, `[Face: Live right large]` puts the camera on the right, centred, inside the
+right 30%, and `[Face small, bottom right]` / `[Face: Live small corner]` bring back exactly the
+original small camera, with the same look (`look.signature`) and small size. Steps: CamFrame's W-30
+row and its `docs/prompter-link-api.md` ("Checking a cue worked"). Never run `kit specs` on that PC:
+the browser checks start a stand-in CamFrame on port 47833.
