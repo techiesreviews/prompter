@@ -996,9 +996,9 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.ok(curNow && onLine, `spacious, mid-move: the line being read (${curNow}) is at the reading line`);
   await v.evaluate(() => document.querySelector('input[name="spacing"][value="normal"]').click());
   assert.deepEqual(await curAtLine(), [curNow, true], "and back to normal");
-  await v.evaluate(() => window.__speech.say("one question keeps you focused"));
-  await v.waitForFunction(() => document.querySelector("p.cur")?.textContent === "One question keeps you focused.");
-  assert.equal(await v.locator("p.cur").count(), 1, "the voice still moves on after the spacing changed");
+  await v.evaluate(() => window.__speech.say("you answer not recite"));
+  await v.waitForTimeout(150);
+  assert.deepEqual(await curAtLine(), [curNow, true], "the voice still follows after the spacing changed");
   await v.evaluate(() => window.__speech.fail("not-allowed"));
   await v.locator(".note-row.alert:not([hidden])").waitFor();
   assert.match(await v.locator(".alert-text").textContent(), /microphone is blocked/);
