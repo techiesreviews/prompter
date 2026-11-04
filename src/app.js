@@ -128,8 +128,9 @@ const camframe = { on: store.get(CAMFRAME_KEY) === "on", state: "off", timer: 0,
 // `quiet` is the running save's: a save from the window during one on connect makes it read out.
 // `busy` is the link session a save runs for (-1: none), so a save left from before the link was
 // turned off and on never holds up the new session's.
-// `saving` names the Scenes that save is sending; `stamp` changes when a save starts or ends.
-const layouts = { status: null, busy: -1, auto: -1, note: "", quiet: false, saving: [], stamp: 0 };
+// `saving` names the Scenes that save is sending; `stamp` changes when a save starts or ends;
+// `openMissed`: the window's opening read missed, so the next answer stands in for it.
+const layouts = { status: null, busy: -1, auto: -1, note: "", quiet: false, saving: [], stamp: 0, openMissed: false };
 const layoutsSaving = () => layouts.busy === camframe.session;
 
 // ---------- Opening scripts ----------
@@ -800,23 +801,29 @@ function setCamframe(patch) {
 // problem; opening it reads CamFrame again and saves what is still missing, with focus on Close,
 // so Replace and Save take a deliberate move.
 function seeLayouts(body) {
-  // A room note follows CamFrame; a refusal's stays until both layouts are there.
+  // A room note follows CamFrame; a refusal's stays until both layouts are exactly right.
   const roomNote = layouts.status && !layoutsSaving() ? layoutNote(layoutPlan(layouts.status)) : null;
   const waited = roomNote === layouts.note;
-  // So does "did not answer": this is its answer.
-  const follows = waited || layouts.note === layoutProblem(null);
+  const noAnswer = layouts.note === layoutProblem(null); // so does this: here is the answer
+  const opening = noAnswer && layouts.openMissed;
+  layouts.openMissed = false;
   layouts.status = layoutsSupported(body) ? body : null;
   const plan = layouts.status && layoutPlan(layouts.status);
-  if (plan && !layoutsSaving() && (follows || plan.done)) layouts.note = layoutNote(plan);
+  if (plan && !layoutsSaving()) {
+    if (waited || noAnswer || plan.rows.every((r) => r.state === "ready")) layouts.note = layoutNote(plan);
+    // A save whose answer and read were lost, and it is not there: no second try by itself, so say how to go on.
+    if (noAnswer && !opening && !layouts.note && plan.rows.some((r) => r.state === "missing")) layouts.note = LAYOUT_NOT_KEPT;
+  }
   showLayouts();
   // Not read out: it would talk over "CamFrame link: connected" from the same check.
   if (plan && layouts.auto !== camframe.session) saveLayouts({ quiet: true });
-  // Room was made in CamFrame with the window open, saying it waited for that.
-  else if (plan && waited && roomNote && layoutsDialog.open && plan.auto.length) saveLayouts();
+  // With the window open: room was made in CamFrame, as its note asked, or this answer stands in for its opening read.
+  else if (plan && layoutsDialog.open && ((waited && roomNote) || opening) && plan.auto.length) saveLayouts();
 }
 
 async function openLayouts() {
   layouts.note = "";
+  layouts.openMissed = false;
   if (layoutsSaving()) layouts.quiet = false; // the window is open now: read the running save's result out
   layoutsStatus.textContent = ""; // the same result next time is news again
   showDialog(layoutsDialog);
@@ -831,6 +838,7 @@ async function openLayouts() {
   if (layouts.stamp !== stamp || layoutsSaving()) return;
   if (!body) {
     layouts.note = layoutProblem(null);
+    layouts.openMissed = true;
     setStatus(`Camera layouts: ${layouts.note}`);
     showLayouts();
     return;
@@ -893,11 +901,16 @@ async function saveLayouts({ replace = "", quiet = false, deliberate = false } =
   else if (layouts.status) layouts.status = layoutsWithSaved(layouts.status, yes);
   afterCheck(body); // this read is a check like any other: a miss checks again soon, an answer ends reconnecting
   const after = layouts.status && layoutPlan(layouts.status);
-  const states = after ? todo.map((scene) => after.rows.find((r) => r.name === scene.name)?.state) : [];
-  // A Scene saved under the same name meanwhile shows as different, with Replace: that row says it.
-  // A Replace counts only once that row is ready.
-  if (states.length && states.every((st) => st === "ready" || (!replace && (st === "different" || st === "resized")))) problem = "";
-  else if (!problem) problem = body ? "CamFrame did not keep the layouts. Open Camera layouts again to try once more." : layoutProblem(null);
+  const kept = (scene) => {
+    const row = after?.rows.find((r) => r.name === scene.name);
+    if (row?.state === "ready") return true;
+    // A Scene saved under the same name meanwhile shows as different or resized, with Replace: that row says it.
+    if (!replace) return row?.state === "different" || row?.state === "resized";
+    // A Replace counts once that row is ready, or holds what was sent when the small size changed meanwhile.
+    return row?.state === "resized" && row.saved === scene.size;
+  };
+  if (todo.every(kept)) problem = "";
+  else if (!problem) problem = body ? LAYOUT_NOT_KEPT : layoutProblem(null);
   // The room note stays while a missing layout still has no room, also after a Replace worked.
   layouts.note = problem || (after ? layoutNote(after) : "");
   if (problem) say(`Camera layouts: ${problem}`);
@@ -957,7 +970,7 @@ function layoutRows(plan) {
     ready: "Saved in CamFrame",
     missing: "Not saved yet",
     different: "CamFrame has a different Scene with this name. Replace it with this layout?",
-    resized: `Saved at ${r.saved} px; 1.5 × today's small camera would be ${r.scene.size} px. Replace it?`,
+    resized: r.state === "resized" ? layoutResizedWords(r, plan.smallSize) : "",
   })[r.state];
   return plan.rows.map((r) => {
     const li = document.createElement("li");

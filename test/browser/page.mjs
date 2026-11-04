@@ -2702,16 +2702,42 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.match(await LY.locator(".layouts-size").textContent(), /^Small camera: 300 px, .* Live right large is saved at 432 px\.$/);
   assert.equal(await LY.evaluate(() => document.activeElement.dataset.action), "close-dialog", "focus on Close: Replace takes a deliberate move");
   await shot(LY, "camframe-layouts-resized-desktop");
+  // A refused Replace keeps its explanation and dot through a later check, with the row still asking.
+  cam.answer = (path) => (path === "/camframe/scenes" ? { status: 503, body: { ok: false, error: "x", code: "not-ready" } } : null);
+  await LY.locator(".layout-replace").click();
+  await LY.waitForFunction(() => document.querySelector(".layouts-note").textContent.startsWith("CamFrame's window is not open yet"));
+  cam.answer = null;
+  await checkNow();
+  await LY.waitForTimeout(400);
+  assert.match(await LY.locator(".layouts-note").textContent(), /^CamFrame's window is not open yet/, "the refusal's note stays");
+  assert.equal(await dotShown(), true, "and the dot");
+  assert.equal((await rowStates())[1][1], "resized");
+  cam.seen.length = 0;
   await LY.locator(".layout-replace").click();
   await LY.waitForFunction(() => document.querySelector(".layouts-status").textContent === "Camera layouts saved in CamFrame.");
   assert.deepEqual(cam.saves(), [{ ...LARGE, size: 450, replace: true }], "after the yes: that one, at today's 1.5 times");
   assert.deepEqual(await rowStates(), [["Live small corner", "ready", "Saved in CamFrame"], ["Live right large", "ready", "Saved in CamFrame"]]);
   assert.match(await LY.locator(".layouts-size").textContent(), /Live right large is 450 px\.$/);
+  assert.equal(await LY.locator(".layouts-note").isHidden(), true, "a Replace that worked clears the refusal's note");
+  await LY.keyboard.press("Escape");
+  // The small size changes by hand during a Replace: CamFrame kept what was sent, so no false failure.
+  cam.layouts.smallSize = 300;
+  cam.layouts.details[1] = { id: "l", name: "Live right large", kind: "layout", size: 432, followsSmallSize: false, position: "right", withinRight: 0.3 };
+  cam.seen.length = 0;
+  await openLayoutsLoad();
+  await openWindow();
+  await LY.waitForFunction(() => document.querySelector('.layouts-rows li[data-state="resized"]'));
+  cam.answer = (path) => { if (path === "/camframe/scenes") cam.layouts.smallSize = 320; return null; };
+  await LY.locator(".layout-replace").click();
+  await LY.waitForFunction(() => document.querySelector(".layouts-status").textContent === "Camera layouts saved in CamFrame. Live right large is still at 450 px.");
+  assert.equal(await LY.locator(".layouts-note").isHidden(), true, "no \"did not keep\": it did");
+  assert.deepEqual((await rowStates())[1], ["Live right large", "resized", "Saved at 450 px; 1.5 × today's small camera would be 480 px. Replace it?"]);
+  cam.answer = null;
   await LY.keyboard.press("Escape");
   cam.layouts.smallSize = 288;
 
-  // "CamFrame did not answer" goes when it answers again; the rows and dot stay right, and a check
-  // does not try the save by itself.
+  // "CamFrame did not answer" on the window's opening read: the next answer counts as that read, so
+  // what is missing is saved with no dead end.
   cam.layouts.details = [snapshot("Interview"), snapshot("Live right large")];
   cam.seen.length = 0;
   await openLayoutsLoad();
@@ -2724,10 +2750,31 @@ export async function run({ browser, base, mode, dist, out }) {
   await LY.waitForFunction(() => document.querySelector(".layouts-note").textContent.startsWith("CamFrame did not answer"));
   cam.answer = null;
   await checkNow();
-  await LY.waitForFunction(() => document.querySelector(".layouts-note").hidden);
-  assert.deepEqual((await rowStates()).map((r) => r[1]), ["missing", "different"]);
-  assert.equal(await dotShown(), true, "the rows still need a look");
-  assert.deepEqual(cam.saves(), [], "a check tries no save");
+  await LY.waitForFunction(() => document.querySelector(".layouts-status").textContent === "Camera layouts: Live right large needs Replace.");
+  assert.deepEqual(cam.saves(), [SMALL], "saved once CamFrame answered");
+  assert.equal(await LY.locator(".layouts-note").isHidden(), true);
+  assert.deepEqual((await rowStates()).map((r) => r[1]), ["ready", "different"]);
+  await LY.keyboard.press("Escape");
+  // A save whose answer and following read were both lost: the next answer shows it is not there.
+  // No save by itself (no automatic second try), and the note says how to go on.
+  cam.layouts.details = [snapshot("Interview"), snapshot("Live right large")];
+  cam.seen.length = 0;
+  await openLayoutsLoad();
+  await savesReach(1);
+  cam.layouts.details = cam.layouts.details.filter((d) => d.name !== "Live small corner");
+  cam.seen.length = 0;
+  let readLost = true;
+  cam.answer = (path) => {
+    if (path === "/camframe/scenes") return { broken: true };
+    return cam.saves().length === 1 && readLost ? ((readLost = false), { broken: true }) : null;
+  };
+  await openWindow();
+  await LY.waitForFunction(() => document.querySelector(".layouts-note").textContent.startsWith("CamFrame did not answer"));
+  cam.answer = null;
+  await checkNow();
+  await LY.waitForFunction(() => document.querySelector(".layouts-note").textContent.startsWith("CamFrame did not keep the layouts."));
+  assert.deepEqual(cam.saves(), [SMALL], "not sent again by a check");
+  assert.equal(await dotShown(), true);
   await LY.keyboard.press("Escape");
 
   // The link turned off and on while a save waits for its answer: the new session saves by
