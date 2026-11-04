@@ -2687,6 +2687,49 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.ok((await spoken()).includes("CamFrame link: not found."), "and it reaches the accessibility tree");
   await cam.start();
 
+  // A hand resize changed the small size: the saved large layout says what it was saved at, no dot,
+  // and only Replace changes it.
+  cam.layouts.smallSize = 300;
+  cam.layouts.details = [{ id: "s", name: "Live small corner", kind: "layout", size: 300, followsSmallSize: true, position: "bottom-right" }, { id: "l", name: "Live right large", kind: "layout", size: 432, followsSmallSize: false, position: "right", withinRight: 0.3 }];
+  cam.seen.length = 0;
+  await openLayoutsLoad();
+  await LY.waitForTimeout(400);
+  assert.deepEqual(cam.saves(), [], "nothing replaced by itself");
+  assert.equal(await dotShown(), false, "still saved and working: no dot");
+  await openWindow();
+  await LY.waitForTimeout(300);
+  assert.deepEqual(await rowStates(), [["Live small corner", "ready", "Saved in CamFrame"], ["Live right large", "resized", "Saved at 432 px; 1.5 × today's small camera would be 450 px. Replace it?"]]);
+  assert.match(await LY.locator(".layouts-size").textContent(), /^Small camera: 300 px, .* Live right large is saved at 432 px\.$/);
+  assert.equal(await LY.evaluate(() => document.activeElement.dataset.action), "close-dialog", "focus on Close: Replace takes a deliberate move");
+  await shot(LY, "camframe-layouts-resized-desktop");
+  await LY.locator(".layout-replace").click();
+  await LY.waitForFunction(() => document.querySelector(".layouts-status").textContent === "Camera layouts saved in CamFrame.");
+  assert.deepEqual(cam.saves(), [{ ...LARGE, size: 450, replace: true }], "after the yes: that one, at today's 1.5 times");
+  assert.deepEqual(await rowStates(), [["Live small corner", "ready", "Saved in CamFrame"], ["Live right large", "ready", "Saved in CamFrame"]]);
+  assert.match(await LY.locator(".layouts-size").textContent(), /Live right large is 450 px\.$/);
+  await LY.keyboard.press("Escape");
+  cam.layouts.smallSize = 288;
+
+  // "CamFrame did not answer" goes when it answers again; the rows and dot stay right, and a check
+  // does not try the save by itself.
+  cam.layouts.details = [snapshot("Interview"), snapshot("Live right large")];
+  cam.seen.length = 0;
+  await openLayoutsLoad();
+  await savesReach(1);
+  cam.layouts.details = cam.layouts.details.filter((d) => d.name !== "Live small corner");
+  cam.seen.length = 0;
+  let missOpening = true;
+  cam.answer = (path) => (path === "/camframe/status" && missOpening ? ((missOpening = false), { broken: true }) : null);
+  await openWindow();
+  await LY.waitForFunction(() => document.querySelector(".layouts-note").textContent.startsWith("CamFrame did not answer"));
+  cam.answer = null;
+  await checkNow();
+  await LY.waitForFunction(() => document.querySelector(".layouts-note").hidden);
+  assert.deepEqual((await rowStates()).map((r) => r[1]), ["missing", "different"]);
+  assert.equal(await dotShown(), true, "the rows still need a look");
+  assert.deepEqual(cam.saves(), [], "a check tries no save");
+  await LY.keyboard.press("Escape");
+
   // The link turned off and on while a save waits for its answer: the new session saves by
   // itself and nothing is left saying "Saving…".
   cam.layouts.details = [snapshot("Interview")];
@@ -2743,7 +2786,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await shot(LM, "camframe-layouts-different-mobile");
   await layPhone.close();
   await cam.stop();
-  ok("Camera layouts: an older CamFrame shows no Camera layouts item and gets no save; a CamFrame with API 2 gets the two layout Scenes saved by themselves when it connects (Live small corner, following the small size, then Live right large at 1.5 times it, inside the right 30%), never with replace or apply, no cue and no small-size call, and not read out over \"connected\"; later checks save nothing more; the window says the small size in use and each layout's state; a different Scene with a layout's name is replaced only after Replace, in place, with keyboard focus kept in the window; no room for both saves nothing and says how many Scenes to delete; saving that would leave no spare slot waits for Save in the window; the window opens with focus on Close, so Enter twice never replaces; results reach Chromium's accessibility tree from a status inside the open window; a room note follows CamFrame while the window is open, a refusal's stays; a save's own read counts as a check; CamFrame gone closes the window; \"saved\" is said only with both layouts ready, otherwise what is left is named and the room note stays, also after a Replace worked; a layout gone from CamFrame shows the dot; a pressed Replace says Saving… and looks disabled, and a second press sends nothing; a slow check from before a save does not bring old rows back; a refusal stops and is said in plain words, with no automatic second try, and opening the window tries again; a lost answer is not repeated blindly, and a lost save that did not land shows the dot; the item has a dot when the window needs a look; the window fits a phone");
+  ok("Camera layouts: an older CamFrame shows no Camera layouts item and gets no save; a CamFrame with API 2 gets the two layout Scenes saved by themselves when it connects (Live small corner, following the small size, then Live right large at 1.5 times it, inside the right 30%), never with replace or apply, no cue and no small-size call, and not read out over \"connected\"; later checks save nothing more; the window says the small size in use and each layout's state; a different Scene with a layout's name is replaced only after Replace, in place, with keyboard focus kept in the window; no room for both saves nothing and says how many Scenes to delete; saving that would leave no spare slot waits for Save in the window; the window opens with focus on Close, so Enter twice never replaces; results reach Chromium's accessibility tree from a status inside the open window; a room note follows CamFrame while the window is open, a refusal's stays; \"did not answer\" goes when CamFrame answers; a large layout saved at an older size says so, with no dot, and changes only after Replace; a save's own read counts as a check; CamFrame gone closes the window; \"saved\" is said only with both layouts ready, otherwise what is left is named and the room note stays, also after a Replace worked; a layout gone from CamFrame shows the dot; a pressed Replace says Saving… and looks disabled, and a second press sends nothing; a slow check from before a save does not bring old rows back; a refusal stops and is said in plain words, with no automatic second try, and opening the window tries again; a lost answer is not repeated blindly, and a lost save that did not land shows the dot; the item has a dot when the window needs a look; the window fits a phone");
 
   // ---- Offline (file://) ----
   const offline = await browser.newContext(DESKTOP);

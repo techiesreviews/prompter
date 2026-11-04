@@ -123,11 +123,21 @@ export function layoutMatches(detail, want) {
 }
 
 // Not toLocaleLowerCase: a Turkish locale would turn "LIVE" into "lıve" and miss the match.
+/**
+ * `detail` is this layout, saved at another size: the same place and kind, so
+ * the small size changed since (resizing CamFrame by hand does that). It is
+ * still saved and still works; only Replace brings it to today's size.
+ */
+export function layoutResized(detail, want) {
+  return Number.isFinite(want.size) && Number.isFinite(detail?.size) && detail.size !== want.size && layoutMatches({ ...detail, size: want.size }, want);
+}
+
 const sameName = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
 
 /**
- * From CamFrame's status: each layout's row (`ready`, `missing`, or
- * `different` for a Scene with its name that holds something else), the
+ * From CamFrame's status: each layout's row (`ready`, `missing`, `resized`
+ * with the size it was `saved` at, or `different` for a Scene with its name
+ * that holds something else), the
  * missing ones to save (small first), and the room: CamFrame keeps at most
  * `sceneLimit` Scenes, shared with Lex's own, so both missing ones must fit
  * before anything is saved. `save` is what a deliberate Save sends, `auto`
@@ -142,7 +152,8 @@ export function layoutPlan(status) {
   const rows = wants.map((scene) => {
     if (!names.some((n) => sameName(n, scene.name))) return { name: scene.name, state: "missing", scene };
     const detail = details.find((d) => sameName(d.name, scene.name));
-    return { name: scene.name, state: layoutMatches(detail, scene) ? "ready" : "different", scene };
+    if (layoutMatches(detail, scene)) return { name: scene.name, state: "ready", scene };
+    return layoutResized(detail, scene) ? { name: scene.name, state: "resized", saved: detail.size, scene } : { name: scene.name, state: "different", scene };
   });
   const missing = rows.filter((r) => r.state === "missing").map((r) => r.scene);
   const has = names.length;
@@ -157,7 +168,7 @@ export function layoutPlan(status) {
     auto: ok && !tight ? missing : [],
     tight,
     room: { has, limit, need: missing.length, ok, free: Math.max(0, limit - has) },
-    done: rows.every((r) => r.state === "ready"),
+    done: rows.every((r) => r.state === "ready" || r.state === "resized"),
   };
 }
 
@@ -188,7 +199,7 @@ export function layoutNote(plan) {
 /** What a save leaves, in plain words: "saved" only when both layouts are ready. */
 export function layoutResultWords(plan) {
   if (plan.done) return "Camera layouts saved in CamFrame.";
-  const left = plan.rows.filter((r) => r.state !== "ready").map((r) => `${r.name} ${r.state === "different" ? "needs Replace" : "is not saved"}`);
+  const left = plan.rows.filter((r) => r.state === "missing" || r.state === "different").map((r) => `${r.name} ${r.state === "different" ? "needs Replace" : "is not saved"}`);
   return `Camera layouts: ${left.join("; ")}.`;
 }
 
