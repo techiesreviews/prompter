@@ -2340,6 +2340,14 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.deepEqual(await rowStates(), [["Live small corner", "ready", "Saved in CamFrame"], ["Live right large", "different", "CamFrame has a different Scene with this name. Replace it with this layout?"]]);
   assert.deepEqual(cam.saves(), [], "opening the window does not replace it either");
   await shot(LY, "camframe-layouts-different-desktop");
+  // A Replace that CamFrame refuses says why; the row keeps asking.
+  cam.answer = (path) => (path === "/camframe/scenes" ? { status: 503, body: { ok: false, error: "CamFrame is not ready.", code: "not-ready" } } : null);
+  await LY.locator(".layout-replace").click();
+  await LY.waitForFunction(() => /^Camera layouts: CamFrame's window is not open yet/.test(document.querySelector(".status").textContent));
+  assert.match(await LY.locator(".layouts-note").textContent(), /^CamFrame's window is not open yet/, "a refused Replace is said, not taken for \"different\"");
+  assert.equal((await rowStates())[1][1], "different");
+  cam.answer = null;
+  cam.seen.length = 0;
   await LY.locator(".layout-replace").focus();
   await LY.keyboard.press("Enter");
   await LY.waitForFunction(() => document.querySelector(".status").textContent === "Camera layouts saved in CamFrame.");
@@ -2422,6 +2430,30 @@ export async function run({ browser, base, mode, dist, out }) {
   await savesReach(2);
   assert.equal(missAfter, false, "the check after the saves missed");
   assert.equal(await dotShown(), false, "CamFrame said yes to both: no dot, no note");
+  cam.answer = null;
+
+  // The link turned off and on while a save waits for its answer: the new session saves by
+  // itself and nothing is left saying "Saving…".
+  cam.layouts.details = [snapshot("Interview")];
+  let slowSave = true;
+  cam.answer = (path) => (path === "/camframe/scenes" && slowSave ? ((slowSave = false), { delay: 1500 }) : null);
+  cam.seen.length = 0;
+  await openLayoutsLoad();
+  await savesReach(1);
+  await (await dock(LY, ".settings-btn")).click();
+  await LY.locator("#settings:popover-open").waitFor();
+  await LY.locator("#settings .camframe").click();
+  await LY.locator("#settings .camframe").click();
+  await LY.keyboard.press("Escape");
+  await LY.waitForFunction(() => document.querySelector(".camframe").dataset.state === "on");
+  await savesReach(2);
+  await LY.waitForTimeout(1500);
+  assert.deepEqual(cam.saves(), [SMALL, LARGE], "the new session saves the rest at once, not held up by the old one (CamFrame already had the small one)");
+  await openWindow();
+  await LY.waitForTimeout(300);
+  assert.deepEqual((await rowStates()).map((r) => r[1]), ["ready", "ready"]);
+  assert.equal(await LY.locator(".layout-state", { hasText: "Saving" }).count(), 0, "nothing stuck on Saving…");
+  await LY.keyboard.press("Escape");
   cam.answer = null;
 
   // Back to an older CamFrame: the item hides again.

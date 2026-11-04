@@ -125,7 +125,10 @@ const camframe = { on: store.get(CAMFRAME_KEY) === "on", state: "off", timer: 0,
 // Camera layouts: CamFrame's last status when it can save layouts (API 2), a save under way,
 // the link session the layouts were last saved for by themselves, and the last problem.
 // `quiet` is the running save's: a save from the window during one on connect makes it read out.
-const layouts = { status: null, busy: false, auto: -1, note: "", quiet: false };
+// `busy` is the link session a save runs for (-1: none), so a save left from before the link was
+// turned off and on never holds up the new session's.
+const layouts = { status: null, busy: -1, auto: -1, note: "", quiet: false };
+const layoutsSaving = () => layouts.busy === camframe.session;
 
 // ---------- Opening scripts ----------
 const isEmpty = () => root.dataset.view === "empty";
@@ -795,7 +798,7 @@ function setCamframe(patch) {
 function seeLayouts(body) {
   layouts.status = layoutsSupported(body) ? body : null;
   // Both there (saved by hand, or a save whose check missed): an older problem is gone.
-  if (layouts.status && !layouts.busy && layoutPlan(layouts.status).done) layouts.note = "";
+  if (layouts.status && !layoutsSaving() && layoutPlan(layouts.status).done) layouts.note = "";
   showLayouts();
   // Not read out: it would talk over "CamFrame link: connected" from the same check.
   if (layouts.status && layouts.auto !== camframe.session) saveLayouts({ quiet: true });
@@ -823,8 +826,9 @@ async function openLayouts() {
 // nothing out. No automatic second try: a save whose answer was lost may have worked, so the
 // status is read again instead.
 async function saveLayouts({ replace = "", quiet = false } = {}) {
-  if (layouts.busy) {
+  if (layoutsSaving()) {
     if (!quiet) layouts.quiet = false; // the window is open now: read the running save's result out
+    if (replace) setStatus("Camera layouts: a save is under way. Press Replace again in a moment.");
     return;
   }
   if (!layouts.status) { showLayouts(); return; }
@@ -843,7 +847,7 @@ async function saveLayouts({ replace = "", quiet = false } = {}) {
     showLayouts();
     return;
   }
-  layouts.busy = true;
+  layouts.busy = session;
   layouts.note = "";
   showLayouts();
   say(`Saving camera layouts in CamFrame. Small camera: ${plan.smallSize} px.`);
@@ -852,22 +856,26 @@ async function saveLayouts({ replace = "", quiet = false } = {}) {
   for (const scene of todo) {
     let answer = null;
     try { answer = await camframeCall("scenes", scene); } catch { /* lost: the status says */ }
-    if (!current()) { layouts.busy = false; return; }
+    if (!current()) { if (layouts.busy === session) layouts.busy = -1; showLayouts(); return; }
     if (answer?.ok || answer?.body?.code === "scene-exists") { answered++; continue; } // saved meanwhile: the status says what it holds
     problem = layoutProblem(answer);
     if (answer) break;
   }
   let body = null;
   try { ({ body } = await camframeCall("status")); } catch { /* not there */ }
-  layouts.busy = false;
-  if (!current()) return;
+  if (layouts.busy === session) layouts.busy = -1;
+  if (!current()) { showLayouts(); return; }
   if (body) layouts.status = layoutsSupported(body) ? body : null;
   const after = layouts.status && layoutPlan(layouts.status);
   const states = after ? todo.map((scene) => after.rows.find((r) => r.name === scene.name)?.state) : [];
   // A Scene saved under the same name meanwhile shows as different, with Replace: that row says it.
-  if (states.length && states.every((st) => st === "ready" || st === "different")) problem = "";
-  // The check after missed: CamFrame said yes to each save, so trust that; the next check shows it.
-  else if (!body && answered === todo.length) problem = "";
+  // A Replace counts only once that row is ready.
+  if (states.length && states.every((st) => st === "ready" || (!replace && st === "different"))) problem = "";
+  // The check after missed: CamFrame said yes to each save, so trust that, and check again soon.
+  else if (!body && answered === todo.length) {
+    problem = "";
+    setTimeout(checkCamframe, CAMFRAME_RETRY_MS[0]);
+  }
   else if (!problem) problem = "CamFrame did not keep the layouts. Open Camera layouts again to try once more.";
   layouts.note = problem;
   if (problem) say(`Camera layouts: ${problem}`);
@@ -901,8 +909,8 @@ function showLayouts() {
     if (hadFocus) (list.querySelector(".layout-replace") || layoutsDialog.querySelector('[data-action="close-dialog"]')).focus();
   }
   for (const row of list.children) {
-    if (row.dataset.state === "missing") row.querySelector(".layout-state").textContent = layouts.busy ? "Saving…" : "Not saved yet";
-    row.querySelector(".layout-replace")?.setAttribute("aria-disabled", String(layouts.busy)); // waits for the save under way
+    if (row.dataset.state === "missing") row.querySelector(".layout-state").textContent = layoutsSaving() ? "Saving…" : "Not saved yet";
+    row.querySelector(".layout-replace")?.setAttribute("aria-disabled", String(layoutsSaving())); // waits for the save under way
   }
   const note = layoutsDialog.querySelector(".layouts-note");
   if (note.textContent !== layouts.note) note.textContent = layouts.note;
