@@ -329,7 +329,7 @@
   @media (hover: hover) and (pointer: fine) { .item:hover { background: var(--panel-2); } }
   @media (pointer: coarse) { .item { min-block-size: 44px; } } /* Disconnect MCP and the rest: 44px targets on phones */
   .pop-sep { block-size: 1px; margin: 6px 4px; background: var(--border); }
-  .settings-pop { inline-size: 340px; padding: 16px 16px 14px; max-block-size: calc(100vh - 96px); max-block-size: calc(100dvh - 96px - env(safe-area-inset-bottom, 0px)); overflow-y: auto; }
+  .settings-pop { inline-size: 340px; padding: 16px 16px 14px; overscroll-behavior: contain; max-block-size: calc(100vh - 96px); max-block-size: calc(100dvh - 96px - env(safe-area-inset-bottom, 0px)); overflow-y: auto; }
   /* 96px: the bar (56) with its gap (16) and the popover margin (12), plus 12 above; a short screen scrolls Settings. */
   .setting + .setting { margin-block-start: 16px; }
   .range-field + .range-field { margin-block-start: 8px; }
