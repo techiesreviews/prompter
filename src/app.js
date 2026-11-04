@@ -806,6 +806,7 @@ function seeLayouts(body) {
   const waited = roomNote === layouts.note;
   const noAnswer = layouts.note === layoutProblem(null); // so does this: here is the answer
   const opening = noAnswer && layouts.openMissed;
+  const noteBefore = layouts.note;
   layouts.openMissed = false;
   layouts.status = layoutsSupported(body) ? body : null;
   const plan = layouts.status && layoutPlan(layouts.status);
@@ -817,8 +818,10 @@ function seeLayouts(body) {
   showLayouts();
   // Not read out: it would talk over "CamFrame link: connected" from the same check.
   if (plan && layouts.auto !== camframe.session) saveLayouts({ quiet: true });
-  // With the window open: room was made in CamFrame, as its note asked, or this answer stands in for its opening read.
-  else if (plan && layoutsDialog.open && ((waited && roomNote) || opening) && plan.auto.length) saveLayouts();
+  // With the window open: this answer stands in for its opening read, or room was made in CamFrame, as its note asked.
+  else if (plan && layoutsDialog.open && (opening || (waited && roomNote && plan.auto.length))) saveLayouts();
+  // Any other note that changes in the open window is read out too; none left says where things stand.
+  else if (plan && layoutsDialog.open && layouts.note !== noteBefore) setStatus(layouts.note ? `Camera layouts: ${layouts.note}` : layoutResultWords(plan));
 }
 
 async function openLayouts() {
@@ -868,7 +871,7 @@ async function saveLayouts({ replace = "", quiet = false, deliberate = false } =
     : deliberate ? plan.save : plan.auto;
   if (!replace) layouts.note = layoutNote(plan);
   if (!todo.length) {
-    if (layouts.note) say(`Camera layouts: ${layouts.note}`);
+    say(layouts.note ? `Camera layouts: ${layouts.note}` : layoutResultWords(plan));
     showLayouts();
     return;
   }

@@ -2267,7 +2267,9 @@ export async function run({ browser, base, mode, dist, out }) {
   LY.on("console", (m) => {
     // A refused save is a 4xx/5xx answer, logged by the browser as a failed resource.
     const refusedSave = /status of (409|503)/.test(m.text()) && m.location()?.url?.startsWith("http://127.0.0.1:47833/camframe/scenes");
-    if (m.type() === "error" && !refusedSave && !/ERR_CONNECTION_REFUSED/.test(m.text())) errors.push(`layouts console: ${m.text()}`);
+    // This block reloads the page many times, which can reach the site's limit on its own /api calls.
+    const siteLimit = /status of 429/.test(m.text()) && new URL(m.location()?.url || "http://x").pathname.startsWith("/api/");
+    if (m.type() === "error" && !refusedSave && !siteLimit && !/ERR_CONNECTION_REFUSED/.test(m.text())) errors.push(`layouts console: ${m.text()}`);
   });
   const layoutsLink = await makeLink(CUE_SCRIPT, "lex", base);
   // A fresh load each time (the link differs only after #, so going to it again would not reload).
@@ -2618,6 +2620,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await checkNow();
   await LY.waitForFunction(() => document.querySelector(".layouts-note").textContent.startsWith("Saving what is missing would fill"));
   assert.equal(await LY.locator(".layouts-save").isVisible(), true, "one deleted: the note and Save agree");
+  assert.match(await LY.locator(".layouts-status").textContent(), /Saving what is missing would fill/, "the changed note is read out");
   assert.deepEqual(cam.saves(), []);
   cam.layouts.details.pop();
   await checkNow();
@@ -2772,9 +2775,64 @@ export async function run({ browser, base, mode, dist, out }) {
   await LY.waitForFunction(() => document.querySelector(".layouts-note").textContent.startsWith("CamFrame did not answer"));
   cam.answer = null;
   await checkNow();
-  await LY.waitForFunction(() => document.querySelector(".layouts-note").textContent.startsWith("CamFrame did not keep the layouts."));
+  const notKept = "A layout is still not saved in CamFrame. Open Camera layouts again to try once more.";
+  await LY.waitForFunction((words) => document.querySelector(".layouts-note").textContent === words, notKept);
   assert.deepEqual(cam.saves(), [SMALL], "not sent again by a check");
   assert.equal(await dotShown(), true);
+  assert.equal(await LY.locator(".layouts-status").textContent(), `Camera layouts: ${notKept}`, "a note that changes in the open window is read out");
+  assert.ok((await spoken()).includes(notKept), "and reaches the accessibility tree");
+  await LY.keyboard.press("Escape");
+  // A missed opening read, then CamFrame would be filled: no save, Save shown, the note read out.
+  cam.layouts.details = ["A", "B", "C", "D"].map(snapshot);
+  cam.seen.length = 0;
+  await openLayoutsLoad();
+  await LY.waitForTimeout(300);
+  let missTight = true;
+  cam.answer = (path) => (path === "/camframe/status" && missTight ? ((missTight = false), { broken: true }) : null);
+  await openWindow();
+  await LY.waitForFunction(() => document.querySelector(".layouts-note").textContent.startsWith("CamFrame did not answer"));
+  cam.answer = null;
+  await checkNow();
+  await LY.waitForFunction(() => document.querySelector(".layouts-status").textContent.includes("Saving what is missing would fill"));
+  assert.deepEqual(cam.saves(), []);
+  assert.equal(await LY.locator(".layouts-save").isVisible(), true);
+  await LY.keyboard.press("Escape");
+  // A missed opening read with both layouts there: "did not answer" is not the last thing said.
+  const savedLayouts = () => [{ id: "s", name: "Live small corner", kind: "layout", size: 288, followsSmallSize: true, position: "bottom-right" }, { id: "l", name: "Live right large", kind: "layout", size: 432, followsSmallSize: false, position: "right", withinRight: 0.3 }];
+  cam.layouts.details = savedLayouts();
+  cam.seen.length = 0;
+  await openLayoutsLoad();
+  await LY.waitForTimeout(300);
+  let missBoth = true;
+  cam.answer = (path) => (path === "/camframe/status" && missBoth ? ((missBoth = false), { broken: true }) : null);
+  await openWindow();
+  await LY.waitForFunction(() => document.querySelector(".layouts-note").textContent.startsWith("CamFrame did not answer"));
+  cam.answer = null;
+  await checkNow();
+  await LY.waitForFunction(() => document.querySelector(".layouts-status").textContent === "Camera layouts saved in CamFrame.");
+  assert.equal(await LY.locator(".layouts-note").isHidden(), true);
+  assert.deepEqual(cam.saves(), []);
+  await LY.keyboard.press("Escape");
+  // A lost Replace that did land, and the read after it lost too: the next answer says saved.
+  cam.layouts.details = [savedLayouts()[0], snapshot("Live right large")];
+  cam.seen.length = 0;
+  await openLayoutsLoad();
+  await LY.waitForTimeout(300);
+  await openWindow();
+  await LY.locator(".layout-replace").waitFor();
+  let lostRead = true;
+  cam.answer = (path) => {
+    if (path === "/camframe/scenes") return { broken: true, saved: true };
+    return cam.saves().length === 1 && lostRead ? ((lostRead = false), { broken: true }) : null;
+  };
+  await LY.locator(".layout-replace").click();
+  await LY.waitForFunction(() => document.querySelector(".layouts-note").textContent.startsWith("CamFrame did not answer"));
+  cam.answer = null;
+  await checkNow();
+  await LY.waitForFunction(() => document.querySelector(".layouts-status").textContent === "Camera layouts saved in CamFrame.");
+  assert.equal(await LY.locator(".layouts-note").isHidden(), true);
+  assert.deepEqual((await rowStates()).map((r) => r[1]), ["ready", "ready"]);
+  assert.deepEqual(cam.saves(), [{ ...LARGE, replace: true }], "sent once");
   await LY.keyboard.press("Escape");
 
   // The link turned off and on while a save waits for its answer: the new session saves by
