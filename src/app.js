@@ -984,13 +984,13 @@ function setWidth(name) {
 function setSpacing(name) {
   const v = SPACINGS.includes(name) ? name : "normal";
   const cur = voiceOn && main.querySelector("p.cur");
-  const keep = cur || [...main.querySelectorAll("p")].find((p) => p.getBoundingClientRect().bottom > readingLineY());
+  const keep = cur || [...main.querySelectorAll("p, .mark")].find((p) => p.getBoundingClientRect().bottom > readingLineY());
   // How far down that paragraph the reading line falls (a wrapped line's rows grow too).
   const kr = keep?.getBoundingClientRect();
   const frac = kr && kr.height ? (readingLineY() - kr.top) / kr.height : 0;
   root.dataset.spacing = v;
   spacingInputs.forEach((input) => { input.checked = input.value === v; });
-  if (store.get("prompter-spacing") || v !== "normal") store.set("prompter-spacing", v); // only choices the person made
+  if (store.get("prompter-spacing") || v !== "normal") store.set("prompter-spacing", v); // nothing is stored until the default is left
   if (cur) window.scrollTo({ top: cur.getBoundingClientRect().top + window.scrollY - readingLineY() + 2 });
   else if (keep) { const r = keep.getBoundingClientRect(); window.scrollBy(0, r.top + frac * r.height - readingLineY()); }
 }
