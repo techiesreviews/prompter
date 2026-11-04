@@ -121,7 +121,8 @@ export function layoutMatches(detail, want) {
   return want.size === "small" ? detail.followsSmallSize === true : detail.followsSmallSize !== true && detail.size === want.size;
 }
 
-const sameName = (a, b) => String(a).toLocaleLowerCase() === String(b).toLocaleLowerCase();
+// Not toLocaleLowerCase: a Turkish locale would turn "LIVE" into "lıve" and miss the match.
+const sameName = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
 
 /**
  * From CamFrame's status: each layout's row (`ready`, `missing`, or
@@ -131,7 +132,7 @@ const sameName = (a, b) => String(a).toLocaleLowerCase() === String(b).toLocaleL
  * before anything is saved.
  */
 export function layoutPlan(status) {
-  const smallSize = Number.isFinite(status.smallSize) ? status.smallSize : LAYOUT_SMALL_SIZE;
+  const smallSize = Number.isFinite(status.smallSize) && status.smallSize > 0 ? status.smallSize : LAYOUT_SMALL_SIZE;
   const wants = layoutWants(smallSize);
   const names = status.scenes || [];
   const details = status.sceneDetails || [];
@@ -168,6 +169,6 @@ export function layoutProblem(answer) {
 export function layoutRoomWords(room) {
   if (room.ok) return "";
   const scenes = (n) => `${n} Scene${n === 1 ? "" : "s"}`;
-  const over = room.need - room.free;
+  const over = room.has + room.need - room.limit;
   return `CamFrame keeps at most ${scenes(room.limit)} and has ${room.has}; the layouts need ${room.need} more. Delete ${scenes(over)} you do not use in CamFrame, then open Camera layouts again. Nothing was saved.`;
 }

@@ -353,7 +353,7 @@
   .layouts-rows li { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
   .layout-name { font-weight: 700; }
   .layout-state { color: var(--muted); }
-  .layouts-rows li[data-state="different"] .layout-state { color: var(--text); }
+  .layout-ask { color: var(--text); }
   .layouts-dot { inline-size: 8px; block-size: 8px; margin-inline-start: auto; border-radius: 50%; flex: none; background: var(--accent); }
   /* Your agent over MCP, as in the script editor: a status dot (grey off, orange waiting,
      green connected), the action with a copy icon after it, and a check with "Copied" once
@@ -563,7 +563,7 @@
   <p class="muted">Two Scenes in CamFrame for your cue lines: [Face: Live right large] for branded pages with the content on the left, [Face: Live small corner] or [Face small, bottom right] for plugin and advisory screens. Saving them never moves your camera.</p>
   <p class="layouts-size"></p>
   <ul class="layouts-rows"></ul>
-  <p class="error-text layouts-note" role="alert" hidden></p>
+  <p class="error-text layouts-note" hidden></p>
   <p class="dialog-actions"><button class="btn" type="button" data-action="close-dialog">Close</button></p>
 </dialog>
 <dialog class="dialog paste-dialog" aria-labelledby="paste-title">
