@@ -196,6 +196,12 @@ test("layoutPlan: what is saved, what is missing, what differs, and whether ther
   assert.deepEqual(lower.rows.map((r) => r.state), ["ready", "missing"]);
   assert.deepEqual(lower.save.map((s) => s.name), [LAYOUT_LARGE]);
 
+  // Upper case too, whatever the user's language (toLocaleLowerCase would miss it in Turkish).
+  assert.deepEqual(layoutPlan(api2({ scenes: ["LIVE SMALL CORNER"], sceneDetails: [{ ...SMALL_DETAIL, name: "LIVE SMALL CORNER" }] })).rows.map((r) => r.state), ["ready", "missing"]);
+
+  // A small size of 0 or less is not a size: CamFrame's standard 288, the same for both numbers.
+  for (const bad of [0, -5]) assert.deepEqual([layoutPlan(api2({ smallSize: bad })).smallSize, layoutPlan(api2({ smallSize: bad })).largeSize], [288, 432]);
+
   // A Scene of Lex's own with the same name is never saved over without asking.
   const other = layoutPlan(api2({ scenes: ["Live right large"], sceneDetails: [{ ...LARGE_DETAIL, kind: "snapshot" }] }));
   assert.deepEqual(other.rows.map((r) => r.state), ["missing", "different"]);
@@ -234,4 +240,5 @@ test("layoutRoomWords: how many Scenes to delete in CamFrame, in plain words", (
   assert.equal(layoutRoomWords({ has: 1, limit: 6, need: 2, ok: true, free: 5 }), "");
   assert.equal(layoutRoomWords({ has: 5, limit: 6, need: 2, ok: false, free: 1 }), "CamFrame keeps at most 6 Scenes and has 5; the layouts need 2 more. Delete 1 Scene you do not use in CamFrame, then open Camera layouts again. Nothing was saved.");
   assert.match(layoutRoomWords({ has: 6, limit: 6, need: 2, ok: false, free: 0 }), /Delete 2 Scenes /);
+  assert.match(layoutRoomWords({ has: 8, limit: 6, need: 2, ok: false, free: 0 }), /has 8; .* Delete 4 Scenes /, "more Scenes than the limit: all of the extra ones count");
 });
