@@ -194,7 +194,7 @@
      moves between these states. */
   .link, .mark, .inlink { border: 1px solid transparent; border-radius: 0.3em; cursor: pointer; }
   .links {
-    display: flex; flex-wrap: wrap; gap: 0 0.2em; margin: 0 calc(-0.45em - 1px) 0.5em;
+    display: flex; flex-wrap: wrap; gap: 0 0.2em; margin: 0 calc(-0.45em - 1px) calc(0.5em + var(--size) * var(--line-room));
     font: 500 max(13px, 0.3em)/1.3 var(--font-body); letter-spacing: 0;
   }
   .link, .mark {
@@ -206,7 +206,7 @@
   /* A link on its own line mid-section: opens when it reaches the reading line. */
   .mark {
     display: flex; inline-size: fit-content; max-inline-size: calc(100% + 0.9em + 2px);
-    margin: 0 calc(-0.45em - 1px) 0.25em; font: 500 max(13px, 0.3em)/1.3 var(--font-body); letter-spacing: 0;
+    margin: 0 calc(-0.45em - 1px) calc(0.25em + var(--size) * var(--line-room)); font: 500 max(13px, 0.3em)/1.3 var(--font-body); letter-spacing: 0;
   }
   .inlink {
     color: inherit; font: inherit; padding: 0 0.1em; margin-inline: calc(-0.1em - 1px);
@@ -329,7 +329,7 @@
   @media (hover: hover) and (pointer: fine) { .item:hover { background: var(--panel-2); } }
   @media (pointer: coarse) { .item { min-block-size: 44px; } } /* Disconnect MCP and the rest: 44px targets on phones */
   .pop-sep { block-size: 1px; margin: 6px 4px; background: var(--border); }
-  .settings-pop { inline-size: 340px; padding: 16px 16px 14px; max-block-size: calc(100dvh - 96px - env(safe-area-inset-bottom, 0px)); overflow-y: auto; } /* a short screen scrolls it */
+  .settings-pop { inline-size: 340px; padding: 16px 16px 14px; max-block-size: calc(100dvh - 96px - env(safe-area-inset-bottom, 0px)); /* 96px: the bar (56) with its gap (16) and the popover margin (12), plus a little room above */ overflow-y: auto; } /* a short screen scrolls it */
   .setting + .setting { margin-block-start: 16px; }
   .range-field + .range-field { margin-block-start: 8px; }
   .setting legend { padding: 0; margin: 0 0 6px; font-weight: 600; font-size: 14px; }

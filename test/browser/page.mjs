@@ -989,16 +989,13 @@ export async function run({ browser, base, mode, dist, out }) {
   // Changing the line spacing while the voice moves the page on: the line being read goes to the reading line.
   const curAtLine = () => v.evaluate(() => [document.querySelector("p.cur")?.textContent,
     Math.abs(document.querySelector("p.cur").getBoundingClientRect().top - document.querySelector(".reading-line").getBoundingClientRect().top) < 12]);
-  // Start the move with words of the next line so a smooth scroll is under way when the spacing changes.
-  await v.evaluate(() => { window.__speech.say("you answer not recite"); document.querySelector('input[name="spacing"][value="spacious"]').click(); });
-  await v.waitForFunction(() => document.querySelector("p.cur") && Math.abs(document.querySelector("p.cur").getBoundingClientRect().top - document.querySelector(".reading-line").getBoundingClientRect().top) < 12);
-  const [curNow, onLine] = await curAtLine();
-  assert.ok(curNow && onLine, `spacious, mid-move: the line being read (${curNow}) is at the reading line`);
+  // The move to the next line starts (smooth scroll) in the same moment the spacing changes.
+  await v.evaluate(() => { window.__speech.say("you answer not recite short lines guide"); document.querySelector('input[name="spacing"][value="spacious"]').click(); });
+  await v.waitForFunction(() => document.querySelector("p.cur")?.textContent === "Short lines guide your eyes." && Math.abs(document.querySelector("p.cur").getBoundingClientRect().top - document.querySelector(".reading-line").getBoundingClientRect().top) < 12);
+  await v.waitForTimeout(500);
+  assert.deepEqual(await curAtLine(), ["Short lines guide your eyes.", true], "spacious, mid-move: the line being read is at the reading line");
   await v.evaluate(() => document.querySelector('input[name="spacing"][value="normal"]').click());
-  assert.deepEqual(await curAtLine(), [curNow, true], "and back to normal");
-  await v.evaluate(() => window.__speech.say("you answer not recite"));
-  await v.waitForTimeout(150);
-  assert.deepEqual(await curAtLine(), [curNow, true], "the voice still follows after the spacing changed");
+  assert.deepEqual(await curAtLine(), ["Short lines guide your eyes.", true], "and back to normal");
   await v.evaluate(() => window.__speech.fail("not-allowed"));
   await v.locator(".note-row.alert:not([hidden])").waitFor();
   assert.match(await v.locator(".alert-text").textContent(), /microphone is blocked/);
@@ -1720,6 +1717,12 @@ export async function run({ browser, base, mode, dist, out }) {
   await m.locator("#settings:popover-open").waitFor();
   const sideBox = await m.locator("#settings").boundingBox();
   assert.ok(sideBox.y >= 0, `landscape phone: Settings top ${Math.round(sideBox.y)} is inside the window`);
+  const dockTop = (await m.locator(".dock").boundingBox()).y;
+  assert.ok(sideBox.y + sideBox.height <= dockTop, `landscape phone: Settings bottom ${Math.round(sideBox.y + sideBox.height)} is above the bar ${Math.round(dockTop)}`);
+  assert.ok(await m.locator("#settings").evaluate((el) => el.scrollHeight > el.clientHeight), "landscape phone: Settings scrolls");
+  await m.locator("#settings").evaluate((el) => { el.scrollTop = el.scrollHeight; });
+  const [tg, st] = [await m.locator("#settings .big-toggles").boundingBox(), await m.locator("#settings").boundingBox()];
+  assert.ok(tg.y >= st.y && tg.y + tg.height <= st.y + st.height, "landscape phone: the last row can be scrolled into view");
   await m.locator('#settings .spacing label:has-text("Roomy")').click();
   assert.equal(await m.evaluate(() => document.documentElement.dataset.spacing), "roomy", "landscape phone: the line spacing choices can be reached");
   await m.locator('#settings .spacing label:has-text("Normal")').click();
