@@ -39,7 +39,7 @@ only when he works on them.
   the row says so and offers 640 px.
 - Spoken results: a save made by itself on connecting is not read out (that would talk over "CamFrame
   link: connected"); a problem shows as a dot on the Open menu's item and a note in the window. While
-  the window is open, every result goes to a spoken status element inside it, because a modal window
+  the window is open, every result and every note that changes goes to a spoken status element inside it, because a modal window
   hides the page's status line from screen readers. **A real screen reader has not been tried:** the
   browser checks read Chromium's accessibility tree, which shows the text can be reached, not how it
   sounds.
