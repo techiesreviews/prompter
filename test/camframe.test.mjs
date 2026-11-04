@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CAMFRAME_MISSES, CAMFRAME_ORIGIN, CAMFRAME_RETRY_MS, camframeAfterCheck, camframeCall, cueCrossing, cueRest, cueWords, LAYOUT_LARGE, LAYOUT_SMALL, layoutMatches, layoutPlan, layoutProblem, layoutResultWords, layoutRoomWords, layoutsWithSaved, layoutsSupported, layoutWants } from "../src/camframe.mjs";
+import { CAMFRAME_MISSES, CAMFRAME_ORIGIN, CAMFRAME_RETRY_MS, camframeAfterCheck, camframeCall, cueCrossing, cueRest, cueWords, LAYOUT_LARGE, LAYOUT_SMALL, layoutMatches, layoutNote, layoutPlan, layoutProblem, layoutResultWords, layoutRoomWords, layoutsWithSaved, layoutsSupported, layoutWants } from "../src/camframe.mjs";
 import { check, classify, faceCue, FACE_SPOTS, formatGuide, parse } from "../src/core.mjs";
 
 test("faceCue: Lex's existing cue lines still work", () => {
@@ -268,4 +268,28 @@ test("layoutsWithSaved: CamFrame's yes counts when the check after it missed, wi
   assert.deepEqual(layoutPlan(after).rows.map((r) => r.state), ["ready", "ready"]);
   assert.deepEqual(before.scenes, ["Interview", "live right large"], "the old status is left as it was");
   assert.equal(before.sceneDetails[1].kind, "snapshot");
+});
+
+test("layoutPlan: an automatic save always leaves a spare slot; filling CamFrame takes a deliberate Save", () => {
+  const scenes = (n) => Array.from({ length: n }, (_, k) => `S${k}`);
+  const withScenes = (n) => api2({ scenes: scenes(n), sceneDetails: scenes(n).map((name) => ({ name, kind: "snapshot" })) });
+  const three = layoutPlan(withScenes(3));
+  assert.equal(three.tight, false, "3 + 2 = 5 of 6: one slot stays free");
+  assert.deepEqual(three.auto.map((s) => s.name), [LAYOUT_SMALL, LAYOUT_LARGE]);
+  assert.equal(layoutNote(three), "");
+  const four = layoutPlan(withScenes(4));
+  assert.equal(four.tight, true, "4 + 2 = 6 of 6: no slot left");
+  assert.deepEqual(four.auto, [], "nothing saved by itself");
+  assert.deepEqual(four.save.map((s) => s.name), [LAYOUT_SMALL, LAYOUT_LARGE], "Save in the window saves both");
+  assert.equal(layoutNote(four), "Saving what is missing would fill CamFrame: 6 of 6 Scenes, with no spare slot, and the next Scene saved by hand there drops its oldest. Not saved yet: press Save to save anyway, or delete a Scene you do not use in CamFrame and open Camera layouts again.");
+  const five = layoutPlan(withScenes(5));
+  assert.equal(five.room.ok, false);
+  assert.equal(five.tight, false, "no room at all is not the same as tight: Save could not work");
+  assert.match(layoutNote(five), /^No room to save what is missing/);
+  const one = ["A", "B", "C", "D", "Live small corner"];
+  const oneLeft = layoutPlan(api2({ scenes: one, sceneDetails: [...one.slice(0, 4).map((name) => ({ name, kind: "snapshot" })), SMALL_DETAIL] }));
+  assert.equal(oneLeft.tight, true, "only the large one missing, and it would take the last slot");
+  const both = layoutPlan(api2({ scenes: [...scenes(4), LAYOUT_SMALL, LAYOUT_LARGE], sceneDetails: [SMALL_DETAIL, LARGE_DETAIL] }));
+  assert.equal(both.tight, false, "nothing missing: nothing to hold back, even when CamFrame is full");
+  assert.equal(layoutNote(both), "");
 });
