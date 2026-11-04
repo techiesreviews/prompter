@@ -24,11 +24,21 @@ test("token: tp1-<birth time>-<32 random bytes>, made and checked by the Worker'
   for (const bad of ["", "tp1-abc", `se2-${T0.toString(36)}-${"A".repeat(43)}`, `${token}x`, null]) assert.equal(checkToken(bad, T0).ok, false, String(bad));
 });
 
+// The random part of a token, which may itself hold "-" (base64url): splitting on "-" and taking
+// one piece could give a short or empty string, which a hash can contain by chance (about 2% of runs).
+const randomPart = (token) => token.split("-").slice(2).join("-");
+
+test("randomPart: the whole random part, also when it holds or starts with a dash", () => {
+  assert.equal(randomPart("tp1-abc-plain_rand"), "plain_rand");
+  assert.equal(randomPart("tp1-abc--starts"), "-starts");
+  assert.equal(randomPart("tp1-abc-in-the-middle"), "in-the-middle");
+});
+
 test("token: the relay is named by a salted SHA-256 of the token, never the token", async () => {
   const { token } = newToken();
   const name = await relayName(token);
   assert.match(name, /^[0-9a-f]{64}$/);
-  assert.ok(!name.includes(token.split("-")[2]));
+  assert.ok(!name.includes(randomPart(token)));
   assert.equal(await relayName(token), name);
   assert.notEqual(await relayName(newToken().token), name);
 });

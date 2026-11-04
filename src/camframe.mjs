@@ -172,8 +172,8 @@ export function layoutPlan(status) {
   };
 }
 
-/** A save that CamFrame's status does not show, whatever it answered. */
-export const LAYOUT_NOT_KEPT = "CamFrame did not keep the layouts. Open Camera layouts again to try once more.";
+/** A save that CamFrame's status does not show, whatever it answered. True whichever layout it was, also beside one that did save. */
+export const LAYOUT_NOT_KEPT = "A layout is still not saved in CamFrame. Open Camera layouts again to try once more.";
 
 /** A refused save (`{ ok: false, body }`) or a missed one (null) in plain words. */
 export function layoutProblem(answer) {
