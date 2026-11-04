@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CAMFRAME_MISSES, CAMFRAME_ORIGIN, CAMFRAME_RETRY_MS, camframeAfterCheck, camframeCall, cueCrossing, cueRest, cueWords, LAYOUT_LARGE, LAYOUT_SMALL, layoutMatches, layoutNote, layoutPlan, layoutProblem, layoutResizedWords, layoutResultWords, layoutRoomWords, layoutsWithSaved, layoutsSupported, layoutWants } from "../src/camframe.mjs";
+import { CAMFRAME_MISSES, CAMFRAME_ORIGIN, CAMFRAME_RETRY_MS, camframeAfterCheck, LAYOUT_NOT_KEPT, camframeCall, cueCrossing, cueRest, cueWords, LAYOUT_LARGE, LAYOUT_SMALL, layoutMatches, layoutNote, layoutPlan, layoutProblem, layoutResizedWords, layoutResultWords, layoutRoomWords, layoutsWithSaved, layoutsSupported, layoutWants } from "../src/camframe.mjs";
 import { check, classify, faceCue, FACE_SPOTS, formatGuide, parse } from "../src/core.mjs";
 
 test("faceCue: Lex's existing cue lines still work", () => {
@@ -240,6 +240,7 @@ test("layoutProblem: CamFrame's refusals and a missed call in plain words", () =
   assert.match(layoutProblem({ ok: false, body: { error: "Not allowed." } }), /CamFrame refused: Not allowed\./, "anything else: CamFrame's own words");
   assert.match(layoutProblem({ ok: false, body: {} }), /CamFrame refused/);
   assert.match(layoutProblem(null), /CamFrame did not answer/);
+  assert.equal(LAYOUT_NOT_KEPT, "A layout is still not saved in CamFrame. Open Camera layouts again to try once more.", "true whichever layout it was, also beside one that did save");
 });
 
 test("layoutRoomWords: how many Scenes to delete in CamFrame, true also after another layout was saved", () => {
