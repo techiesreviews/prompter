@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CAMFRAME_MISSES, CAMFRAME_ORIGIN, CAMFRAME_RETRY_MS, camframeAfterCheck, camframeCall, cueCrossing, cueRest, cueWords, LAYOUT_LARGE, LAYOUT_SMALL, layoutMatches, layoutNote, layoutPlan, layoutProblem, layoutResultWords, layoutRoomWords, layoutsWithSaved, layoutsSupported, layoutWants } from "../src/camframe.mjs";
+import { CAMFRAME_MISSES, CAMFRAME_ORIGIN, CAMFRAME_RETRY_MS, camframeAfterCheck, camframeCall, cueCrossing, cueRest, cueWords, LAYOUT_LARGE, LAYOUT_SMALL, layoutMatches, layoutNote, layoutPlan, layoutProblem, layoutResizedWords, layoutResultWords, layoutRoomWords, layoutsWithSaved, layoutsSupported, layoutWants } from "../src/camframe.mjs";
 import { check, classify, faceCue, FACE_SPOTS, formatGuide, parse } from "../src/core.mjs";
 
 test("faceCue: Lex's existing cue lines still work", () => {
@@ -267,6 +267,8 @@ test("layoutResultWords: says saved only when both layouts are ready, otherwise 
   assert.equal(layoutResultWords(layoutPlan(api2())), "Camera layouts: Live small corner is not saved; Live right large is not saved.");
   const resizedAndMissing = layoutPlan(api2({ smallSize: 300, scenes: ["Live right large"], sceneDetails: [LARGE_DETAIL] }));
   assert.equal(layoutResultWords(resizedAndMissing), "Camera layouts: Live small corner is not saved.", "an older size is still saved");
+  const bothOneOlder = layoutPlan(api2({ smallSize: 300, scenes: ["Live small corner", "Live right large"], sceneDetails: [SMALL_DETAIL, LARGE_DETAIL] }));
+  assert.equal(layoutResultWords(bothOneOlder), "Camera layouts saved in CamFrame. Live right large is still at 432 px.", "saved, and says which is at an older size");
 });
 
 test("layoutsWithSaved: CamFrame's yes counts when the check after it missed, without changing the old status", () => {
@@ -300,4 +302,13 @@ test("layoutPlan: an automatic save always leaves a spare slot; filling CamFrame
   const both = layoutPlan(api2({ scenes: [...scenes(4), LAYOUT_SMALL, LAYOUT_LARGE], sceneDetails: [SMALL_DETAIL, LARGE_DETAIL] }));
   assert.equal(both.tight, false, "nothing missing: nothing to hold back, even when CamFrame is full");
   assert.equal(layoutNote(both), "");
+});
+
+test("layoutResizedWords: the 1.5 times sum, reworded when it would pass CamFrame's largest camera", () => {
+  const row = (smallSize) => layoutPlan(api2({ smallSize, scenes: ["Live right large"], sceneDetails: [LARGE_DETAIL] })).rows[1];
+  assert.equal(layoutResizedWords(row(300), 300), "Saved at 432 px; 1.5 × today's small camera would be 450 px. Replace it?");
+  assert.equal(row(500).scene.size, 640, "CamFrame's largest");
+  assert.equal(layoutResizedWords(row(500), 500), "Saved at 432 px; 1.5 × today's small camera is more than CamFrame allows, so the largest it can be is 640 px. Replace it?");
+  assert.match(layoutResizedWords(row(426), 426), /would be 639 px/, "just under the limit the sum is still true");
+  assert.match(layoutResizedWords(row(427), 427), /more than CamFrame allows/, "427 × 1.5 is past 640");
 });
