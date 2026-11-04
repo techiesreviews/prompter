@@ -73,7 +73,7 @@ const LINE_DEFAULT = 0.34; // the reading line, as a share of the window height 
 const LINE_MIN = 0.08;
 const LINE_MAX = 0.75; // clear of the control bar and its notices
 const WIDTHS = ["narrow", "medium", "full"];
-const SPACINGS = ["compact", "roomy", "spacious"];
+const SPACINGS = ["normal", "roomy", "spacious"];
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -979,15 +979,18 @@ function setWidth(name) {
   store.set("prompter-width", w);
 }
 
-// Line spacing: more room between the lines; the line at the reading line stays there.
+// Line spacing: more room between the lines; the line at the reading line
+// stays there (with Follow my voice on, the line being read goes to it).
 function setSpacing(name) {
-  const v = SPACINGS.includes(name) ? name : "compact";
-  const keep = [...main.querySelectorAll("p")].find((p) => p.getBoundingClientRect().bottom > readingLineY());
+  const v = SPACINGS.includes(name) ? name : "normal";
+  const cur = voiceOn && main.querySelector("p.cur");
+  const keep = cur || [...main.querySelectorAll("p")].find((p) => p.getBoundingClientRect().bottom > readingLineY());
   const before = keep?.getBoundingClientRect().top;
   root.dataset.spacing = v;
   spacingInputs.forEach((input) => { input.checked = input.value === v; });
   store.set("prompter-spacing", v);
-  if (keep) window.scrollBy(0, keep.getBoundingClientRect().top - before);
+  if (cur) window.scrollTo({ top: cur.getBoundingClientRect().top + window.scrollY - readingLineY() + 2 });
+  else if (keep) window.scrollBy(0, keep.getBoundingClientRect().top - before);
 }
 
 function goSection(delta) {
