@@ -144,7 +144,7 @@ export function layoutPlan(status) {
   const missing = rows.filter((r) => r.state === "missing").map((r) => r.scene);
   const has = names.length;
   const limit = status.sceneLimit;
-  const ok = has + missing.length <= limit;
+  const ok = !missing.length || has + missing.length <= limit;
   return {
     smallSize,
     largeSize: wants[1].size,
@@ -170,5 +170,29 @@ export function layoutRoomWords(room) {
   if (room.ok) return "";
   const scenes = (n) => `${n} Scene${n === 1 ? "" : "s"}`;
   const over = room.has + room.need - room.limit;
-  return `CamFrame keeps at most ${scenes(room.limit)} and has ${room.has}; the layouts need ${room.need} more. Delete ${scenes(over)} you do not use in CamFrame, then open Camera layouts again. Nothing was saved.`;
+  return `No room to save what is missing: CamFrame keeps at most ${scenes(room.limit)} and has ${room.has}, and ${room.need} more ${room.need === 1 ? "is" : "are"} needed. Delete ${scenes(over)} you do not use in CamFrame, then open Camera layouts again.`;
+}
+
+/** What a save leaves, in plain words: "saved" only when both layouts are ready. */
+export function layoutResultWords(plan) {
+  if (plan.done) return "Camera layouts saved in CamFrame.";
+  const left = plan.rows.filter((r) => r.state !== "ready").map((r) => `${r.name} ${r.state === "different" ? "needs Replace" : "is not saved"}`);
+  return `Camera layouts: ${left.join("; ")}.`;
+}
+
+/**
+ * A copy of `status` with the Scenes CamFrame just said yes to (each answer's
+ * `scene`), added or replaced in place: what the rows show when the status
+ * read after a save missed.
+ */
+export function layoutsWithSaved(status, scenes) {
+  const names = [...status.scenes];
+  const details = [...status.sceneDetails];
+  for (const scene of scenes) {
+    const at = names.findIndex((n) => sameName(n, scene.name));
+    if (at >= 0) names[at] = scene.name; else names.push(scene.name);
+    const inDetails = details.findIndex((d) => sameName(d.name, scene.name));
+    if (inDetails >= 0) details[inDetails] = scene; else details.push(scene);
+  }
+  return { ...status, scenes: names, sceneDetails: details };
 }
