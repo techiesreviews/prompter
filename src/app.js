@@ -980,11 +980,11 @@ function setWidth(name) {
 }
 
 // Line spacing: more room between the lines; the row at the reading line stays there.
-// Only while Follow my voice is moving to the next line (a smooth scroll under way) does that line
-// (the line being read) go to the reading line instead.
+// Only while Follow my voice's own move is in progress (until its scrollend, or 2 s if none comes)
+// does the line being read go to the reading line instead.
 function setSpacing(name) {
   const v = SPACINGS.includes(name) ? name : "normal";
-  // Otherwise keep what is under the reading line, as with Follow my voice off.
+  // With no voice move in progress, keep what is under the reading line, as with Follow my voice off.
   const y = readingLineY();
   const cur = voiceOn && voiceScrolling ? main.querySelector("p.cur") : null;
   const lines = [...main.querySelectorAll("p, .mark, .links")];
