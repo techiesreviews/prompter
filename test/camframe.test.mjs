@@ -209,9 +209,15 @@ test("layoutPlan: what is saved, what is missing, what differs, and whether ther
   assert.equal(other.done, false);
 
   // A small size that is not 288: the large one is 1.5 times it, and an older 432 Scene now differs.
+  const smallOf300 = { smallSize: 300, scenes: ["Live small corner", "Live right large"], sceneDetails: [{ ...SMALL_DETAIL, size: 300 }, { ...LARGE_DETAIL, position: "left" }] };
+  assert.equal(layoutPlan(api2(smallOf300)).rows[1].state, "different", "another place is not only a size change");
+  assert.equal(layoutPlan(api2({ ...smallOf300, sceneDetails: [SMALL_DETAIL, { ...LARGE_DETAIL, kind: "snapshot" }] })).rows[1].state, "different", "a snapshot Scene is not this layout");
+  assert.equal(layoutPlan(api2({ ...smallOf300, sceneDetails: [SMALL_DETAIL, { ...LARGE_DETAIL, followsSmallSize: true }] })).rows[1].state, "different");
   const bigger = layoutPlan(api2({ smallSize: 300, scenes: ["Live small corner", "Live right large"], sceneDetails: [{ ...SMALL_DETAIL, size: 300 }, LARGE_DETAIL] }));
   assert.equal(bigger.largeSize, 450);
-  assert.deepEqual(bigger.rows.map((r) => r.state), ["ready", "different"]);
+  assert.deepEqual(bigger.rows.map((r) => r.state), ["ready", "resized"], "its own layout at an older size is not someone else's Scene");
+  assert.equal(bigger.rows[1].saved, 432, "what was saved");
+  assert.equal(bigger.done, true, "still saved and working, so nothing needs a look");
 });
 
 test("layoutPlan: never saves one of two and then runs out of room; blocks up front", () => {
@@ -259,6 +265,8 @@ test("layoutResultWords: says saved only when both layouts are ready, otherwise 
   const smallMissing = layoutPlan(api2({ scenes: ["Live right large"], sceneDetails: [LARGE_DETAIL] }));
   assert.equal(layoutResultWords(smallMissing), "Camera layouts: Live small corner is not saved.");
   assert.equal(layoutResultWords(layoutPlan(api2())), "Camera layouts: Live small corner is not saved; Live right large is not saved.");
+  const resizedAndMissing = layoutPlan(api2({ smallSize: 300, scenes: ["Live right large"], sceneDetails: [LARGE_DETAIL] }));
+  assert.equal(layoutResultWords(resizedAndMissing), "Camera layouts: Live small corner is not saved.", "an older size is still saved");
 });
 
 test("layoutsWithSaved: CamFrame's yes counts when the check after it missed, without changing the old status", () => {

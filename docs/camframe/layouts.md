@@ -33,6 +33,9 @@ only when he works on them.
 - A Scene with a layout's name that holds something else (a snapshot Scene, another size or place) is
   replaced only after Lex presses Replace in the window (`replace: true` for that one Scene).
   The window opens with focus on Close, so Replace and Save take a deliberate move.
+- A hand resize in CamFrame changes its small size. The large layout, saved at the older size, still
+  works and shows no dot; its row says "Saved at 432 px; 1.5 × today's small camera would be 450 px.
+  Replace it?", and only Replace changes it.
 - Spoken results: a save made by itself on connecting is not read out (that would talk over "CamFrame
   link: connected"); a problem shows as a dot on the Open menu's item and a note in the window. While
   the window is open, every result goes to a spoken status element inside it, because a modal window

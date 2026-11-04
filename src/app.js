@@ -802,7 +802,9 @@ function setCamframe(patch) {
 function seeLayouts(body) {
   // A room note follows CamFrame; a refusal's stays until both layouts are there.
   const roomNote = layouts.status && !layoutsSaving() ? layoutNote(layoutPlan(layouts.status)) : null;
-  const follows = roomNote === layouts.note;
+  const waited = roomNote === layouts.note;
+  // So does "did not answer": this is its answer.
+  const follows = waited || layouts.note === layoutProblem(null);
   layouts.status = layoutsSupported(body) ? body : null;
   const plan = layouts.status && layoutPlan(layouts.status);
   if (plan && !layoutsSaving() && (follows || plan.done)) layouts.note = layoutNote(plan);
@@ -810,7 +812,7 @@ function seeLayouts(body) {
   // Not read out: it would talk over "CamFrame link: connected" from the same check.
   if (plan && layouts.auto !== camframe.session) saveLayouts({ quiet: true });
   // Room was made in CamFrame with the window open, saying it waited for that.
-  else if (plan && follows && roomNote && layoutsDialog.open && plan.auto.length) saveLayouts();
+  else if (plan && waited && roomNote && layoutsDialog.open && plan.auto.length) saveLayouts();
 }
 
 async function openLayouts() {
@@ -854,7 +856,7 @@ async function saveLayouts({ replace = "", quiet = false, deliberate = false } =
   const plan = layoutPlan(layouts.status);
   layouts.auto = session;
   const todo = replace
-    ? plan.rows.filter((r) => r.name === replace && r.state === "different").map((r) => ({ ...r.scene, replace: true }))
+    ? plan.rows.filter((r) => r.name === replace && (r.state === "different" || r.state === "resized")).map((r) => ({ ...r.scene, replace: true }))
     : deliberate ? plan.save : plan.auto;
   if (!replace) layouts.note = layoutNote(plan);
   if (!todo.length) {
@@ -894,7 +896,7 @@ async function saveLayouts({ replace = "", quiet = false, deliberate = false } =
   const states = after ? todo.map((scene) => after.rows.find((r) => r.name === scene.name)?.state) : [];
   // A Scene saved under the same name meanwhile shows as different, with Replace: that row says it.
   // A Replace counts only once that row is ready.
-  if (states.length && states.every((st) => st === "ready" || (!replace && st === "different"))) problem = "";
+  if (states.length && states.every((st) => st === "ready" || (!replace && (st === "different" || st === "resized")))) problem = "";
   else if (!problem) problem = body ? "CamFrame did not keep the layouts. Open Camera layouts again to try once more." : layoutProblem(null);
   // The room note stays while a missing layout still has no room, also after a Replace worked.
   layouts.note = problem || (after ? layoutNote(after) : "");
@@ -917,13 +919,14 @@ function showLayouts() {
   const attention = Boolean(layouts.note) || plan.rows.some((r) => r.state === "different" || (r.state === "missing" && !layoutsSaving()));
   layoutsItem.querySelector(".layouts-dot").hidden = !attention;
   layoutsItem.setAttribute("aria-label", attention ? "Camera layouts: needs a look" : "Camera layouts");
+  const large = plan.rows.find((r) => r.name === LAYOUT_LARGE);
   layoutsDialog.querySelector(".layouts-size").textContent =
-    `Small camera: ${plan.smallSize} px, as CamFrame has it now; the Prompter never changes it. Live small corner follows it; Live right large is ${plan.largeSize} px.`;
+    `Small camera: ${plan.smallSize} px, as CamFrame has it now; the Prompter never changes it. Live small corner follows it; Live right large is ${large.state === "resized" ? `saved at ${large.saved}` : plan.largeSize} px.`;
   // Rows are rebuilt only when a row's state changes, so a status check every 10 s or a save
   // under way keeps focus on Replace; a focused Replace that goes away hands focus to Close,
   // never to another Replace.
   const closeBtn = layoutsDialog.querySelector('[data-action="close-dialog"]');
-  const key = plan.rows.map((r) => r.state).join();
+  const key = plan.rows.map((r) => [r.state, r.saved, r.scene.size].join("/")).join();
   const list = layoutsDialog.querySelector(".layouts-rows");
   if (list.dataset.key !== key) {
     const hadFocus = list.contains(document.activeElement);
@@ -950,7 +953,12 @@ function showLayouts() {
 }
 
 function layoutRows(plan) {
-  const words = { ready: "Saved in CamFrame", missing: "Not saved yet", different: "CamFrame has a different Scene with this name. Replace it with this layout?" };
+  const words = (r) => ({
+    ready: "Saved in CamFrame",
+    missing: "Not saved yet",
+    different: "CamFrame has a different Scene with this name. Replace it with this layout?",
+    resized: `Saved at ${r.saved} px; 1.5 × today's small camera would be ${r.scene.size} px. Replace it?`,
+  })[r.state];
   return plan.rows.map((r) => {
     const li = document.createElement("li");
     li.dataset.state = r.state;
@@ -958,10 +966,11 @@ function layoutRows(plan) {
     name.className = "layout-name";
     name.textContent = r.name;
     const state = document.createElement("span");
-    state.className = r.state === "different" ? "layout-state layout-ask" : "layout-state";
-    state.textContent = words[r.state];
+    const asks = r.state === "different" || r.state === "resized";
+    state.className = asks ? "layout-state layout-ask" : "layout-state";
+    state.textContent = words(r);
     li.append(name, state);
-    if (r.state === "different") {
+    if (asks) {
       const yes = document.createElement("button");
       yes.className = "btn layout-replace";
       yes.type = "button";
