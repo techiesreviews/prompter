@@ -21,7 +21,9 @@ only when he works on them.
 
 - Only with a CamFrame that answers `"api": 2` (or later) with its full Scene list. With an older
   CamFrame, or a `file://` copy, nothing changes and the Open menu has no Camera layouts item.
-- When CamFrame connects, it saves the missing layouts by itself, once per link session, small first.
+- When CamFrame connects, it saves the missing layouts by itself, once per link session, small first,
+  as long as that leaves one spare slot. A save that would fill CamFrame waits for Save in the window,
+  which says so: the next Scene saved by hand there would drop its oldest.
   It never sends `replace` or `apply` on its own, saving sends no cue (cue lines still send theirs), and never calls
   `/camframe/small-size`: the small size is whatever CamFrame has now, shown in the window.
 - Room: CamFrame keeps at most `sceneLimit` (6) Scenes, shared with Lex's own. When the missing
@@ -30,6 +32,7 @@ only when he works on them.
   what is left.
 - A Scene with a layout's name that holds something else (a snapshot Scene, another size or place) is
   replaced only after Lex presses Replace in the window (`replace: true` for that one Scene).
+  The window opens with focus on Close, so Replace and Save take a deliberate move.
 - Saves made by themselves on connecting are not read out (that would talk over "CamFrame link:
   connected"); a problem shows as a dot on the Open menu's item and a note in the window. Saves from
   the window (opening it, Replace) are read out through the status line.
