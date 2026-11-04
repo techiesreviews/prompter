@@ -679,12 +679,12 @@ export async function run({ browser, base, mode, dist, out }) {
   await (await dock(page, ".settings-btn")).click();
   await popAbove(page, "#settings", ".settings-btn", "desktop Settings");
   assert.deepEqual(await page.locator("#settings").evaluate((el) => [...el.querySelectorAll(".setting")].map((row) => row.querySelector("legend, label").textContent.trim())),
-    ["Text size", "Scroll speed", "Width"]);
+    ["Text size", "Scroll speed", "Width", "Line spacing"]);
   assert.equal(await page.locator("#settings .camframe").getAttribute("aria-pressed"), "false", "the CamFrame link is off by default");
   // Follow my voice, the main screen and the CamFrame link: big buttons side by side (icons only).
   const bigButtons = (p) => p.locator("#settings .big-toggle:not([hidden])").evaluateAll((els) => els.map((el) => [el.getAttribute("aria-label"), el.innerText.trim()]));
   assert.deepEqual(await bigButtons(page), [["Connect main screen", ""], ["CamFrame link: off", ""]], "icons only; no Follow my voice without the speech API; the main screen's and CamFrame's buttons");
-  assert.equal(await page.locator("#settings").locator("input, select, button, textarea").count(), 10, "two sliders with their value boxes, three width choices, the voice, main screen and CamFrame buttons, nothing else");
+  assert.equal(await page.locator("#settings").locator("input, select, button, textarea").count(), 13, "two sliders with their value boxes, three width and three line spacing choices, the voice, main screen and CamFrame buttons, nothing else");
   assert.equal(await page.locator("#settings .camframe-status, #settings .check-row").count(), 0, "no CamFrame status text in Settings");
   const screenBox = await page.locator("#settings .screen").boundingBox();
   const rowBox = await page.locator("#settings .big-toggles").boundingBox();
@@ -702,7 +702,21 @@ export async function run({ browser, base, mode, dist, out }) {
     el.querySelector("label").getBoundingClientRect().left - el.getBoundingClientRect().left < 20,
     Math.abs(el.querySelector(".range-value").getBoundingClientRect().right - el.getBoundingClientRect().right) < 8,
   ]);
-  assert.deepEqual(await page.locator("#settings .seg label").allTextContents(), ["Narrow", "Medium", "Full"]);
+  assert.deepEqual(await page.locator("#settings .width .seg label").allTextContents(), ["Narrow", "Medium", "Full"]);
+  assert.deepEqual(await page.locator("#settings .spacing .seg label").allTextContents(), ["Compact", "Roomy", "Spacious"]);
+  assert.equal(await page.locator('input[name="spacing"]:checked').getAttribute("value"), "compact", "a new visitor gets compact line spacing");
+  // Line spacing: more room between lines, and the line at the reading line stays put.
+  const lineGap = () => page.evaluate(() => {
+    const a = document.querySelector(".script p.say:has(+ p.say)");
+    return a.nextElementSibling.getBoundingClientRect().top - a.getBoundingClientRect().bottom;
+  });
+  const compactGap = await lineGap();
+  await page.locator('#settings .spacing .seg label:has-text("Spacious")').click();
+  const spaciousGap = await lineGap();
+  assert.ok(spaciousGap > compactGap + 20, `spacious lines sit further apart: ${compactGap} → ${spaciousGap}`);
+  await page.locator('#settings .spacing .seg label:has-text("Roomy")').click();
+  const roomyGap = await lineGap();
+  assert.ok(roomyGap > compactGap && roomyGap < spaciousGap, `roomy is in between: ${compactGap} < ${roomyGap} < ${spaciousGap}`);
   await page.locator(".size").fill("70");
   await page.locator(".speed").fill("120");
   await page.locator('#settings .seg label:has-text("Narrow")').click();
@@ -730,7 +744,8 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.deepEqual(await page.evaluate(() => [
     getComputedStyle(document.documentElement).getPropertyValue("--size").trim(),
     document.querySelector(".size").value, document.querySelector(".speed").value, document.querySelector('input[name="width"]:checked').value,
-  ]), ["70px", "70", "120", "narrow"]);
+    document.querySelector('input[name="spacing"]:checked').value, document.documentElement.dataset.spacing,
+  ]), ["70px", "70", "120", "narrow", "roomy", "roomy"]);
   await page.keyboard.press("+");
   await page.keyboard.press("]");
   assert.deepEqual(await page.evaluate(() => [document.querySelector(".size").value, document.querySelector(".speed").value]), ["74", "130"]);
@@ -743,6 +758,18 @@ export async function run({ browser, base, mode, dist, out }) {
   const fullCol = await page.locator(".script").evaluate((el) => el.getBoundingClientRect().width);
   assert.ok(fullCol > 1300, `full column is ${fullCol}px`);
   await page.locator('#settings .seg label:has-text("Medium")').click();
+  // Changing the line spacing keeps the line at the reading line where it was.
+  const atLine = () => page.evaluate(() => {
+    const y = document.querySelector(".reading-line").getBoundingClientRect().top;
+    const p = [...document.querySelectorAll(".script p")].find((el) => el.getBoundingClientRect().bottom > y);
+    return [p.textContent, Math.round(p.getBoundingClientRect().top)];
+  });
+  const lineBefore = await atLine();
+  await page.locator('#settings .spacing .seg label:has-text("Spacious")').click();
+  const lineAfter = await atLine();
+  assert.equal(lineAfter[0], lineBefore[0], "the same line is at the reading line");
+  assert.ok(Math.abs(lineAfter[1] - lineBefore[1]) <= 2, `and has not moved: ${lineBefore[1]} → ${lineAfter[1]}`);
+  await page.locator('#settings .spacing .seg label:has-text("Compact")').click();
   // Type an exact value: off the slider's step, past its end, half typed, empty, too small.
   const typed = () => page.evaluate(() => [getComputedStyle(document.documentElement).getPropertyValue("--size").trim(), document.querySelector(".size").value, document.querySelector(".size-val").value]);
   await page.locator(".size-field .range-value span").click();
