@@ -50,6 +50,9 @@
   }
   :root[data-width="narrow"] { --col: 600px; }
   :root[data-width="full"] { --col: none; }
+  /* Line spacing (Settings): extra space between lines, as a share of the text size. */
+  :root[data-spacing="roomy"] { --spacing: 0.35; }
+  :root[data-spacing="spacious"] { --spacing: 0.75; }
 
   /* Global helpers */
   * { box-sizing: border-box; }
@@ -157,7 +160,7 @@
   .title::before { content: ""; flex: none; inline-size: 0.6em; block-size: 0.6em; border-radius: 50%; background: var(--c-now); }
   .time:empty { display: none; }
   .time { flex: none; margin-inline-start: auto; color: var(--muted); background: var(--chip); border-radius: 999px; padding: 0.2em 0.7em; font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
-  .script p { margin: 0 0 0.25em; }
+  .script p { margin: 0 0 calc(0.25em + var(--size) * var(--spacing, 0)); }
   .bullet::before { content: "• "; color: var(--c-now); }
   .next { color: var(--c-next); }
   .now b { color: var(--c-now); }
@@ -173,7 +176,7 @@
   .cue { font-size: 0.56em; }
   .cue-icon { margin-inline-end: 0.35em; vertical-align: -0.12em; color: var(--c-now); }
   .cue-what { color: var(--c-say); font-weight: 700; }
-  .gap { block-size: 0.6em; }
+  .gap { block-size: calc(0.6em + var(--size) * var(--spacing, 0)); }
   /* Follow my voice: the line being read is pure white, the lines after it in
      its section a little dimmer (still AA); they fade between the two with
      the section colours above. Next: and reminder lines keep their colours. */
@@ -518,6 +521,14 @@
       <label><input type="radio" name="width" value="narrow">Narrow</label>
       <label><input type="radio" name="width" value="medium">Medium</label>
       <label><input type="radio" name="width" value="full">Full</label>
+    </div>
+  </fieldset>
+  <fieldset class="setting spacing">
+    <legend>Line spacing</legend>
+    <div class="seg">
+      <label><input type="radio" name="spacing" value="compact">Compact</label>
+      <label><input type="radio" name="spacing" value="roomy">Roomy</label>
+      <label><input type="radio" name="spacing" value="spacious">Spacious</label>
     </div>
   </fieldset>
   <div class="pop-sep" role="separator"></div>
