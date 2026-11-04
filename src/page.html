@@ -50,9 +50,11 @@
   }
   :root[data-width="narrow"] { --col: 600px; }
   :root[data-width="full"] { --col: none; }
-  /* Line spacing (Settings): extra space between lines, as a share of the text size. */
-  :root[data-spacing="roomy"] { --spacing: 0.35; }
-  :root[data-spacing="spacious"] { --spacing: 0.75; }
+  /* Line spacing (Settings): taller lines (also inside a line that wraps) and
+     extra space between script lines, as a share of the text size. */
+  :root { --line-height: 1.3; --line-room: 0; }
+  :root[data-spacing="roomy"] { --line-height: 1.5; --line-room: 0.2; }
+  :root[data-spacing="spacious"] { --line-height: 1.7; --line-room: 0.45; }
 
   /* Global helpers */
   * { box-sizing: border-box; }
@@ -145,7 +147,7 @@
   .script {
     box-sizing: content-box; max-inline-size: var(--col); margin-inline: auto;
     padding: calc(var(--line) + 10px) 4vw max(70vh, calc(100vh - var(--line)));
-    font: 600 var(--size)/1.3 var(--font-body); letter-spacing: -0.01em; text-align: start;
+    font: 600 var(--size)/var(--line-height) var(--font-body); letter-spacing: -0.01em; text-align: start;
   }
   .section {
     --c-say: var(--dim); --c-ql: var(--ql-dim); --c-next: var(--next-dim); --c-now: var(--dim); --c-link: var(--dim);
@@ -160,7 +162,7 @@
   .title::before { content: ""; flex: none; inline-size: 0.6em; block-size: 0.6em; border-radius: 50%; background: var(--c-now); }
   .time:empty { display: none; }
   .time { flex: none; margin-inline-start: auto; color: var(--muted); background: var(--chip); border-radius: 999px; padding: 0.2em 0.7em; font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
-  .script p { margin: 0 0 calc(0.25em + var(--size) * var(--spacing, 0)); }
+  .script p { margin: 0 0 calc(0.25em + var(--size) * var(--line-room)); }
   .bullet::before { content: "• "; color: var(--c-now); }
   .next { color: var(--c-next); }
   .now b { color: var(--c-now); }
@@ -176,7 +178,7 @@
   .cue { font-size: 0.56em; }
   .cue-icon { margin-inline-end: 0.35em; vertical-align: -0.12em; color: var(--c-now); }
   .cue-what { color: var(--c-say); font-weight: 700; }
-  .gap { block-size: calc(0.6em + var(--size) * var(--spacing, 0)); }
+  .gap { block-size: calc(0.6em + var(--size) * var(--line-room)); }
   /* Follow my voice: the line being read is pure white, the lines after it in
      its section a little dimmer (still AA); they fade between the two with
      the section colours above. Next: and reminder lines keep their colours. */
@@ -327,13 +329,14 @@
   @media (hover: hover) and (pointer: fine) { .item:hover { background: var(--panel-2); } }
   @media (pointer: coarse) { .item { min-block-size: 44px; } } /* Disconnect MCP and the rest: 44px targets on phones */
   .pop-sep { block-size: 1px; margin: 6px 4px; background: var(--border); }
-  .settings-pop { inline-size: 340px; padding: 16px 16px 14px; }
+  .settings-pop { inline-size: 340px; padding: 16px 16px 14px; max-block-size: calc(100dvh - 96px); overflow-y: auto; } /* a short screen scrolls it */
   .setting + .setting { margin-block-start: 16px; }
   .range-field + .range-field { margin-block-start: 8px; }
   .setting legend { padding: 0; margin: 0 0 6px; font-weight: 600; font-size: 14px; }
   fieldset.setting { margin-inline: 0; padding: 0; border: 0; }
   .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; padding: 3px; background: var(--bg); border-radius: var(--radius); }
   .seg label { position: relative; display: grid; place-items: center; min-block-size: 36px; padding: 0 6px; border-radius: 8px; font-size: 14px; font-weight: 600; color: var(--muted); cursor: pointer; }
+  @media (pointer: coarse) { .seg label { min-block-size: 44px; } }
   .seg input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
   .seg label:has(input:checked) { color: var(--text); background: var(--chip); }
   .seg label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -526,7 +529,7 @@
   <fieldset class="setting spacing">
     <legend>Line spacing</legend>
     <div class="seg">
-      <label><input type="radio" name="spacing" value="compact">Compact</label>
+      <label><input type="radio" name="spacing" value="normal">Normal</label>
       <label><input type="radio" name="spacing" value="roomy">Roomy</label>
       <label><input type="radio" name="spacing" value="spacious">Spacious</label>
     </div>
