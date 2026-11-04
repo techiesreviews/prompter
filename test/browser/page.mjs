@@ -801,6 +801,8 @@ export async function run({ browser, base, mode, dist, out }) {
   // the section stays the active one and nothing moves under the line.
   await (await dock(page, ".next")).click();
   await page.waitForTimeout(400);
+  await (await dock(page, ".settings-btn")).click();
+  await page.locator("#settings:popover-open").waitFor();
   const secState = () => page.evaluate(() => {
     const a = document.querySelector(".section.active");
     return [a.dataset.i, Math.round(a.getBoundingClientRect().top - document.querySelector(".reading-line").getBoundingClientRect().top)];
