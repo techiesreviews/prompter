@@ -127,7 +127,8 @@ const camframe = { on: store.get(CAMFRAME_KEY) === "on", state: "off", timer: 0,
 // `quiet` is the running save's: a save from the window during one on connect makes it read out.
 // `busy` is the link session a save runs for (-1: none), so a save left from before the link was
 // turned off and on never holds up the new session's.
-const layouts = { status: null, busy: -1, auto: -1, note: "", quiet: false };
+// `saving` names the Scenes that save is sending.
+const layouts = { status: null, busy: -1, auto: -1, note: "", quiet: false, saving: [] };
 const layoutsSaving = () => layouts.busy === camframe.session;
 
 // ---------- Opening scripts ----------
@@ -848,38 +849,43 @@ async function saveLayouts({ replace = "", quiet = false } = {}) {
     return;
   }
   layouts.busy = session;
+  layouts.saving = todo.map((scene) => scene.name);
   layouts.note = "";
+  camframe.seq++; // a status check sent before this save says nothing about after it
   showLayouts();
   say(`Saving camera layouts in CamFrame. Small camera: ${plan.smallSize} px.`);
   let problem = "";
-  let answered = 0;
+  const yes = []; // what CamFrame said it saved
   for (const scene of todo) {
     let answer = null;
     try { answer = await camframeCall("scenes", scene); } catch { /* lost: the status says */ }
     if (!current()) { if (layouts.busy === session) layouts.busy = -1; showLayouts(); return; }
-    if (answer?.ok || answer?.body?.code === "scene-exists") { answered++; continue; } // saved meanwhile: the status says what it holds
+    if (answer?.ok && answer.body?.scene) yes.push(answer.body.scene);
+    if (answer?.ok || answer?.body?.code === "scene-exists") continue; // saved meanwhile: the status says what it holds
     problem = layoutProblem(answer);
     if (answer) break;
   }
+  camframe.seq++; // this status read is the news: a check still on its way is older
   let body = null;
   try { ({ body } = await camframeCall("status")); } catch { /* not there */ }
-  if (layouts.busy === session) layouts.busy = -1;
+  if (layouts.busy === session) { layouts.busy = -1; layouts.saving = []; }
   if (!current()) { showLayouts(); return; }
   if (body) layouts.status = layoutsSupported(body) ? body : null;
+  else {
+    // The check missed: CamFrame's yes to a save counts for now, and it checks again soon.
+    layouts.status = layoutsWithSaved(layouts.status, yes);
+    setTimeout(checkCamframe, CAMFRAME_RETRY_MS[0]);
+  }
   const after = layouts.status && layoutPlan(layouts.status);
   const states = after ? todo.map((scene) => after.rows.find((r) => r.name === scene.name)?.state) : [];
   // A Scene saved under the same name meanwhile shows as different, with Replace: that row says it.
   // A Replace counts only once that row is ready.
   if (states.length && states.every((st) => st === "ready" || (!replace && st === "different"))) problem = "";
-  // The check after missed: CamFrame said yes to each save, so trust that, and check again soon.
-  else if (!body && answered === todo.length) {
-    problem = "";
-    setTimeout(checkCamframe, CAMFRAME_RETRY_MS[0]);
-  }
-  else if (!problem) problem = "CamFrame did not keep the layouts. Open Camera layouts again to try once more.";
-  layouts.note = problem;
+  else if (!problem) problem = body ? "CamFrame did not keep the layouts. Open Camera layouts again to try once more." : layoutProblem(null);
+  // The room note stays while a missing layout still has no room, also after a Replace worked.
+  layouts.note = problem || (after ? layoutRoomWords(after.room) : "");
   if (problem) say(`Camera layouts: ${problem}`);
-  else say(states.includes("different") ? "Camera layouts: CamFrame has a different Scene with a layout's name." : "Camera layouts saved in CamFrame.");
+  else if (after) say(`${layoutResultWords(after)} ${layouts.note}`.trim());
   showLayouts();
 }
 
@@ -893,7 +899,8 @@ function showLayouts() {
     return;
   }
   const plan = layoutPlan(status);
-  const attention = Boolean(layouts.note) || plan.rows.some((r) => r.state === "different");
+  // A layout that is not saved or differs needs a look, unless it is being saved right now.
+  const attention = Boolean(layouts.note) || plan.rows.some((r) => r.state === "different" || (r.state === "missing" && !layoutsSaving()));
   layoutsItem.querySelector(".layouts-dot").hidden = !attention;
   layoutsItem.setAttribute("aria-label", attention ? "Camera layouts: needs a look" : "Camera layouts");
   layoutsDialog.querySelector(".layouts-size").textContent =
@@ -909,8 +916,12 @@ function showLayouts() {
     if (hadFocus) (list.querySelector(".layout-replace") || layoutsDialog.querySelector('[data-action="close-dialog"]')).focus();
   }
   for (const row of list.children) {
-    if (row.dataset.state === "missing") row.querySelector(".layout-state").textContent = layoutsSaving() ? "Saving…" : "Not saved yet";
-    row.querySelector(".layout-replace")?.setAttribute("aria-disabled", String(layoutsSaving())); // waits for the save under way
+    const sending = layoutsSaving() && layouts.saving.includes(row.querySelector(".layout-name").textContent);
+    if (row.dataset.state === "missing") row.querySelector(".layout-state").textContent = sending ? "Saving…" : "Not saved yet";
+    const yes = row.querySelector(".layout-replace");
+    if (!yes) continue;
+    yes.setAttribute("aria-disabled", String(layoutsSaving())); // waits for the save under way
+    yes.textContent = sending ? "Saving…" : "Replace";
   }
   const note = layoutsDialog.querySelector(".layouts-note");
   if (note.textContent !== layouts.note) note.textContent = layouts.note;

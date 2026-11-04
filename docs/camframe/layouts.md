@@ -24,8 +24,10 @@ only when he works on them.
 - When CamFrame connects, it saves the missing layouts by itself, once per link session, small first.
   It never sends `replace` or `apply` on its own, saving sends no cue (cue lines still send theirs), and never calls
   `/camframe/small-size`: the small size is whatever CamFrame has now, shown in the window.
-- Room: CamFrame keeps at most `sceneLimit` (6) Scenes, shared with Lex's own. When both missing
-  layouts do not fit, nothing is saved and the window says how many Scenes to delete in CamFrame.
+- Room: CamFrame keeps at most `sceneLimit` (6) Scenes, shared with Lex's own. When the missing
+  layouts do not all fit, none is saved and the window says how many Scenes to delete in CamFrame.
+  The window and its read-out say "saved" only when both layouts are ready; otherwise they name
+  what is left.
 - A Scene with a layout's name that holds something else (a snapshot Scene, another size or place) is
   replaced only after Lex presses Replace in the window (`replace: true` for that one Scene).
 - Saves made by themselves on connecting are not read out (that would talk over "CamFrame link:
