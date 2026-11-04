@@ -56,6 +56,7 @@ const pasteDialog = $(".paste-dialog");
 const fileInput = $(".file-input");
 const continueBtn = $(".continue");
 const widthInputs = document.querySelectorAll('input[name="width"]');
+const spacingInputs = document.querySelectorAll('input[name="spacing"]');
 const toastEl = $(".toast");
 const toastText = $(".toast-text");
 const camframeBtn = $(".big-toggle.camframe"); // in Settings
@@ -72,6 +73,7 @@ const LINE_DEFAULT = 0.34; // the reading line, as a share of the window height 
 const LINE_MIN = 0.08;
 const LINE_MAX = 0.75; // clear of the control bar and its notices
 const WIDTHS = ["narrow", "medium", "full"];
+const SPACINGS = ["compact", "roomy", "spacious"];
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -977,6 +979,17 @@ function setWidth(name) {
   store.set("prompter-width", w);
 }
 
+// Line spacing: more room between the lines; the line at the reading line stays there.
+function setSpacing(name) {
+  const v = SPACINGS.includes(name) ? name : "compact";
+  const keep = [...main.querySelectorAll("p")].find((p) => p.getBoundingClientRect().bottom > readingLineY());
+  const before = keep?.getBoundingClientRect().top;
+  root.dataset.spacing = v;
+  spacingInputs.forEach((input) => { input.checked = input.value === v; });
+  store.set("prompter-spacing", v);
+  if (keep) window.scrollBy(0, keep.getBoundingClientRect().top - before);
+}
+
 function goSection(delta) {
   const els = main.querySelectorAll(".section");
   const target = els[Math.min(els.length - 1, Math.max(0, active + delta))];
@@ -1242,6 +1255,7 @@ voiceBtn.addEventListener("click", toggleVoice);
 $(".prev").addEventListener("click", () => goSection(-1));
 $(".next").addEventListener("click", () => goSection(1));
 widthInputs.forEach((input) => input.addEventListener("change", () => setWidth(input.value)));
+spacingInputs.forEach((input) => input.addEventListener("change", () => setSpacing(input.value)));
 camframeBtn.addEventListener("click", () => setCamframeOn(!camframe.on));
 $("#settings").addEventListener("toggle", (e) => { if (e.newState === "open") checkCamframe(); });
 main.addEventListener("click", (e) => {
@@ -1324,5 +1338,6 @@ setLine(store.get(LINE_KEY));
 setSpeed(speed);
 setSize(Number(store.get("prompter-size")) || (window.innerWidth < 640 ? 32 : 52));
 setWidth(store.get("prompter-width") || "medium");
+setSpacing(store.get("prompter-spacing"));
 setCamframeOn(camframe.on);
 route();
