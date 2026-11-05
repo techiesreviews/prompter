@@ -813,6 +813,7 @@ function seeLayouts(body) {
   layouts.openMissed = false;
   const wasOpen = layoutsDialog.open;
   layouts.status = layoutsSupported(body) ? body : null;
+  if (!layouts.status) layouts.note = ""; // an older CamFrame: no note about what it holds
   const plan = layouts.status && layoutPlan(layouts.status);
   if (plan && !layoutsSaving()) {
     // Notes about what CamFrame holds go when it no longer does.
@@ -925,7 +926,7 @@ async function saveLayouts({ replace = "", quiet = false, deliberate = false } =
   if (layouts.busy === session) { layouts.busy = -1; layouts.saving = []; }
   layouts.stamp++;
   if (!current()) { showLayouts(); return; }
-  if (body) layouts.status = layoutsSupported(body) ? body : null;
+  if (body) { layouts.status = layoutsSupported(body) ? body : null; layouts.openMissed = false; }
   // The read missed: CamFrame's yes to a save counts for now (unless it answers as an older one by now).
   else if (layouts.status) layouts.status = layoutsWithSaved(layouts.status, yes);
   afterCheck(body); // this read is a check like any other: a miss checks again soon, an answer ends reconnecting
@@ -970,7 +971,9 @@ function offersSave(plan) {
 // CamFrame (Save is shown for it, so its warning always is). It follows CamFrame, so a line goes by
 // itself when it no longer holds.
 function shownNote(plan) {
-  const full = plan.tight && !layoutsSaving() && layouts.note !== layoutNote(plan) ? layoutNote(plan) : "";
+  // (Also when there is no room at all beside the Replace note; a refusal's note stays as it is.)
+  const waits = plan.tight || (!plan.room.ok && layouts.note === LAYOUT_REPLACE_NOT_TAKEN);
+  const full = waits && !layoutsSaving() && layouts.note !== layoutNote(plan) ? layoutNote(plan) : "";
   return [layouts.note, offersSave(plan) ? layoutGoneWords(plan) : "", full].filter(Boolean).join(" ");
 }
 
