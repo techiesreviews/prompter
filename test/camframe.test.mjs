@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CAMFRAME_MISSES, CAMFRAME_ORIGIN, CAMFRAME_RETRY_MS, camframeAfterCheck, camframeCall, cueCrossing, cueRest, cueWords, LAYOUT_LARGE, LAYOUT_NOT_KEPT, LAYOUT_REPLACE_NOT_TAKEN, LAYOUT_SMALL, layoutMatches, layoutNote, layoutPlan, layoutProblem, layoutResizedWords, layoutResultWords, layoutRoomWords, layoutsWithSaved, layoutsSupported, layoutWants } from "../src/camframe.mjs";
+import { CAMFRAME_MISSES, CAMFRAME_ORIGIN, CAMFRAME_RETRY_MS, camframeAfterCheck, camframeCall, cueCrossing, cueRest, cueWords, LAYOUT_LARGE, LAYOUT_NOT_KEPT, LAYOUT_OLDER_CAMFRAME, LAYOUT_REPLACE_NOT_TAKEN, LAYOUT_SMALL, layoutGoneWords, layoutMatches, layoutNote, layoutPlan, layoutProblem, layoutResizedWords, layoutResultWords, layoutRoomWords, layoutsWithSaved, layoutsSupported, layoutWants } from "../src/camframe.mjs";
 import { check, classify, faceCue, FACE_SPOTS, formatGuide, parse } from "../src/core.mjs";
 
 test("faceCue: Lex's existing cue lines still work", () => {
@@ -240,8 +240,18 @@ test("layoutProblem: CamFrame's refusals and a missed call in plain words", () =
   assert.match(layoutProblem({ ok: false, body: { error: "Not allowed." } }), /CamFrame refused: Not allowed\./, "anything else: CamFrame's own words");
   assert.match(layoutProblem({ ok: false, body: {} }), /CamFrame refused/);
   assert.match(layoutProblem(null), /CamFrame did not answer/);
-  assert.equal(LAYOUT_NOT_KEPT, "A layout is still not saved in CamFrame. Open Camera layouts again to try once more.", "said when a layout is really missing, also beside one that did save");
-  assert.equal(LAYOUT_REPLACE_NOT_TAKEN, "CamFrame did not take the Replace. Press Replace to try once more.", "a Replace: what it had stays saved, and opening the window would not try again");
+  assert.equal(LAYOUT_NOT_KEPT, "A layout is still not saved in CamFrame. Press Save if it shows; otherwise open Camera layouts again to try once more.", "said when a layout is really missing, also beside one that did save");
+  assert.equal(LAYOUT_REPLACE_NOT_TAKEN, "CamFrame still shows the old Scene after the Replace. Press Replace to try once more.", "a Replace: what it had stays saved, and opening the window would not try again");
+});
+
+test("layoutGoneWords and LAYOUT_OLDER_CAMFRAME: true whatever CamFrame holds, and no claim about a save", () => {
+  const plan = (details) => layoutPlan({ api: 2, scenes: details.map((d) => d.name), sceneDetails: details, sceneLimit: 6, smallSize: 288 });
+  const small = { name: "Live small corner", kind: "layout", size: 288, followsSmallSize: true, position: "bottom-right" };
+  const large = { name: "Live right large", kind: "layout", size: 432, followsSmallSize: false, position: "right", withinRight: 0.3 };
+  assert.equal(layoutGoneWords(plan([small])), "CamFrame does not have Live right large. Press Save to save it again.");
+  assert.equal(layoutGoneWords(plan([])), "CamFrame does not have Live small corner or Live right large. Press Save to save them again.");
+  assert.equal(layoutGoneWords(plan([large])), "CamFrame does not have Live small corner. Press Save to save it again.", "only what is missing is named");
+  assert.doesNotMatch(LAYOUT_OLDER_CAMFRAME, /still not saved|did not take/, "an older CamFrame: nobody knows what it holds");
 });
 
 test("layoutRoomWords: how many Scenes to delete in CamFrame, true also after another layout was saved", () => {
