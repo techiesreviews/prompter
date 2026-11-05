@@ -825,7 +825,7 @@ function seeLayouts(body) {
     if (noAnswer && !opening && !layouts.note && plan.rows.some((r) => r.state === "missing")) layouts.note = LAYOUT_NOT_KEPT;
   }
   showLayouts();
-  if (wasOpen && !layoutsDialog.open && !layouts.status) setStatus(LAYOUT_OLDER_CAMFRAME); // the window closed: said on the page
+  if (wasOpen && !layoutsDialog.open && !layouts.status) showAlert(LAYOUT_OLDER_CAMFRAME); // the window closed: said on the page
   // Not read out: it would talk over "CamFrame link: connected" from the same check.
   if (plan && layouts.auto !== camframe.session) saveLayouts({ quiet: true });
   // With the window open: this answer stands in for its opening read, or room was made in CamFrame, as its note asked.
@@ -871,6 +871,7 @@ async function openLayouts() {
     return;
   }
   layouts.status = layoutsSupported(body) ? body : null;
+  if (!layouts.status) layouts.note = ""; // an older CamFrame: no note about what it holds
   saveLayouts();
 }
 
@@ -886,7 +887,7 @@ async function saveLayouts({ replace = "", quiet = false, deliberate = false } =
   if (!layouts.status) {
     const wasOpen = layoutsDialog.open;
     showLayouts();
-    if (wasOpen && !layoutsDialog.open) setStatus(LAYOUT_OLDER_CAMFRAME); // CamFrame answers as an older version: the window closed
+    if (wasOpen && !layoutsDialog.open) showAlert(LAYOUT_OLDER_CAMFRAME); // CamFrame answers as an older version: the window closed
     return;
   }
   layouts.quiet = quiet;
@@ -931,14 +932,13 @@ async function saveLayouts({ replace = "", quiet = false, deliberate = false } =
   if (body) { layouts.status = layoutsSupported(body) ? body : null; layouts.openMissed = false; }
   // The read missed: CamFrame's yes to a save counts for now (unless it answers as an older one by now).
   else if (layouts.status) layouts.status = layoutsWithSaved(layouts.status, yes);
-  const windowOpen = layoutsDialog.open; // this read's own check may close it (an older CamFrame)
   afterCheck(body); // this read is a check like any other: a miss checks again soon, an answer ends reconnecting
   if (!layouts.status) {
     // CamFrame answered as an older version meanwhile (this read or a check): nobody knows what it holds, and the
-    // window closes (only the status line, heard by screen readers, says it; a lost read must not replace that).
+    // window closes, with a note on the page that says why (it stays until dismissed, so saying it again is harmless).
     layouts.note = "";
     showLayouts();
-    if (windowOpen && !layouts.quiet) setStatus(LAYOUT_OLDER_CAMFRAME);
+    if (!layouts.quiet) showAlert(LAYOUT_OLDER_CAMFRAME); // also when a check closed the window first: it said it, and a lost read must not replace it with other words
     return;
   }
   const after = layouts.status && layoutPlan(layouts.status);
