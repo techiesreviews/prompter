@@ -206,7 +206,7 @@ export function layoutNote(plan) {
 /** A layout that went missing while the window is open (deleted in CamFrame): nothing saves it by itself now, so Save is offered. */
 export function layoutGoneWords(plan) {
   const names = plan.rows.filter((r) => r.state === "missing").map((r) => r.name);
-  return `CamFrame does not have ${names.join(" or ")}. Press Save to save ${names.length === 1 ? "it" : "them"} again.`;
+  return `CamFrame does not have ${names.join(" or ")}. Press Save to save ${names.length === 1 ? "it" : "them"}.`;
 }
 
 /** A layout saved at an older size, in plain words: the 1.5 times sum, or CamFrame's limit when that passes it. */

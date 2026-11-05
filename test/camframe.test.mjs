@@ -248,9 +248,9 @@ test("layoutGoneWords and LAYOUT_OLDER_CAMFRAME: true whatever CamFrame holds, a
   const plan = (details) => layoutPlan({ api: 2, scenes: details.map((d) => d.name), sceneDetails: details, sceneLimit: 6, smallSize: 288 });
   const small = { name: "Live small corner", kind: "layout", size: 288, followsSmallSize: true, position: "bottom-right" };
   const large = { name: "Live right large", kind: "layout", size: 432, followsSmallSize: false, position: "right", withinRight: 0.3 };
-  assert.equal(layoutGoneWords(plan([small])), "CamFrame does not have Live right large. Press Save to save it again.");
-  assert.equal(layoutGoneWords(plan([])), "CamFrame does not have Live small corner or Live right large. Press Save to save them again.");
-  assert.equal(layoutGoneWords(plan([large])), "CamFrame does not have Live small corner. Press Save to save it again.", "only what is missing is named");
+  assert.equal(layoutGoneWords(plan([small])), "CamFrame does not have Live right large. Press Save to save it.");
+  assert.equal(layoutGoneWords(plan([])), "CamFrame does not have Live small corner or Live right large. Press Save to save them.");
+  assert.equal(layoutGoneWords(plan([large])), "CamFrame does not have Live small corner. Press Save to save it.", "only what is missing is named");
   assert.doesNotMatch(LAYOUT_OLDER_CAMFRAME, /still not saved|did not take/, "an older CamFrame: nobody knows what it holds");
 });
 
