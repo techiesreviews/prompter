@@ -129,8 +129,9 @@ const camframe = { on: store.get(CAMFRAME_KEY) === "on", state: "off", timer: 0,
 // `busy` is the link session a save runs for (-1: none), so a save left from before the link was
 // turned off and on never holds up the new session's.
 // `saving` names the Scenes that save is sending; `stamp` changes when a save starts or ends;
-// `openMissed`: the window's opening read missed, so the next answer stands in for it.
-const layouts = { status: null, busy: -1, auto: -1, note: "", quiet: false, saving: [], stamp: 0, openMissed: false };
+// `openMissed`: the window's opening read missed, so the next answer stands in for it;
+// `notTaken`: the layout the "did not take the Replace" note speaks of.
+const layouts = { status: null, busy: -1, auto: -1, note: "", quiet: false, saving: [], stamp: 0, openMissed: false, notTaken: "" };
 const layoutsSaving = () => layouts.busy === camframe.session;
 
 // ---------- Opening scripts ----------
@@ -811,7 +812,11 @@ function seeLayouts(body) {
   layouts.status = layoutsSupported(body) ? body : null;
   const plan = layouts.status && layoutPlan(layouts.status);
   if (plan && !layoutsSaving()) {
-    if (waited || noAnswer || plan.rows.every((r) => r.state === "ready")) layouts.note = layoutNote(plan);
+    // Notes about what CamFrame holds go when it no longer does.
+    const missing = plan.rows.some((r) => r.state === "missing");
+    const offersReplace = plan.rows.some((r) => r.name === layouts.notTaken && (r.state === "different" || r.state === "resized"));
+    const outdated = (layouts.note === LAYOUT_NOT_KEPT && !missing) || (layouts.note === LAYOUT_REPLACE_NOT_TAKEN && !offersReplace);
+    if (waited || noAnswer || outdated || plan.rows.every((r) => r.state === "ready")) layouts.note = layoutNote(plan);
     // A save whose answer and read were lost, and it is not there: no second try by itself, so say how to go on.
     if (noAnswer && !opening && !layouts.note && plan.rows.some((r) => r.state === "missing")) layouts.note = LAYOUT_NOT_KEPT;
   }
@@ -913,7 +918,11 @@ async function saveLayouts({ replace = "", quiet = false, deliberate = false } =
     return row?.state === "resized" && row.saved === scene.size;
   };
   if (todo.every(kept)) problem = "";
-  else if (!problem) problem = !body ? layoutProblem(null) : replace ? LAYOUT_REPLACE_NOT_TAKEN : LAYOUT_NOT_KEPT;
+  else if (!problem) {
+    const offered = after?.rows.find((r) => r.name === replace);
+    layouts.notTaken = offered && offered.state !== "missing" ? replace : "";
+    problem = !body ? layoutProblem(null) : layouts.notTaken ? LAYOUT_REPLACE_NOT_TAKEN : LAYOUT_NOT_KEPT;
+  }
   // The room note stays while a missing layout still has no room, also after a Replace worked.
   layouts.note = problem || (after ? layoutNote(after) : "");
   if (problem) say(`Camera layouts: ${problem}`);

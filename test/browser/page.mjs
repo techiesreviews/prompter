@@ -2828,6 +2828,43 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await LY.locator(".layouts-status").textContent(), `Camera layouts: ${notTaken}`);
   assert.equal((await rowStates())[1][1], "resized", "the row still says what is saved");
   cam.answer = null;
+  // That layout gets saved at today's size some other way: the note goes, and it is read out.
+  cam.layouts.details[1] = { ...cam.layouts.details[1], size: 450 };
+  await checkNow();
+  await LY.waitForFunction(() => document.querySelector(".layouts-note").hidden);
+  assert.equal(await LY.locator(".layouts-status").textContent(), "Camera layouts saved in CamFrame.");
+  await LY.keyboard.press("Escape");
+  // The Scene is deleted in CamFrame while its Replace is under way: nothing left to press, so the note says what is true.
+  cam.layouts.details = savedLayouts();
+  cam.seen.length = 0;
+  await openLayoutsLoad();
+  await openWindow();
+  await LY.waitForFunction(() => document.querySelector('.layouts-rows li[data-state="resized"]'));
+  cam.answer = (path, body) => {
+    if (path !== "/camframe/scenes") return null;
+    cam.layouts.details = cam.layouts.details.filter((d) => d.name !== "Live right large");
+    return { body: { ok: true, scene: { name: body.name } } };
+  };
+  await LY.locator(".layout-replace").click();
+  await LY.waitForFunction((words) => document.querySelector(".layouts-note").textContent === words, "A layout is still not saved in CamFrame. Open Camera layouts again to try once more.");
+  assert.equal((await rowStates())[1][1], "missing");
+  assert.equal(await LY.locator(".layout-replace").count(), 0);
+  cam.answer = null;
+  await LY.keyboard.press("Escape");
+  // "Still not saved" goes as soon as nothing is missing, also with a layout at an older size.
+  cam.layouts.details = [savedLayouts()[1]];
+  cam.answer = (path, body) => (path === "/camframe/scenes" ? { body: { ok: true, scene: { name: body.name } } } : null);
+  cam.seen.length = 0;
+  await openLayoutsLoad();
+  await savesReach(1);
+  await openWindow();
+  await LY.waitForFunction((words) => document.querySelector(".layouts-note").textContent === words, "A layout is still not saved in CamFrame. Open Camera layouts again to try once more.");
+  cam.answer = null;
+  cam.layouts.details.unshift(savedLayouts()[0]);
+  await checkNow();
+  await LY.waitForFunction(() => document.querySelector(".layouts-note").hidden);
+  assert.equal(await LY.locator(".layouts-status").textContent(), "Camera layouts saved in CamFrame. Live right large is still at 432 px.");
+  assert.equal(await dotShown(), false, "saved: nothing needs a look");
   await LY.keyboard.press("Escape");
   // A lost Replace that did not land: "did not answer", then the next answer says where things stand.
   cam.seen.length = 0;
@@ -2845,6 +2882,20 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(cam.saves().length, 1, "sent once");
   await LY.keyboard.press("Escape");
   cam.layouts.smallSize = 288;
+  // A missed opening read with no room at all: the room note is read out, and nothing is saved.
+  cam.layouts.details = ["A", "B", "C", "D", "E"].map(snapshot);
+  cam.seen.length = 0;
+  await openLayoutsLoad();
+  await LY.waitForTimeout(300);
+  let missFull = true;
+  cam.answer = (path) => (path === "/camframe/status" && missFull ? ((missFull = false), { broken: true }) : null);
+  await openWindow();
+  await LY.waitForFunction(() => document.querySelector(".layouts-note").textContent.startsWith("CamFrame did not answer"));
+  cam.answer = null;
+  await checkNow();
+  await LY.waitForFunction(() => document.querySelector(".layouts-status").textContent.includes("No room to save what is missing"));
+  assert.deepEqual(cam.saves(), []);
+  await LY.keyboard.press("Escape");
   // A lost Replace that did land, and the read after it lost too: the next answer says saved.
   cam.layouts.details = [savedLayouts()[0], snapshot("Live right large")];
   cam.seen.length = 0;
