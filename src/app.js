@@ -131,8 +131,8 @@ const camframe = { on: store.get(CAMFRAME_KEY) === "on", state: "off", timer: 0,
 // `saving` names the Scenes that save is sending; `stamp` changes when a save starts or ends;
 // `openMissed`: the window's opening read missed, so the next answer stands in for it;
 // `notTaken`: the layout the "still shows the old Scene after the Replace" note speaks of.
-// `opening`: the window's opening read is under way.
-const layouts = { status: null, busy: -1, auto: -1, note: "", quiet: false, saving: [], stamp: 0, openMissed: false, notTaken: "", opening: false };
+// `opening`: the window's opening read is under way (`openSeq` numbers the reads: only the latest one ends it).
+const layouts = { status: null, busy: -1, auto: -1, note: "", quiet: false, saving: [], stamp: 0, openMissed: false, notTaken: "", opening: false, openSeq: 0 };
 const layoutsSaving = () => layouts.busy === camframe.session;
 
 // ---------- Opening scripts ----------
@@ -809,8 +809,9 @@ function seeLayouts(body) {
   const waited = roomNote === layouts.note;
   const noAnswer = layouts.note === layoutProblem(null); // so does this: here is the answer
   const opening = noAnswer && layouts.openMissed;
-  const shownBefore = layouts.status ? shownNote(layoutPlan(layouts.status)) : layouts.note;
+  const shownBefore = layoutsDialog.querySelector(".layouts-note").textContent; // what the window says now
   layouts.openMissed = false;
+  const wasOpen = layoutsDialog.open;
   layouts.status = layoutsSupported(body) ? body : null;
   const plan = layouts.status && layoutPlan(layouts.status);
   if (plan && !layoutsSaving()) {
@@ -823,6 +824,7 @@ function seeLayouts(body) {
     if (noAnswer && !opening && !layouts.note && plan.rows.some((r) => r.state === "missing")) layouts.note = LAYOUT_NOT_KEPT;
   }
   showLayouts();
+  if (wasOpen && !layoutsDialog.open && !layouts.status) setStatus(LAYOUT_OLDER_CAMFRAME); // the window closed: said on the page
   // Not read out: it would talk over "CamFrame link: connected" from the same check.
   if (plan && layouts.auto !== camframe.session) saveLayouts({ quiet: true });
   // With the window open: this answer stands in for its opening read, or room was made in CamFrame, as its note asked.
@@ -835,6 +837,7 @@ function seeLayouts(body) {
 async function openLayouts() {
   layouts.note = "";
   layouts.opening = true;
+  const read = ++layouts.openSeq;
   layouts.openMissed = false;
   if (layoutsSaving()) layouts.quiet = false; // the window is open now: read the running save's result out
   layoutsStatus.textContent = ""; // the same result next time is news again
@@ -845,10 +848,17 @@ async function openLayouts() {
   const stamp = layouts.stamp;
   let body = null;
   try { ({ body } = await camframeCall("status")); } catch { /* not there */ }
-  layouts.opening = false;
+  if (read === layouts.openSeq) layouts.opening = false;
   if (!camframe.on || camframe.session !== session) return;
-  // A save started or ended since: this answer is older than what that save reads.
-  if (layouts.stamp !== stamp || layoutsSaving()) return;
+  // A save started or ended since: this answer is older than what that save reads. What the window shows
+  // may still have changed (the Save offer, held back during the read), so draw it and say it.
+  if (layouts.stamp !== stamp || layoutsSaving()) {
+    const before = layoutsDialog.querySelector(".layouts-note").textContent;
+    showLayouts();
+    const now = layoutsDialog.querySelector(".layouts-note").textContent;
+    if (layoutsDialog.open && now && now !== before && !layoutsSaving()) setStatus(`Camera layouts: ${now}`);
+    return;
+  }
   if (!body) {
     layouts.note = layoutProblem(null);
     layouts.openMissed = true;
@@ -869,7 +879,12 @@ async function saveLayouts({ replace = "", quiet = false, deliberate = false } =
     if (replace) setStatus("Camera layouts: a save is under way. Press Replace again in a moment.");
     return;
   }
-  if (!layouts.status) { showLayouts(); return; }
+  if (!layouts.status) {
+    const wasOpen = layoutsDialog.open;
+    showLayouts();
+    if (wasOpen && !layoutsDialog.open) setStatus(LAYOUT_OLDER_CAMFRAME); // CamFrame answers as an older version: the window closed
+    return;
+  }
   layouts.quiet = quiet;
   const say = (text) => { if (!layouts.quiet) setStatus(text); };
   const session = camframe.session;
@@ -938,7 +953,7 @@ async function saveLayouts({ replace = "", quiet = false, deliberate = false } =
   // The room note stays while a missing layout still has no room, also after a Replace worked.
   layouts.note = problem || (after ? layoutNote(after) : "");
   if (problem) say(`Camera layouts: ${after ? shownNote(after) : problem}`);
-  else if (after) say(`${layoutResultWords(after)} ${layouts.note}`.trim());
+  else if (after) say(`${layoutResultWords(after)} ${shownNote(after)}`.trim()); // with the Save offer, if a layout is still missing
   showLayouts();
 }
 
