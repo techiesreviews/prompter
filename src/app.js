@@ -913,7 +913,7 @@ async function saveLayouts({ replace = "", quiet = false, deliberate = false } =
     return row?.state === "resized" && row.saved === scene.size;
   };
   if (todo.every(kept)) problem = "";
-  else if (!problem) problem = body ? LAYOUT_NOT_KEPT : layoutProblem(null);
+  else if (!problem) problem = !body ? layoutProblem(null) : replace ? LAYOUT_REPLACE_NOT_TAKEN : LAYOUT_NOT_KEPT;
   // The room note stays while a missing layout still has no room, also after a Replace worked.
   layouts.note = problem || (after ? layoutNote(after) : "");
   if (problem) say(`Camera layouts: ${problem}`);
