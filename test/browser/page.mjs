@@ -2897,6 +2897,51 @@ export async function run({ browser, base, mode, dist, out }) {
   cam.layouts.details.push({ id: "l2", name: "Live right large", kind: "layout", size: 450, followsSmallSize: false, position: "right", withinRight: 0.3 });
   await checkNow();
   await LY.waitForFunction(() => document.querySelector(".layouts-note").hidden && document.querySelector(".layouts-save").hidden);
+  // With the window closed the offer is not kept: the layout comes back, no dot, no stale "needs a look".
+  cam.layouts.details = cam.layouts.details.filter((d) => d.name !== "Live right large");
+  await checkNow();
+  await LY.waitForFunction((words) => document.querySelector(".layouts-note").textContent === words, gone);
+  await LY.keyboard.press("Escape");
+  cam.layouts.details.push({ id: "l3", name: "Live right large", kind: "layout", size: 450, followsSmallSize: false, position: "right", withinRight: 0.3 });
+  await checkNow();
+  await LY.waitForFunction(() => document.querySelector(".layouts-item").getAttribute("aria-label") === "Camera layouts");
+  assert.equal(await dotShown(), false, "no dot for a note that is gone");
+  // The offer follows CamFrame: no spare slot left gives way to the Save warning, then to the room note.
+  await openWindow();
+  cam.layouts.details = cam.layouts.details.filter((d) => d.name !== "Live right large");
+  await checkNow();
+  await LY.waitForFunction((words) => document.querySelector(".layouts-note").textContent === words, gone);
+  for (const n of ["A", "B", "C", "D"]) cam.layouts.details.push(snapshot(n));
+  await checkNow();
+  await LY.waitForFunction(() => document.querySelector(".layouts-note").textContent.startsWith("Saving what is missing would fill"));
+  assert.equal(await LY.locator(".layouts-save").isVisible(), true);
+  cam.layouts.details.push(snapshot("E"));
+  await checkNow();
+  await LY.waitForFunction(() => document.querySelector(".layouts-note").textContent.startsWith("No room to save what is missing"));
+  assert.equal(await LY.locator(".layouts-save").isHidden(), true);
+  await LY.keyboard.press("Escape");
+  // The other layout is deleted while the "still shows the old Scene" note stands: the offer stands beside it,
+  // and a Replace CamFrame does not take again leaves both.
+  cam.layouts.details = savedLayouts();
+  cam.seen.length = 0;
+  await openLayoutsLoad();
+  await openWindow();
+  await LY.waitForFunction(() => document.querySelector('.layouts-rows li[data-state="resized"]'));
+  cam.answer = (path, body) => (path === "/camframe/scenes" ? { body: { ok: true, scene: { name: body.name } } } : null);
+  await LY.locator(".layout-replace").click();
+  await LY.waitForFunction((words) => document.querySelector(".layouts-note").textContent === words, notTaken);
+  cam.layouts.details = cam.layouts.details.filter((d) => d.name !== "Live small corner");
+  await checkNow();
+  const both = `${notTaken} CamFrame does not have Live small corner. Press Save to save it again.`;
+  await LY.waitForFunction((words) => document.querySelector(".layouts-note").textContent === words, both);
+  assert.equal(await LY.locator(".layouts-save").isVisible(), true);
+  assert.equal(await LY.locator(".layouts-status").textContent(), `Camera layouts: ${both}`);
+  const repliesBefore = cam.saves().length;
+  await LY.locator(".layout-replace").click();
+  for (let t = 0; cam.saves().length === repliesBefore; t += 50) { assert.ok(t < 5000, "the second Replace was sent"); await LY.waitForTimeout(50); }
+  await LY.waitForFunction((words) => document.querySelector(".layouts-note").textContent === words && document.querySelector(".layouts-status").textContent === `Camera layouts: ${words}`, both);
+  assert.equal(await LY.locator(".layouts-save").isVisible(), true);
+  cam.answer = null;
   await LY.keyboard.press("Escape");
   // CamFrame answers as an older version right after a Replace, with the window open: it closes, and the page says
   // what is true (what CamFrame holds is not known), never "still not saved".
