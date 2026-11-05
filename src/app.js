@@ -131,8 +131,8 @@ const camframe = { on: store.get(CAMFRAME_KEY) === "on", state: "off", timer: 0,
 // `saving` names the Scenes that save is sending; `stamp` changes when a save starts or ends;
 // `openMissed`: the window's opening read missed, so the next answer stands in for it;
 // `notTaken`: the layout the "still shows the old Scene after the Replace" note speaks of.
-// `offerSave`: a layout went missing with the window open, so its note offers Save.
-const layouts = { status: null, busy: -1, auto: -1, note: "", quiet: false, saving: [], stamp: 0, openMissed: false, notTaken: "", offerSave: false };
+// `opening`: the window's opening read is under way.
+const layouts = { status: null, busy: -1, auto: -1, note: "", quiet: false, saving: [], stamp: 0, openMissed: false, notTaken: "", opening: false };
 const layoutsSaving = () => layouts.busy === camframe.session;
 
 // ---------- Opening scripts ----------
@@ -760,7 +760,7 @@ function setCamframeOn(on) {
   clearTimeout(camframe.retry);
   layouts.status = null;
   layouts.note = "";
-  layouts.offerSave = false;
+  layouts.opening = false;
   if (!on) { setCamframe({ state: "off", misses: 0 }); return; }
   setCamframe({ state: "looking", misses: 0 });
   checkCamframe();
@@ -809,7 +809,7 @@ function seeLayouts(body) {
   const waited = roomNote === layouts.note;
   const noAnswer = layouts.note === layoutProblem(null); // so does this: here is the answer
   const opening = noAnswer && layouts.openMissed;
-  const noteBefore = layouts.note;
+  const shownBefore = layouts.status ? shownNote(layoutPlan(layouts.status)) : layouts.note;
   layouts.openMissed = false;
   layouts.status = layoutsSupported(body) ? body : null;
   const plan = layouts.status && layoutPlan(layouts.status);
@@ -818,29 +818,23 @@ function seeLayouts(body) {
     const missing = plan.rows.some((r) => r.state === "missing");
     const offersReplace = plan.rows.some((r) => r.name === layouts.notTaken && (r.state === "different" || r.state === "resized"));
     const outdated = (layouts.note === LAYOUT_NOT_KEPT && !missing) || (layouts.note === LAYOUT_REPLACE_NOT_TAKEN && !offersReplace);
-    if (waited || noAnswer || outdated || plan.rows.every((r) => r.state === "ready")) { layouts.note = layoutNote(plan); layouts.offerSave = false; }
+    if (waited || noAnswer || outdated || plan.rows.every((r) => r.state === "ready")) layouts.note = layoutNote(plan);
     // A save whose answer and read were lost, and it is not there: no second try by itself, so say how to go on.
     if (noAnswer && !opening && !layouts.note && plan.rows.some((r) => r.state === "missing")) layouts.note = LAYOUT_NOT_KEPT;
-  }
-  // A layout that goes missing with the window open (deleted in CamFrame) is saved by nothing below:
-  // the note says so and Save is offered, so the window is never a dead end.
-  const savesNow = Boolean(plan) && !layoutsSaving() && (layouts.auto !== camframe.session || (layoutsDialog.open && (opening || (waited && roomNote && plan.auto.length))));
-  if (plan && !layoutsSaving() && layoutsDialog.open && !savesNow) {
-    if (plan.auto.length && (!layouts.note || layouts.offerSave)) { layouts.note = layoutGoneWords(plan); layouts.offerSave = true; }
-    else if (layouts.offerSave) { layouts.offerSave = false; layouts.note = layoutNote(plan); } // back in CamFrame, or now tight
   }
   showLayouts();
   // Not read out: it would talk over "CamFrame link: connected" from the same check.
   if (plan && layouts.auto !== camframe.session) saveLayouts({ quiet: true });
   // With the window open: this answer stands in for its opening read, or room was made in CamFrame, as its note asked.
-  else if (savesNow) saveLayouts();
-  // Any other note that changes in the open window is read out too; none left says where things stand.
-  else if (plan && layoutsDialog.open && layouts.note !== noteBefore) setStatus(layouts.note ? `Camera layouts: ${layouts.note}` : layoutResultWords(plan));
+  else if (plan && layoutsDialog.open && (opening || (waited && roomNote && plan.auto.length))) saveLayouts();
+  // Any other note that changes in the open window is read out too (also the Save offer for a layout
+  // gone from CamFrame); none left says where things stand.
+  else if (plan && layoutsDialog.open && shownNote(plan) !== shownBefore) setStatus(shownNote(plan) ? `Camera layouts: ${shownNote(plan)}` : layoutResultWords(plan));
 }
 
 async function openLayouts() {
   layouts.note = "";
-  layouts.offerSave = false;
+  layouts.opening = true;
   layouts.openMissed = false;
   if (layoutsSaving()) layouts.quiet = false; // the window is open now: read the running save's result out
   layoutsStatus.textContent = ""; // the same result next time is news again
@@ -851,6 +845,7 @@ async function openLayouts() {
   const stamp = layouts.stamp;
   let body = null;
   try { ({ body } = await camframeCall("status")); } catch { /* not there */ }
+  layouts.opening = false;
   if (!camframe.on || camframe.session !== session) return;
   // A save started or ended since: this answer is older than what that save reads.
   if (layouts.stamp !== stamp || layoutsSaving()) return;
@@ -876,7 +871,6 @@ async function saveLayouts({ replace = "", quiet = false, deliberate = false } =
   }
   if (!layouts.status) { showLayouts(); return; }
   layouts.quiet = quiet;
-  layouts.offerSave = false;
   const say = (text) => { if (!layouts.quiet) setStatus(text); };
   const session = camframe.session;
   const current = () => camframe.on && camframe.session === session;
@@ -923,7 +917,7 @@ async function saveLayouts({ replace = "", quiet = false, deliberate = false } =
     // CamFrame answers as an older version now: nobody knows what it holds, and the window closes (the page's status line says it).
     layouts.note = "";
     showLayouts();
-    setStatus(LAYOUT_OLDER_CAMFRAME);
+    if (!layouts.quiet) setStatus(LAYOUT_OLDER_CAMFRAME);
     return;
   }
   const after = layouts.status && layoutPlan(layouts.status);
@@ -943,9 +937,23 @@ async function saveLayouts({ replace = "", quiet = false, deliberate = false } =
   }
   // The room note stays while a missing layout still has no room, also after a Replace worked.
   layouts.note = problem || (after ? layoutNote(after) : "");
-  if (problem) say(`Camera layouts: ${problem}`);
+  if (problem) say(`Camera layouts: ${after ? shownNote(after) : problem}`);
   else if (after) say(`${layoutResultWords(after)} ${layouts.note}`.trim());
   showLayouts();
+}
+
+// A layout missing from CamFrame with room for it while the window is open (deleted there, say)
+// is saved by nothing by itself: Save is offered, with a line saying so, so the window is never a
+// dead end. Not during the opening read, after it missed, or beside another problem's note
+// (a refusal's stays as it is); a note that a Replace did not take stands beside it.
+function offersSave(plan) {
+  return layoutsDialog.open && !layoutsSaving() && !layouts.opening && !layouts.openMissed && plan.auto.length > 0 && (!layouts.note || layouts.note === LAYOUT_REPLACE_NOT_TAKEN);
+}
+
+// The window's note: the note, then the Save offer's line. It follows CamFrame, so it goes by itself
+// when the layout is back.
+function shownNote(plan) {
+  return [layouts.note, offersSave(plan) ? layoutGoneWords(plan) : ""].filter(Boolean).join(" ");
 }
 
 // The Open menu's item (with a dot when the window needs a look) and the window's rows.
@@ -980,7 +988,7 @@ function showLayouts() {
   // Save only for a save that would fill CamFrame, or one the note offers for a layout that went missing; never while one runs.
   const saveBtn = layoutsDialog.querySelector(".layouts-save");
   const saveFocused = document.activeElement === saveBtn;
-  saveBtn.hidden = !(plan.tight || (layouts.offerSave && plan.save.length)) || layoutsSaving();
+  saveBtn.hidden = !(plan.tight || offersSave(plan)) || layoutsSaving();
   if (saveFocused && saveBtn.hidden) closeBtn.focus();
   for (const row of list.children) {
     const sending = layoutsSaving() && layouts.saving.includes(row.querySelector(".layout-name").textContent);
@@ -991,8 +999,9 @@ function showLayouts() {
     yes.textContent = sending ? "Saving…" : "Replace";
   }
   const note = layoutsDialog.querySelector(".layouts-note");
-  if (note.textContent !== layouts.note) note.textContent = layouts.note;
-  note.hidden = !layouts.note;
+  const words = shownNote(plan);
+  if (note.textContent !== words) note.textContent = words;
+  note.hidden = !words;
 }
 
 function layoutRows(plan) {
