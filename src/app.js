@@ -848,7 +848,8 @@ async function openLayouts() {
   const stamp = layouts.stamp;
   let body = null;
   try { ({ body } = await camframeCall("status")); } catch { /* not there */ }
-  if (read === layouts.openSeq) layouts.opening = false;
+  if (read !== layouts.openSeq) return; // the window was opened again meanwhile: that read speaks
+  layouts.opening = false;
   if (!camframe.on || camframe.session !== session) return;
   // A save started or ended since: this answer is older than what that save reads. What the window shows
   // may still have changed (the Save offer, held back during the read), so draw it and say it.
@@ -965,10 +966,12 @@ function offersSave(plan) {
   return layoutsDialog.open && !layoutsSaving() && !layouts.opening && !layouts.openMissed && plan.auto.length > 0 && (!layouts.note || layouts.note === LAYOUT_REPLACE_NOT_TAKEN);
 }
 
-// The window's note: the note, then the Save offer's line. It follows CamFrame, so it goes by itself
-// when the layout is back.
+// The window's note: the note, then the Save offer's line, then the warning when saving would fill
+// CamFrame (Save is shown for it, so its warning always is). It follows CamFrame, so a line goes by
+// itself when it no longer holds.
 function shownNote(plan) {
-  return [layouts.note, offersSave(plan) ? layoutGoneWords(plan) : ""].filter(Boolean).join(" ");
+  const full = plan.tight && layouts.note !== layoutNote(plan) ? layoutNote(plan) : "";
+  return [layouts.note, offersSave(plan) ? layoutGoneWords(plan) : "", full].filter(Boolean).join(" ");
 }
 
 // The Open menu's item (with a dot when the window needs a look) and the window's rows.
