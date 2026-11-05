@@ -174,7 +174,7 @@ export function layoutPlan(status) {
 
 /** A save that CamFrame's status does not show, whatever it answered: a layout is really missing. */
 export const LAYOUT_NOT_KEPT = "A layout is still not saved in CamFrame. Open Camera layouts again to try once more.";
-/** The same for a Replace: what CamFrame had stays saved, and opening the window would not try again. */
+/** The same for a Replace whose row still offers it: what CamFrame had stays saved, and opening the window would not try again. */
 export const LAYOUT_REPLACE_NOT_TAKEN = "CamFrame did not take the Replace. Press Replace to try once more.";
 
 /** A refused save (`{ ok: false, body }`) or a missed one (null) in plain words. */
