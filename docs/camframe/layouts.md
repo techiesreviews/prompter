@@ -44,11 +44,13 @@ only when he works on them.
   has not been tried:** the browser checks read Chromium's accessibility tree, which shows the text can
   be reached, not how it sounds.
 - Notes say only what is known. A Replace whose row still offers it says CamFrame "still shows the old
-  Scene"; a layout still missing says to press Save if it shows, otherwise to open the window again. A
-  layout deleted in CamFrame while the window is open gets a line and a Save button (nothing saves it by
-  itself then; it follows CamFrame, so it goes when the layout is back, and it stands beside the Replace
-  note but not beside a refusal's or after a missed opening read). If CamFrame answers as an older version right after a save,
-  nobody knows what it holds: the window closes and the page says so, never "still not saved".
+  Scene"; a layout still missing says to press Save if it shows, otherwise to open the window again.
+  A layout deleted in CamFrame while the window is open gets a line and a Save button (nothing saves
+  it by itself then). The line follows CamFrame, so it goes when the layout is back. It stands beside
+  the Replace note, but not beside a refusal's note, during the opening read or after it missed.
+  When saving would fill CamFrame, its warning is always in the note beside Save.
+  If CamFrame answers as an older version, wherever that closes the window, nobody knows what it
+  holds: the page says so and never "still not saved".
 - A refused save stops and is said in plain words; a lost answer is not repeated blindly: the
   status is read again. Opening the Camera layouts window reads CamFrame again and saves what is
   still missing. The item shows a dot when the window needs a look.
