@@ -2952,6 +2952,11 @@ export async function run({ browser, base, mode, dist, out }) {
   await LY.waitForFunction((words) => document.querySelector(".layouts-note").textContent.startsWith(words) && document.querySelector(".layouts-note").textContent.includes("Saving what is missing would fill CamFrame"), notTaken);
   assert.equal(await LY.locator(".layouts-save").isVisible(), true);
   assert.ok((await LY.locator(".layouts-status").textContent()).includes("Saving what is missing would fill CamFrame"), "and is read out");
+  // ... and with no room at all, the room note stands beside it and Save goes.
+  cam.layouts.details.push(snapshot("E"));
+  await checkNow();
+  await LY.waitForFunction((words) => document.querySelector(".layouts-note").textContent.startsWith(words) && document.querySelector(".layouts-note").textContent.includes("No room to save what is missing"), notTaken);
+  assert.equal(await LY.locator(".layouts-save").isHidden(), true);
   cam.answer = null;
   await LY.keyboard.press("Escape");
   // A window opened on a slow read: a Replace not taken and a layout deleted meanwhile. The offer, held back
@@ -2998,6 +3003,21 @@ export async function run({ browser, base, mode, dist, out }) {
   await LY.locator(".layout-replace").click();
   await LY.waitForFunction(() => document.querySelector(".layouts-status").textContent.includes("Press Save to save it again."));
   assert.match(await LY.locator(".layouts-status").textContent(), /Live small corner is not saved\. CamFrame does not have Live small corner\. Press Save/);
+  await LY.keyboard.press("Escape");
+  // A Replace that works after a missed opening read, with the other layout gone meanwhile: the offer is there
+  // and read out without waiting for another check.
+  cam.layouts.details = savedLayouts();
+  cam.seen.length = 0;
+  await openLayoutsLoad();
+  cam.layouts.details = cam.layouts.details.filter((d) => d.name !== "Live small corner");
+  let missOpen = true;
+  cam.answer = (path) => (path === "/camframe/status" && missOpen ? ((missOpen = false), { broken: true }) : null);
+  await openWindow();
+  await LY.waitForFunction(() => document.querySelector(".layouts-note").textContent.startsWith("CamFrame did not answer"));
+  await LY.locator(".layout-replace").click();
+  await LY.waitForFunction(() => document.querySelector(".layouts-status").textContent.includes("Press Save to save it again."));
+  assert.equal(await LY.locator(".layouts-save").isVisible(), true, "Save is offered at once");
+  cam.answer = null;
   await LY.keyboard.press("Escape");
   // A refusal's note is left as it is when the other layout is then deleted: no Save offer beside it.
   cam.layouts.details = [savedLayouts()[0], snapshot("Live right large")];
@@ -3053,6 +3073,7 @@ export async function run({ browser, base, mode, dist, out }) {
   cam.answer = null;
   await checkNow();
   await LY.waitForFunction(() => !document.querySelector(".layouts-item").hidden);
+  await LY.evaluate(() => { document.querySelector(".status").textContent = ""; }); // so only this answer can bring the words back
   await openWindow();
   cam.answer = (path) => (path === "/camframe/status" ? { body: { app: "camframe", version: "old", scenes: [] } } : null);
   await checkNow();
