@@ -2470,7 +2470,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await savesReach(2);
   assert.deepEqual(cam.saves(), [SMALL, LARGE], "each sent once; the status read after says both are there");
   assert.equal(await dotShown(), false, "both there: nothing needs a look");
-  // Lost and not saved: each still sent once, and the window says CamFrame did not keep them.
+  // Lost and not saved: each still sent once, and the dot shows they are not saved.
   cam.layouts.details = [snapshot("Interview")];
   cam.answer = (path) => (path === "/camframe/scenes" ? { broken: true } : null);
   cam.seen.length = 0;
@@ -2733,7 +2733,7 @@ export async function run({ browser, base, mode, dist, out }) {
   cam.answer = (path) => { if (path === "/camframe/scenes") cam.layouts.smallSize = 320; return null; };
   await LY.locator(".layout-replace").click();
   await LY.waitForFunction(() => document.querySelector(".layouts-status").textContent === "Camera layouts saved in CamFrame. Live right large is still at 450 px.");
-  assert.equal(await LY.locator(".layouts-note").isHidden(), true, "no \"did not keep\": it did");
+  assert.equal(await LY.locator(".layouts-note").isHidden(), true, "no false failure: CamFrame kept it");
   assert.deepEqual((await rowStates())[1], ["Live right large", "resized", "Saved at 450 px; 1.5 × today's small camera would be 480 px. Replace it?"]);
   cam.answer = null;
   await LY.keyboard.press("Escape");
@@ -2813,6 +2813,38 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await LY.locator(".layouts-note").isHidden(), true);
   assert.deepEqual(cam.saves(), []);
   await LY.keyboard.press("Escape");
+  // A Replace on a layout at an older size that CamFrame says yes to but the status does not show:
+  // the layout is still saved, so the note speaks of the Replace, not of a layout not saved.
+  cam.layouts.smallSize = 300;
+  cam.layouts.details = savedLayouts();
+  cam.seen.length = 0;
+  await openLayoutsLoad();
+  await openWindow();
+  await LY.waitForFunction(() => document.querySelector('.layouts-rows li[data-state="resized"]'));
+  cam.answer = (path, body) => (path === "/camframe/scenes" ? { body: { ok: true, scene: { name: body.name } } } : null);
+  await LY.locator(".layout-replace").click();
+  const notTaken = "CamFrame did not take the Replace. Press Replace to try once more.";
+  await LY.waitForFunction((words) => document.querySelector(".layouts-note").textContent === words, notTaken);
+  assert.equal(await LY.locator(".layouts-status").textContent(), `Camera layouts: ${notTaken}`);
+  assert.equal((await rowStates())[1][1], "resized", "the row still says what is saved");
+  cam.answer = null;
+  await LY.keyboard.press("Escape");
+  // A lost Replace that did not land: "did not answer", then the next answer says where things stand.
+  cam.seen.length = 0;
+  await openLayoutsLoad();
+  await openWindow();
+  await LY.waitForFunction(() => document.querySelector('.layouts-rows li[data-state="resized"]'));
+  cam.answer = (path) => (path === "/camframe/scenes" ? { broken: true } : null);
+  await LY.locator(".layout-replace").click();
+  await LY.waitForFunction(() => document.querySelector(".layouts-note").textContent.startsWith("CamFrame did not answer"));
+  cam.answer = null;
+  await checkNow();
+  await LY.waitForFunction(() => document.querySelector(".layouts-status").textContent === "Camera layouts saved in CamFrame. Live right large is still at 432 px.");
+  assert.equal(await LY.locator(".layouts-note").isHidden(), true);
+  assert.equal((await rowStates())[1][1], "resized");
+  assert.equal(cam.saves().length, 1, "sent once");
+  await LY.keyboard.press("Escape");
+  cam.layouts.smallSize = 288;
   // A lost Replace that did land, and the read after it lost too: the next answer says saved.
   cam.layouts.details = [savedLayouts()[0], snapshot("Live right large")];
   cam.seen.length = 0;
