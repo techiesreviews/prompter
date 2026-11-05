@@ -173,9 +173,11 @@ export function layoutPlan(status) {
 }
 
 /** A save that CamFrame's status does not show, whatever it answered: a layout is really missing. */
-export const LAYOUT_NOT_KEPT = "A layout is still not saved in CamFrame. Open Camera layouts again to try once more.";
-/** The same for a Replace whose row still offers it: what CamFrame had stays saved, and opening the window would not try again. */
-export const LAYOUT_REPLACE_NOT_TAKEN = "CamFrame did not take the Replace. Press Replace to try once more.";
+export const LAYOUT_NOT_KEPT = "A layout is still not saved in CamFrame. Press Save if it shows; otherwise open Camera layouts again to try once more.";
+/** The same for a Replace whose row still offers it: what CamFrame shows is the old Scene, and opening the window would not try again. */
+export const LAYOUT_REPLACE_NOT_TAKEN = "CamFrame still shows the old Scene after the Replace. Press Replace to try once more.";
+/** CamFrame answers as an older version right after a save: nobody knows what it holds, so nothing says saved or not saved. */
+export const LAYOUT_OLDER_CAMFRAME = "Camera layouts: CamFrame now answers as an older version, so what it holds is not known. Update CamFrame to use camera layouts.";
 
 /** A refused save (`{ ok: false, body }`) or a missed one (null) in plain words. */
 export function layoutProblem(answer) {
@@ -199,6 +201,12 @@ export function layoutRoomWords(room) {
 export function layoutNote(plan) {
   if (!plan.tight) return layoutRoomWords(plan.room);
   return `Saving what is missing would fill CamFrame: ${plan.room.has + plan.room.need} of ${plan.room.limit} Scenes, with no spare slot, and the next Scene saved by hand there drops its oldest. Not saved yet: press Save to save anyway, or delete a Scene you do not use in CamFrame and open Camera layouts again.`;
+}
+
+/** A layout that went missing while the window is open (deleted in CamFrame): nothing saves it by itself now, so Save is offered. */
+export function layoutGoneWords(plan) {
+  const names = plan.rows.filter((r) => r.state === "missing").map((r) => r.name);
+  return `CamFrame does not have ${names.join(" or ")}. Press Save to save ${names.length === 1 ? "it" : "them"} again.`;
 }
 
 /** A layout saved at an older size, in plain words: the 1.5 times sum, or CamFrame's limit when that passes it. */
