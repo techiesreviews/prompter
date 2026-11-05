@@ -2990,7 +2990,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await (await dock(LY, ".open-btn")).click();
   await LY.locator("#open-menu:popover-open").waitFor();
   await LY.locator(".layouts-item").click();
-  await LY.waitForFunction((words) => document.querySelector(".status").textContent === words && !document.querySelector(".layouts-dialog").open, "Camera layouts: CamFrame now answers as an older version, so what it holds is not known. Update CamFrame to use camera layouts.");
+  await LY.waitForFunction((words) => document.querySelector(".alert-text").textContent === words && !document.querySelector(".note-row.alert").hidden && !document.querySelector(".layouts-dialog").open, "Camera layouts: CamFrame now answers as an older version, so what it holds is not known. Update CamFrame to use camera layouts.");
   cam.answer = null;
   // A Replace that works while the other layout is missing: the result is read out with the Save offer.
   cam.layouts.details = [savedLayouts()[0], savedLayouts()[1]];
@@ -3053,7 +3053,7 @@ export async function run({ browser, base, mode, dist, out }) {
   };
   await LY.locator(".layout-replace").click();
   await LY.waitForFunction(() => !document.querySelector(".layouts-dialog").open);
-  await LY.waitForFunction((words) => document.querySelector(".status").textContent === words, olderWords);
+  await LY.waitForFunction((words) => document.querySelector(".alert-text").textContent === words && !document.querySelector(".note-row.alert").hidden, olderWords);
   assert.ok((await spoken()).includes(olderWords), "reaches the accessibility tree");
   cam.answer = null;
   await checkNow();
@@ -3070,19 +3070,35 @@ export async function run({ browser, base, mode, dist, out }) {
   cam.answer = (path) => (path === "/camframe/scenes" || (path === "/camframe/status" && cam.saves().length) ? { body: { app: "camframe", version: "old", scenes: [] } } : null);
   await LY.locator(".layouts-save").click();
   await LY.waitForFunction(() => !document.querySelector(".layouts-dialog").open);
-  await LY.waitForFunction((words) => document.querySelector(".status").textContent === words, olderWords);
+  await LY.waitForFunction((words) => document.querySelector(".alert-text").textContent === words && !document.querySelector(".note-row.alert").hidden, olderWords);
   cam.answer = null;
   await checkNow();
   await LY.waitForFunction(() => !document.querySelector(".layouts-item").hidden);
-  await LY.evaluate(() => { document.querySelector(".status").textContent = ""; }); // so only this answer can bring the words back
+  await LY.locator('.note-row.alert [data-action="dismiss"]').click(); // so only this answer can bring the words back
   await openWindow();
   cam.answer = (path) => (path === "/camframe/status" ? { body: { app: "camframe", version: "old", scenes: [] } } : null);
   await checkNow();
   await LY.waitForFunction(() => !document.querySelector(".layouts-dialog").open);
-  assert.equal(await LY.locator(".status").textContent(), olderWords, "an older answer to a plain check says it too, as the window closes");
+  assert.equal(await LY.locator(".alert-text").textContent(), olderWords, "an older answer to a plain check says it too, as the window closes");
   cam.answer = null;
   await checkNow();
   await LY.waitForFunction(() => !document.querySelector(".layouts-item").hidden);
+  // A Replace pressed by hand, the window closed before its read ends, and the read answers as an older CamFrame:
+  // the note on the page still says why the item went.
+  cam.layouts.details = savedLayouts();
+  await openLayoutsLoad();
+  await openWindow();
+  await LY.waitForFunction(() => document.querySelector('.layouts-rows li[data-state="resized"]'));
+  let slowReplace = true;
+  cam.answer = (path, body) => {
+    if (path === "/camframe/scenes") return { delay: 800, body: { ok: true, scene: { name: body.name } } };
+    return path === "/camframe/status" && !slowReplace ? { body: { app: "camframe", version: "old", scenes: [] } } : null;
+  };
+  await LY.locator(".layout-replace").click();
+  slowReplace = false;
+  await LY.keyboard.press("Escape");
+  await LY.waitForFunction((words) => document.querySelector(".alert-text").textContent === words && !document.querySelector(".note-row.alert").hidden, olderWords, { timeout: 8000 });
+  cam.answer = null;
   // A lost Replace that did not land: "did not answer", then the next answer says where things stand.
   cam.layouts.details = savedLayouts();
   cam.seen.length = 0;
