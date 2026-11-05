@@ -2796,6 +2796,7 @@ export async function run({ browser, base, mode, dist, out }) {
   cam.answer = (path) => (path === "/camframe/status" && missTight ? ((missTight = false), { broken: true }) : null);
   await openWindow();
   await LY.waitForFunction(() => document.querySelector(".layouts-note").textContent.startsWith("CamFrame did not answer"));
+  assert.ok((await LY.locator(".layouts-status").textContent()).includes("Saving what is missing would fill CamFrame"), "the warning beside Save is read out with it");
   cam.answer = null;
   await checkNow();
   await LY.waitForFunction(() => document.querySelector(".layouts-status").textContent.includes("Saving what is missing would fill"));
@@ -2884,7 +2885,7 @@ export async function run({ browser, base, mode, dist, out }) {
   cam.answer = null;
   cam.layouts.details = cam.layouts.details.filter((d) => d.name !== "Live right large");
   await checkNow();
-  const gone = "CamFrame does not have Live right large. Press Save to save it again.";
+  const gone = "CamFrame does not have Live right large. Press Save to save it.";
   await LY.waitForFunction((words) => document.querySelector(".layouts-note").textContent === words, gone);
   assert.equal(await LY.locator(".layouts-save").isVisible(), true, "Save is offered");
   assert.equal(await LY.locator(".layouts-status").textContent(), `Camera layouts: ${gone}`, "and read out");
@@ -2937,7 +2938,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await LY.waitForFunction((words) => document.querySelector(".layouts-note").textContent === words, notTaken);
   cam.layouts.details = cam.layouts.details.filter((d) => d.name !== "Live small corner");
   await checkNow();
-  const both = `${notTaken} CamFrame does not have Live small corner. Press Save to save it again.`;
+  const both = `${notTaken} CamFrame does not have Live small corner. Press Save to save it.`;
   await LY.waitForFunction((words) => document.querySelector(".layouts-note").textContent === words, both);
   assert.equal(await LY.locator(".layouts-save").isVisible(), true);
   assert.equal(await LY.locator(".layouts-status").textContent(), `Camera layouts: ${both}`);
@@ -3001,7 +3002,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await checkNow();
   await LY.waitForFunction(() => document.querySelector(".layouts-save").checkVisibility());
   await LY.locator(".layout-replace").click();
-  await LY.waitForFunction(() => document.querySelector(".layouts-status").textContent.includes("Press Save to save it again."));
+  await LY.waitForFunction(() => document.querySelector(".layouts-status").textContent.includes("Press Save to save it."));
   assert.match(await LY.locator(".layouts-status").textContent(), /Live small corner is not saved\. CamFrame does not have Live small corner\. Press Save/);
   await LY.keyboard.press("Escape");
   // A Replace that works after a missed opening read, with the other layout gone meanwhile: the offer is there
@@ -3015,7 +3016,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await openWindow();
   await LY.waitForFunction(() => document.querySelector(".layouts-note").textContent.startsWith("CamFrame did not answer"));
   await LY.locator(".layout-replace").click();
-  await LY.waitForFunction(() => document.querySelector(".layouts-status").textContent.includes("Press Save to save it again."));
+  await LY.waitForFunction(() => document.querySelector(".layouts-status").textContent.includes("Press Save to save it."));
   assert.equal(await LY.locator(".layouts-save").isVisible(), true, "Save is offered at once");
   cam.answer = null;
   await LY.keyboard.press("Escape");

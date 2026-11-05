@@ -864,8 +864,9 @@ async function openLayouts() {
   if (!body) {
     layouts.note = layoutProblem(null);
     layouts.openMissed = true;
-    setStatus(`Camera layouts: ${layouts.note}`);
     showLayouts();
+    // Say what the window shows: the note, and the warning beside Save when saving would fill CamFrame.
+    setStatus(`Camera layouts: ${layouts.status ? shownNote(layoutPlan(layouts.status)) : layouts.note}`);
     return;
   }
   layouts.status = layoutsSupported(body) ? body : null;
@@ -929,12 +930,14 @@ async function saveLayouts({ replace = "", quiet = false, deliberate = false } =
   if (body) { layouts.status = layoutsSupported(body) ? body : null; layouts.openMissed = false; }
   // The read missed: CamFrame's yes to a save counts for now (unless it answers as an older one by now).
   else if (layouts.status) layouts.status = layoutsWithSaved(layouts.status, yes);
+  const windowOpen = layoutsDialog.open; // this read's own check may close it (an older CamFrame)
   afterCheck(body); // this read is a check like any other: a miss checks again soon, an answer ends reconnecting
-  if (body && !layouts.status) {
-    // CamFrame answers as an older version now: nobody knows what it holds, and the window closes (only the status line, heard by screen readers, says it).
+  if (!layouts.status) {
+    // CamFrame answered as an older version meanwhile (this read or a check): nobody knows what it holds, and the
+    // window closes (only the status line, heard by screen readers, says it; a lost read must not replace that).
     layouts.note = "";
     showLayouts();
-    if (!layouts.quiet) setStatus(LAYOUT_OLDER_CAMFRAME);
+    if (windowOpen && !layouts.quiet) setStatus(LAYOUT_OLDER_CAMFRAME);
     return;
   }
   const after = layouts.status && layoutPlan(layouts.status);
@@ -964,7 +967,7 @@ async function saveLayouts({ replace = "", quiet = false, deliberate = false } =
 // dead end. Not during the opening read, after it missed, or beside another problem's note
 // (a refusal's stays as it is); a note that a Replace did not take stands beside it.
 function offersSave(plan) {
-  return layoutsDialog.open && !layoutsSaving() && !layouts.opening && !layouts.openMissed && plan.auto.length > 0 && (!layouts.note || layouts.note === LAYOUT_REPLACE_NOT_TAKEN);
+  return layoutsDialog.open && !layoutsSaving() && !layouts.opening && !layouts.openMissed && plan.auto.length > 0 && (!layouts.note || layouts.note === LAYOUT_REPLACE_NOT_TAKEN || layouts.note === LAYOUT_NOT_KEPT);
 }
 
 // The window's note: the note, then the Save offer's line, then the warning when saving would fill
@@ -974,7 +977,8 @@ function shownNote(plan) {
   // (Also when there is no room at all beside the Replace note; a refusal's note stays as it is.)
   const waits = plan.tight || (!plan.room.ok && layouts.note === LAYOUT_REPLACE_NOT_TAKEN);
   const full = waits && !layoutsSaving() && layouts.note !== layoutNote(plan) ? layoutNote(plan) : "";
-  return [layouts.note, offersSave(plan) ? layoutGoneWords(plan) : "", full].filter(Boolean).join(" ");
+  // (The "still not saved" note already points at Save, so it needs no second line.)
+  return [layouts.note, offersSave(plan) && layouts.note !== LAYOUT_NOT_KEPT ? layoutGoneWords(plan) : "", full].filter(Boolean).join(" ");
 }
 
 // The Open menu's item (with a dot when the window needs a look) and the window's rows.
