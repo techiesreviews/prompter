@@ -852,6 +852,7 @@ async function openLayouts() {
   if (read !== layouts.openSeq) return; // the window was opened again meanwhile: that read speaks
   layouts.opening = false;
   if (!camframe.on || camframe.session !== session) return;
+  if (!layoutsDialog.open) return; // closed meanwhile (also by an older CamFrame, which said so): nothing to add
   // A save started or ended since: this answer is older than what that save reads. What the window shows
   // may still have changed (the Save offer, held back during the read), so draw it and say it.
   if (layouts.stamp !== stamp || layoutsSaving()) {
