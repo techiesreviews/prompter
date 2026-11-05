@@ -176,7 +176,7 @@ export function layoutPlan(status) {
 export const LAYOUT_NOT_KEPT = "A layout is still not saved in CamFrame. Press Save if it shows; otherwise open Camera layouts again to try once more.";
 /** The same for a Replace whose row still offers it: what CamFrame shows is the old Scene, and opening the window would not try again. */
 export const LAYOUT_REPLACE_NOT_TAKEN = "CamFrame still shows the old Scene after the Replace. Press Replace to try once more.";
-/** CamFrame answers as an older version right after a save: nobody knows what it holds, so nothing says saved or not saved. */
+/** CamFrame answers as an older version (right after a save, or wherever that closes the window): nobody knows what it holds, so nothing says saved or not saved. */
 export const LAYOUT_OLDER_CAMFRAME = "Camera layouts: CamFrame now answers as an older version, so what it holds is not known. Update CamFrame to use camera layouts.";
 
 /** A refused save (`{ ok: false, body }`) or a missed one (null) in plain words. */
