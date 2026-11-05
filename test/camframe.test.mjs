@@ -241,7 +241,7 @@ test("layoutProblem: CamFrame's refusals and a missed call in plain words", () =
   assert.match(layoutProblem({ ok: false, body: {} }), /CamFrame refused/);
   assert.match(layoutProblem(null), /CamFrame did not answer/);
   assert.equal(LAYOUT_NOT_KEPT, "A layout is still not saved in CamFrame. Press Save if it shows; otherwise open Camera layouts again to try once more.", "said when a layout is really missing, also beside one that did save");
-  assert.equal(LAYOUT_REPLACE_NOT_TAKEN, "CamFrame still shows the old Scene after the Replace. Press Replace to try once more.", "a Replace: what it had stays saved, and opening the window would not try again");
+  assert.equal(LAYOUT_REPLACE_NOT_TAKEN, "CamFrame still shows the old Scene after the Replace. Press Replace to try once more.", "a Replace: what CamFrame shows is the old Scene, and opening the window would not try again");
 });
 
 test("layoutGoneWords and LAYOUT_OLDER_CAMFRAME: true whatever CamFrame holds, and no claim about a save", () => {
