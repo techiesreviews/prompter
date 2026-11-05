@@ -930,7 +930,7 @@ async function saveLayouts({ replace = "", quiet = false, deliberate = false } =
   else if (layouts.status) layouts.status = layoutsWithSaved(layouts.status, yes);
   afterCheck(body); // this read is a check like any other: a miss checks again soon, an answer ends reconnecting
   if (body && !layouts.status) {
-    // CamFrame answers as an older version now: nobody knows what it holds, and the window closes (the page's status line says it).
+    // CamFrame answers as an older version now: nobody knows what it holds, and the window closes (only the status line, heard by screen readers, says it).
     layouts.note = "";
     showLayouts();
     if (!layouts.quiet) setStatus(LAYOUT_OLDER_CAMFRAME);
@@ -970,7 +970,7 @@ function offersSave(plan) {
 // CamFrame (Save is shown for it, so its warning always is). It follows CamFrame, so a line goes by
 // itself when it no longer holds.
 function shownNote(plan) {
-  const full = plan.tight && layouts.note !== layoutNote(plan) ? layoutNote(plan) : "";
+  const full = plan.tight && !layoutsSaving() && layouts.note !== layoutNote(plan) ? layoutNote(plan) : "";
   return [layouts.note, offersSave(plan) ? layoutGoneWords(plan) : "", full].filter(Boolean).join(" ");
 }
 

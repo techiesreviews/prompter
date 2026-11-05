@@ -2417,8 +2417,13 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.deepEqual((await rowStates()).map((r) => r[1]), ["missing", "missing"]);
   assert.equal(await LY.locator(".layouts-save").isVisible(), true, "the window offers Save");
   await shot(LY, "camframe-layouts-tight-desktop");
+  let slowTight = true;
+  cam.answer = (path) => (path === "/camframe/scenes" && slowTight ? ((slowTight = false), { delay: 1200 }) : null);
   await LY.locator(".layouts-save").click();
-  await LY.waitForFunction(() => document.querySelector(".layouts-status").textContent === "Camera layouts saved in CamFrame.");
+  await LY.waitForFunction(() => document.querySelector(".layouts-rows li .layout-state")?.textContent === "Saving…");
+  assert.equal(await LY.locator(".layouts-note").isHidden(), true, "no 'press Save' while the save runs and Save is hidden");
+  await LY.waitForFunction(() => document.querySelector(".layouts-status").textContent === "Camera layouts saved in CamFrame.", null, { timeout: 8000 });
+  cam.answer = null;
   assert.deepEqual(cam.saves(), [SMALL, LARGE], "after Save: both, small first");
   assert.equal(await LY.locator(".layouts-note").isHidden(), true);
   assert.equal(await LY.locator(".layouts-save").isHidden(), true);
@@ -2964,12 +2969,21 @@ export async function run({ browser, base, mode, dist, out }) {
   await LY.waitForFunction((words) => document.querySelector(".layouts-note").textContent === words, notTaken);
   cam.layouts.details = cam.layouts.details.filter((d) => d.name !== "Live small corner");
   await checkNow();
+  await LY.waitForFunction(() => document.querySelector('.layouts-rows li[data-state="missing"]'));
   assert.equal(await LY.locator(".layouts-save").isHidden(), true, "no offer while the opening read runs");
   await LY.waitForFunction((words) => document.querySelector(".layouts-note").textContent === words && document.querySelector(".layouts-status").textContent === `Camera layouts: ${words}`, both, { timeout: 8000 });
   assert.equal(await LY.locator(".layouts-save").isVisible(), true);
   assert.equal(cam.saves().length, 1, "only the Replace was sent");
   cam.answer = null;
   await LY.keyboard.press("Escape");
+  // CamFrame answers as an older version to the window's opening read: the window closes and the page says so.
+  cam.layouts.details = savedLayouts();
+  await openLayoutsLoad();
+  cam.answer = (path) => (path === "/camframe/status" ? { body: { app: "camframe", version: "old", scenes: [] } } : null);
+  await openWindow();
+  await LY.waitForFunction(() => !document.querySelector(".layouts-dialog").open);
+  await LY.waitForFunction((words) => document.querySelector(".status").textContent === words, "Camera layouts: CamFrame now answers as an older version, so what it holds is not known. Update CamFrame to use camera layouts.");
+  cam.answer = null;
   // A Replace that works while the other layout is missing: the result is read out with the Save offer.
   cam.layouts.details = [savedLayouts()[0], savedLayouts()[1]];
   cam.seen.length = 0;
