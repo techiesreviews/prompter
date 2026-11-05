@@ -50,7 +50,8 @@ only when he works on them.
   the Replace note, but not beside a refusal's note, during the opening read or after it missed.
   When saving would fill CamFrame, its warning is always in the note beside Save.
   If CamFrame answers as an older version, wherever that closes the window, nobody knows what it
-  holds: the page says so and never "still not saved".
+  holds: the page's status line says so (screen readers only; nothing shows on screen) and never
+  "still not saved".
 - A refused save stops and is said in plain words; a lost answer is not repeated blindly: the
   status is read again. Opening the Camera layouts window reads CamFrame again and saves what is
   still missing. The item shows a dot when the window needs a look.
