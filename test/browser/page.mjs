@@ -2941,6 +2941,33 @@ export async function run({ browser, base, mode, dist, out }) {
   for (let t = 0; cam.saves().length === repliesBefore; t += 50) { assert.ok(t < 5000, "the second Replace was sent"); await LY.waitForTimeout(50); }
   await LY.waitForFunction((words) => document.querySelector(".layouts-note").textContent === words && document.querySelector(".layouts-status").textContent === `Camera layouts: ${words}`, both);
   assert.equal(await LY.locator(".layouts-save").isVisible(), true);
+  // CamFrame then gets nearly full: the warning that saving would fill it stands beside the Replace note, with Save.
+  for (const n of ["A", "B", "C", "D"]) cam.layouts.details.push(snapshot(n));
+  await checkNow();
+  await LY.waitForFunction((words) => document.querySelector(".layouts-note").textContent.startsWith(words) && document.querySelector(".layouts-note").textContent.includes("Saving what is missing would fill CamFrame"), notTaken);
+  assert.equal(await LY.locator(".layouts-save").isVisible(), true);
+  assert.ok((await LY.locator(".layouts-status").textContent()).includes("Saving what is missing would fill CamFrame"), "and is read out");
+  cam.answer = null;
+  await LY.keyboard.press("Escape");
+  // A window opened on a slow read: a Replace not taken and a layout deleted meanwhile. The offer, held back
+  // during the read, is drawn and said when the read ends, with nothing more saved.
+  cam.layouts.details = savedLayouts();
+  cam.seen.length = 0;
+  await openLayoutsLoad();
+  let slowOpen = true;
+  cam.answer = (path, body) => {
+    if (path === "/camframe/scenes") return { body: { ok: true, scene: { name: body.name } } };
+    return path === "/camframe/status" && slowOpen ? ((slowOpen = false), { delay: 1500 }) : null;
+  };
+  await openWindow();
+  await LY.locator(".layout-replace").click();
+  await LY.waitForFunction((words) => document.querySelector(".layouts-note").textContent === words, notTaken);
+  cam.layouts.details = cam.layouts.details.filter((d) => d.name !== "Live small corner");
+  await checkNow();
+  assert.equal(await LY.locator(".layouts-save").isHidden(), true, "no offer while the opening read runs");
+  await LY.waitForFunction((words) => document.querySelector(".layouts-note").textContent === words && document.querySelector(".layouts-status").textContent === `Camera layouts: ${words}`, both, { timeout: 8000 });
+  assert.equal(await LY.locator(".layouts-save").isVisible(), true);
+  assert.equal(cam.saves().length, 1, "only the Replace was sent");
   cam.answer = null;
   await LY.keyboard.press("Escape");
   // A Replace that works while the other layout is missing: the result is read out with the Save offer.
