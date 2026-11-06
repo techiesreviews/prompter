@@ -239,7 +239,7 @@ test("layoutProblem: CamFrame's refusals and a missed call in plain words", () =
   assert.match(layoutProblem({ ok: false, body: { code: "not-ready", error: "x" } }), /CamFrame's window is not open yet/);
   assert.match(layoutProblem({ ok: false, body: { error: "Not allowed." } }), /CamFrame refused: Not allowed\./, "anything else: CamFrame's own words");
   assert.match(layoutProblem({ ok: false, body: {} }), /CamFrame refused/);
-  assert.match(layoutProblem(null), /CamFrame did not answer when the layouts were saved\. Turn the camera button off and on/);
+  assert.match(layoutProblem(null), /CamFrame did not answer while saving the layouts\. Turn the camera button off and on/);
   for (const answer of [null, { ok: false, body: { code: "scene-limit" } }, { ok: false, body: { code: "not-ready" } }]) assert.doesNotMatch(layoutProblem(answer), /Camera layouts again|Replace|Save/, "no word of a window that is gone");
 });
 
