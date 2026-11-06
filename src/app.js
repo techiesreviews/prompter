@@ -711,13 +711,19 @@ function showCamPreview(now) {
     box.setAttribute("aria-label", `Camera preview: ${words.replace(/^Camera: /, "")}`); // silent: the cue lines say it too
   }
   // Never cover the text (the reading line can be dragged up to camera height): first without the caption,
-  // then not shown at all while there is no room above the line. Measured every time, as the line and the
+  // then smaller, and only when even that does not fit above the line (a line near the very top) not shown. Measured every time, as the line and the
   // window can change.
   box.removeAttribute("data-compact");
   box.style.visibility = "";
+  box.style.inlineSize = "";
   const clear = () => box.getBoundingClientRect().bottom <= readingLineY() - 12;
   if (!clear()) box.dataset.compact = "";
-  if (!clear()) box.style.visibility = "hidden";
+  if (!clear()) {
+    // Smaller, to fit the room above the line (its frame is 16:9 inside 6 px of padding and 12 px from the top).
+    const width = Math.floor(12 + (readingLineY() - 36) * 16 / 9);
+    if (width >= 64) box.style.inlineSize = `${width}px`;
+    if (width < 64 || !clear()) box.style.visibility = "hidden";
+  }
 }
 
 // Only the preview, after the text moved by a setting: no cue is sent and no link opens.
