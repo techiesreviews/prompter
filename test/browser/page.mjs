@@ -2828,11 +2828,13 @@ export async function run({ browser, base, mode, dist, out }) {
   cam.answer = (path) => (path === "/camframe/status" && missBoth ? ((missBoth = false), { broken: true }) : null);
   await openWindow();
   await LY.waitForFunction(() => document.querySelector(".layouts-note").textContent.startsWith("CamFrame did not answer"));
+  assert.equal(await LY.locator(".layouts-lead").isHidden(), true, "no 'both are in CamFrame' above 'did not answer'");
   cam.answer = null;
   await checkNow();
   await LY.waitForFunction(() => document.querySelector(".layouts-status").textContent === "Camera layouts saved in CamFrame.");
   assert.equal(await LY.locator(".layouts-note").isHidden(), true);
   assert.deepEqual(cam.saves(), []);
+  assert.equal(await LY.locator(".layouts-lead").isVisible(), true, "both there and answered: the lead line");
   await LY.keyboard.press("Escape");
   // A Replace on a layout at an older size that CamFrame says yes to but the status does not show:
   // the layout is still saved, so the note speaks of the Replace, not of a layout not saved.
@@ -3206,7 +3208,7 @@ export async function run({ browser, base, mode, dist, out }) {
   // The window's lead line is said only when both layouts are in CamFrame.
   await openWindow();
   await LY.waitForFunction(() => !document.querySelector(".layouts-lead").hidden);
-  assert.match(await LY.locator(".layouts-lead").textContent(), /^Both layouts are in CamFrame's Scenes\./);
+  assert.match(await LY.locator(".layouts-lead").textContent(), /^Both layouts are in CamFrame's Scenes, ready for your cue lines\./);
   await LY.keyboard.press("Escape");
   // Back to an older CamFrame: the item hides again.
   cam.layouts = null;
