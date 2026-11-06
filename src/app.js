@@ -62,6 +62,7 @@ const toastText = $(".toast-text");
 const camframeBtn = $(".big-toggle.camframe"); // in Settings
 const layoutsItem = $(".layouts-item"); // in the Open menu, only for a CamFrame that can save layouts
 const layoutsDialog = $(".layouts-dialog");
+const pasteStatus = $(".paste-status"); // the same for the paste window, which is modal too
 const layoutsStatus = $(".layouts-status"); // the status line while that window is open: a modal window hides the page's from screen readers
 const WINDOW_NAME = "prompter-main-screen";
 const SETTLE_MS = 700; // wait this long on a section before changing the main screen
@@ -122,7 +123,7 @@ let cueTimer = 0;
 // CamFrame link: off unless turned on in Settings. state: off, looking, on (CamFrame answered),
 // reconnecting (a check or two missed after it answered) or lost (several missed in a row).
 // session counts turns on and off, so a cue sent before that is not news after it.
-const camframe = { on: store.get(CAMFRAME_KEY) === "on", state: "off", timer: 0, retry: 0, seq: 0, misses: 0, session: 0 };
+const camframe = { on: store.get(CAMFRAME_KEY) === "on", state: "off", timer: 0, retry: 0, seq: 0, misses: 0, session: 0, scenes: [] };
 // Camera layouts: CamFrame's last status when it can save layouts (API 2), a save under way,
 // the link session the layouts were last saved for by themselves, and the last problem.
 // `quiet` is the running save's: a save from the window during one on connect makes it read out.
@@ -739,7 +740,11 @@ async function checkCamframe() {
   try { ({ body } = await camframeCall("status")); } catch { /* a miss */ }
   if (camframe.on && n === camframe.seq) {
     afterCheck(body);
-    if (body) seeLayouts(body);
+    if (body) {
+      camframe.scenes = Array.isArray(body.scenes) ? body.scenes.filter((n) => typeof n === "string") : [];
+      showCueMenu();
+      seeLayouts(body);
+    }
   }
 }
 
@@ -762,6 +767,7 @@ function setCamframeOn(on) {
   layouts.status = null;
   layouts.note = "";
   layouts.opening = false;
+  camframe.scenes = [];
   if (!on) { setCamframe({ state: "off", misses: 0 }); return; }
   setCamframe({ state: "looking", misses: 0 });
   checkCamframe();
@@ -789,6 +795,7 @@ function setCamframe(patch) {
   camframeBtn.setAttribute("aria-label", name);
   camframeBtn.title = camframe.state === "lost" ? name + CAMFRAME_LOST_HELP : name;
   updateSettingsBtn();
+  showCueMenu();
   showLayouts(); // first: not found closes that window, and is then said on the page
   // Not again when it comes back from a missed check or two (reconnecting).
   if (was !== camframe.state && ((camframe.state === "on" && was !== "reconnecting") || camframe.state === "lost")) setStatus(`${name}.`);
@@ -1157,7 +1164,7 @@ function showLink(si, li, fromUser) {
 let statusSeq = 0;
 function setStatus(t) {
   const n = ++statusSeq;
-  const el = layoutsDialog.open ? layoutsStatus : statusEl;
+  const el = layoutsDialog.open ? layoutsStatus : pasteDialog.open ? pasteStatus : statusEl;
   if (t && el.textContent === t) { el.textContent = ""; requestAnimationFrame(() => { if (n === statusSeq) el.textContent = t; }); }
   else el.textContent = t;
 }
@@ -1496,8 +1503,41 @@ async function copyLink(button) {
   linkCopiedTimer = setTimeout(() => { button.removeAttribute("data-copied"); label.textContent = "Copy link"; }, 2000);
 }
 
+// The paste window's "Camera cues" list: the cue lines CamFrame can act on (cueChoices in core.mjs,
+// the layout Scenes first), only while the link answers; otherwise one line says what to do.
+function showCueMenu() {
+  const live = camframe.on && (camframe.state === "on" || camframe.state === "reconnecting");
+  const pick = pasteDialog.querySelector(".cue-pick");
+  pasteDialog.querySelector(".cue-off").hidden = live;
+  pick.hidden = !live;
+  if (!live) return;
+  const choices = cueChoices(camframe.scenes, [LAYOUT_LARGE, LAYOUT_SMALL]);
+  const select = pasteDialog.querySelector(".cue-select");
+  const key = choices.map((c) => c.text).join("\n");
+  if (select.dataset.key === key) return; // a check every 10 s must not reset the choice
+  const chosen = select.value;
+  select.dataset.key = key;
+  select.replaceChildren(...choices.map((c) => { const o = document.createElement("option"); o.value = c.text; o.textContent = c.label; return o; }));
+  if (choices.some((c) => c.text === chosen)) select.value = chosen;
+}
+
+// Puts the chosen cue on its own line at the cursor (or over the selection) and says so.
+function insertCue() {
+  const text = $("#paste-text");
+  const cue = pasteDialog.querySelector(".cue-select").value;
+  if (!cue) return;
+  const from = text.selectionStart, to = text.selectionEnd;
+  const before = text.value.slice(0, from), after = text.value.slice(to);
+  const insert = `${before && !before.endsWith("\n") ? "\n" : ""}${cue}${after.startsWith("\n") ? "" : "\n"}`;
+  text.setRangeText(insert, from, to, "end");
+  text.dispatchEvent(new Event("input", { bubbles: true }));
+  text.focus();
+  setStatus(`Inserted camera cue ${cue}`);
+}
+
 function openPaste() {
   $(".paste-error").hidden = true;
+  showCueMenu();
   showDialog(pasteDialog);
   $("#paste-text").focus();
 }
@@ -1593,6 +1633,7 @@ document.addEventListener("click", (e) => {
   if (action === "open-file") fileInput.click();
   else if (action === "paste") openPaste();
   else if (action === "open-paste") submitPaste();
+  else if (action === "insert-cue") insertCue();
   else if (action === "close-dialog") button.closest("dialog").close();
   else if (action === "layouts") openLayouts();
   else if (action === "layout-replace") saveLayouts({ replace: button.dataset.name });
