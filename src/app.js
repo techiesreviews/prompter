@@ -168,9 +168,9 @@ async function openScript(text, { fromLink = false, remember = true, label = "" 
   return true;
 }
 
-function openDemo() {
-  if (location.hash !== "#demo") history[isEmpty() ? "pushState" : "replaceState"](null, "", "#demo");
-  return openScript(DEMO_SCRIPT, { fromLink: true, remember: false });
+function openDemo(hash = "#demo", script = DEMO_SCRIPT) {
+  if (location.hash !== hash) history[isEmpty() ? "pushState" : "replaceState"](null, "", hash);
+  return openScript(script, { fromLink: true, remember: false });
 }
 
 // A remembered script is named by its first section after PREP and INTRO
@@ -228,6 +228,7 @@ async function route() {
     return;
   }
   if (hash === "#demo") { await openDemo(); return; }
+  if (hash === "#camera-demo") { await openDemo(hash, CAMERA_DEMO_SCRIPT); return; }
   const embedded = $("#script-md").textContent;
   if (parse(embedded).length) {
     await openScript(embedded, { fromLink: true, remember: false });
@@ -1591,6 +1592,7 @@ document.addEventListener("click", (e) => {
   else if (action === "copy-link") copyLink(button);
   else if (action === "start") { showAlert(""); history.pushState(null, "", plainAddress()); showStart(); }
   else if (action === "demo") { showAlert(""); openDemo(); }
+  else if (action === "camera-demo") { showAlert(""); openDemo("#camera-demo", CAMERA_DEMO_SCRIPT); }
   else if (action === "continue") { showAlert(""); openScript(store.get(LAST_KEY) || "", { label: "Your last script" }); }
   else if (action === "mcp") pressMcp(button);
   else if (action === "dismiss") showAlert("");

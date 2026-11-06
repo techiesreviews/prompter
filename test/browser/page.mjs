@@ -381,7 +381,7 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), NIGHT);
   const card = page.locator(".empty .card");
   assert.equal(await card.locator("h1").textContent(), "Your teleprompter");
-  assert.deepEqual(await card.locator(".choices .btn:not([hidden])").allTextContents(), ["Open a script file", "Paste a script", "Wait for MCP", "Try the demo"]);
+  assert.deepEqual(await card.locator(".choices .btn:not([hidden])").allTextContents(), ["Open a script file", "Paste a script", "Wait for MCP", "Try the demo", "Try the camera demo"]);
   assert.equal(await card.locator(".btn.primary").textContent(), "Open a script file", "one orange primary action");
   assert.match(await card.textContent(), /drop a \.md or \.txt file anywhere[\s\S]*Your script stays on this device/);
   const cardBox = await card.boundingBox();
@@ -401,7 +401,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await page.goBack();
   await showsStart(page);
   assert.equal(await card.locator(".continue").textContent(), "Continue: MY TALK", "the last script is offered by its first section after PREP");
-  assert.deepEqual(await card.locator(".choices .btn:not([hidden])").allTextContents(), ["Continue: MY TALK", "Open a script file", "Paste a script", "Wait for MCP", "Try the demo"]);
+  assert.deepEqual(await card.locator(".choices .btn:not([hidden])").allTextContents(), ["Continue: MY TALK", "Open a script file", "Paste a script", "Wait for MCP", "Try the demo", "Try the camera demo"]);
   await shot(page, "start-continue-desktop");
   await page.reload();
   await showsStart(page);
@@ -410,6 +410,17 @@ export async function run({ browser, base, mode, dist, out }) {
   await page.locator(".section").first().waitFor();
   assert.equal(await page.locator(".section").count(), 2);
   ok("Open a script file works from the keyboard (file picker); Back returns to the start screen, which offers “Continue: MY TALK” first and opens nothing by itself, also after a reload");
+
+  // Try the camera demo: the layout cues in a short script, from the start screen and from its address.
+  await page.goto(`${base}/`);
+  await showsStart(page);
+  await card.locator('[data-action="camera-demo"]').click();
+  await page.waitForFunction(() => document.querySelectorAll(".section").length === 5);
+  assert.equal(await page.evaluate(() => location.hash), "#camera-demo");
+  assert.deepEqual(await page.locator("[data-cue]").evaluateAll((els) => els.map((el) => el.textContent.trim())).then((t) => t.map((x) => x.replace(/\s+/g, " "))), ["Camera: Scene “Live right large”", "Camera: Scene “Live small corner”", "Camera: face full"]);
+  await page.goto(`${base}/#camera-demo`);
+  await page.waitForFunction(() => document.querySelectorAll(".section").length === 5);
+  ok("Try the camera demo: #camera-demo opens a five-section script with the three camera cue lines (the two layout Scenes, then Face full)");
 
   // Try the demo: the format by example, no buttons in PREP.
   await page.goto(`${base}/`);

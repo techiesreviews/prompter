@@ -418,3 +418,11 @@ test("the demo script follows the lex preset and starts with a PREP checklist", 
     { size: "small", position: "bottom-right" }, { size: "full" },
   ], "and camera cues for CamFrame");
 });
+
+test("the camera demo follows the lex preset and uses the two layout Scenes, then Face full", async () => {
+  const { CAMERA_DEMO_SCRIPT } = await import("../src/core.mjs");
+  const r = check(CAMERA_DEMO_SCRIPT, "lex");
+  assert.equal(r.errors + r.warnings, 0, describeProblems(r));
+  const cues = parse(CAMERA_DEMO_SCRIPT).flatMap((s) => s.entries).filter((e) => e.cue);
+  assert.deepEqual(cues.map((e) => e.cue), [{ size: "small", scene: "Live right large" }, { size: "small", scene: "Live small corner" }, { size: "full" }]);
+});

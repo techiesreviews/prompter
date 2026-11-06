@@ -58,6 +58,13 @@ only when he works on them.
 - Saving a 7th Scene by hand in CamFrame's own settings drops its oldest Scene, which may be one of
   these two (CamFrame KG-14): keep a spare slot.
 
+## Camera demo (try the cues without writing a script)
+
+1. Open CamFrame (Prompter link on) and turn on the camera button in Prompter's Settings; the two layouts
+   are saved in CamFrame's Scenes by themselves when it connects.
+2. On the start screen press "Try the camera demo" (or open `/#camera-demo` on the preview site).
+3. Scroll or press play: each `[Face: …]` line moves the camera when it reaches the reading line.
+
 ## Still to prove on the streaming PC (CamFrame W-30)
 
 Needs a released CamFrame with API 2 on Lex's Windows PC, off-air, with the Prompter on the preview
