@@ -419,6 +419,18 @@ test("the demo script follows the lex preset and starts with a PREP checklist", 
   ], "and camera cues for CamFrame");
 });
 
+test("cueChoices: the cue lines the list offers read back as the same cues, the layout Scenes first", async () => {
+  const { cueChoices, faceCue } = await import("../src/core.mjs");
+  const all = cueChoices(["Interview", "live small corner", "Odd. name", "Has [bracket]", "x".repeat(41), " padded", "Demo"], ["Live right large", "Live small corner"]);
+  const texts = all.map((c) => c.text);
+  assert.deepEqual(texts.slice(0, 2), ["[Face full]", "[Face small]"]);
+  assert.ok(texts.includes("[Face small, bottom right]") && texts.includes("[Face small, top left]") && texts.includes("[Face small, center]"));
+  const scenes = texts.filter((t) => t.startsWith("[Face: "));
+  assert.deepEqual(scenes, ["[Face: Live right large]", "[Face: Live small corner]", "[Face: Interview]", "[Face: Demo]"], "layouts first, a repeat in other case once, names that are no cue left out");
+  for (const c of all) assert.ok(faceCue(c.text.slice(1, -1))?.cue, `${c.text} is a cue`);
+  assert.equal(all.find((c) => c.text === "[Face: Live right large]").label, "Scene: Live right large (layout)");
+});
+
 test("the camera demo follows the lex preset and uses the two layout Scenes, then Face full", async () => {
   const { CAMERA_DEMO_SCRIPT } = await import("../src/core.mjs");
   const r = check(CAMERA_DEMO_SCRIPT, "lex");

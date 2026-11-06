@@ -347,6 +347,8 @@
   .dialog::backdrop { background: oklch(4% 0.06 282 / 0.7); }
   .dialog h2 { margin: 0 0 8px; font-size: 1.25em; }
   .paste { inline-size: 100%; min-block-size: 12em; margin-block-start: 6px; padding: 10px; font: 500 14px/1.45 var(--font-mono); color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); }
+  .cue-pick { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-block: 8px; }
+  .cue-select { flex: 1 1 14em; min-inline-size: 0; padding: 8px; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); }
   .dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-block-end: 0; }
   /* Camera layouts (CamFrame API 2): one row per layout, its state in words, Replace only after a yes */
   .layouts-rows { display: grid; gap: 10px; margin: 12px 0; padding: 0; list-style: none; }
@@ -574,6 +576,13 @@
 <dialog class="dialog paste-dialog" aria-labelledby="paste-title">
   <h2 id="paste-title">Paste a script</h2>
   <label for="paste-text" class="muted">Script text (Markdown, like the demo)</label>
+  <span class="paste-status sr-only" role="status"></span>
+  <div class="cue-pick" hidden>
+    <label for="cue-select" class="muted">Camera cues</label>
+    <select id="cue-select" class="cue-select"></select>
+    <button class="btn" type="button" data-action="insert-cue">Insert at cursor</button>
+  </div>
+  <p class="muted cue-off" hidden>Camera cues show here when CamFrame is connected: open CamFrame with its Prompter link on, then turn on the camera button in Settings.</p>
   <textarea id="paste-text" class="paste" placeholder="### **INTRO · 00:00**&#10;&#10;QL: Why should they stay?&#10;&#10;Hi, I'm Sam. Welcome."></textarea>
   <p class="error-text paste-error" role="alert" hidden></p>
   <p class="dialog-actions"><button class="btn primary" type="button" data-action="open-paste">Open in the prompter</button> <button class="btn" type="button" data-action="close-dialog">Cancel</button></p>

@@ -391,6 +391,27 @@ export function faceCue(note) {
   return { cue: { size: "small", position: place } };
 }
 
+/**
+ * The camera cues the "Camera cues" list offers, each `{ label, text }` with `text` the whole cue line in
+ * the existing syntax ("[Face full]", "[Face small, bottom right]", "[Face: Scene name]"). `layouts` are the
+ * layout Scene names (offered first, whether or not they are saved yet); `scenes` are the names CamFrame
+ * lists. Only a text that faceCue reads back as the same cue is offered, so a Scene name with a full stop,
+ * a bracket or more than 40 characters is left out.
+ */
+export function cueChoices(scenes = [], layouts = []) {
+  const choices = [{ label: "Face full (fill the screen)", text: "[Face full]" }, { label: "Face small (keep the place)", text: "[Face small]" }];
+  for (const spot of FACE_SPOTS) choices.push({ label: `Face small, ${spot.replace("-", " ")}`, text: `[Face small, ${spot.replace("-", " ")}]` });
+  const seen = new Set();
+  for (const [name, layout] of [...layouts.map((n) => [n, true]), ...scenes.map((n) => [n, false])]) {
+    const key = String(name).toLowerCase();
+    if (seen.has(key) || typeof name !== "string" || /[\[\]\n]/.test(name)) continue;
+    seen.add(key);
+    if (faceCue(`Face: ${name}`)?.cue?.scene !== name.trim() || name !== name.trim()) continue;
+    choices.push({ label: `Scene: ${name}${layout ? " (layout)" : ""}`, text: `[Face: ${name}]` });
+  }
+  return choices;
+}
+
 // ---------- Parsing ----------
 
 const timeRe = /^(.*?)\s*·\s*(\d{1,3}:\d{2})\s*$/;
