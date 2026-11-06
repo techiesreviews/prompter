@@ -138,7 +138,7 @@ Thanks for watching.
  * The demo the page opens from its start screen ("Try the demo"): how to be a
  * better speaker with a prompter. It follows the "lex" preset and teaches the
  * format by example, including camera cues for CamFrame (section 4 uses the two layout Scenes the page saves
- * in CamFrame, a corner and full; section 5 uses them again),
+ * in CamFrame, a corner and full; sections 2 and 5 use the corner for a page on the main screen),
  * a link that opens itself and one inside a sentence (section 5).
  */
 export const DEMO_SCRIPT = `### **PREP**
@@ -188,11 +188,13 @@ Now: keep eye contact.
 
 QL: Where should your eyes be?
 
+[Face small, bottom right]
 Put text under the camera.
 Choose a narrow column.
 Your eyes move less.
 Read at the dashed line.
 Look up between lines.
+[Face full]
 
 Next: pace and pauses.
 Now: slow down a bit.
@@ -215,6 +217,8 @@ Now: camera lines explained.
 ---
 
 ### **4 · CAMERA ON CUE · 05:00**
+
+- Webcam: https://en.wikipedia.org/wiki/Webcam
 
 QL: How does the camera follow?
 
