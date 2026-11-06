@@ -1528,17 +1528,21 @@ function showCueMenu() {
   if (choices.some((c) => c.text === chosen)) select.value = chosen;
 }
 
-// Puts the chosen cue on its own line at the cursor (or over the selection) and says so.
+// Puts the chosen cue on its own line at the cursor (after a selection, never over it) and says so.
 function insertCue() {
   const text = $("#paste-text");
   const cue = pasteDialog.querySelector(".cue-select").value;
   if (!cue) return;
   // After a selection, never over it: the selected text stays. A cue above the first section title would be
   // skipped when the script is read, so it is not put there.
-  const at = text.selectionEnd;
+  let at = text.selectionEnd;
+  // A cursor inside a section title would split it: the cue goes after that line instead.
+  const lineStart = text.value.lastIndexOf("\n", at - 1) + 1;
+  const lineEnd = text.value.indexOf("\n", at) < 0 ? text.value.length : text.value.indexOf("\n", at);
+  if (at > lineStart && /^\s*#{2,3}\s/.test(text.value.slice(lineStart, lineEnd))) at = lineEnd;
   const before = text.value.slice(0, at), after = text.value.slice(at);
   const error = $(".paste-error");
-  if (!/^#{2,3}\s/m.test(before)) {
+  if (!parse(before).length) { // the format's own reading (core.mjs): a real title above the cue, after the start marker
     error.hidden = false;
     error.textContent = "Put the cursor under a section title (a line like ### **INTRO · 00:00**) first: a camera cue above the first title is skipped.";
     text.focus();
