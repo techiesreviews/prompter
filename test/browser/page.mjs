@@ -2343,7 +2343,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await noMenuItem();
   await openPasteWindow();
   await lineIs(/^Camera layouts are saved in CamFrame's Scenes: Live small corner and Live right large\.$/);
-  assert.equal(await LY.locator(".paste-status").textContent(), "Camera layouts are saved in CamFrame's Scenes: Live small corner and Live right large.", "read out once, when the window opens");
+  await LY.waitForFunction(() => document.querySelector(".paste-status").textContent === "Camera layouts are saved in CamFrame's Scenes: Live small corner and Live right large.", null, { timeout: 3000 }); // read out once, when the window opens
   await shot(LY, "camframe-layouts-saved-desktop");
   await LY.keyboard.press("Escape");
   // Later status checks do not save again.
@@ -2430,7 +2430,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await savesReach(2);
   cam.answer = null;
   await openPasteWindow();
-  await lineIs(/^Not saved in CamFrame: Live small corner and Live right large\. Turn the camera button off and on to save them\.$|^CamFrame did not answer when the layouts were saved\./);
+  await lineIs(/^Not saved in CamFrame: Live small corner and Live right large\. Turn the camera button off and on to save them\.$|^CamFrame did not answer while saving the layouts\./);
   await LY.keyboard.press("Escape");
 
   // A layout deleted in CamFrame later: the next check shows it is not saved; nothing re-adds it until the next connect.
@@ -2445,6 +2445,17 @@ export async function run({ browser, base, mode, dist, out }) {
   await openPasteWindow();
   await lineIs(/^Not saved in CamFrame: Live right large\. Turn the camera button off and on to save it\.$/);
   await LY.keyboard.press("Escape");
+
+  // The window opened during a save made by itself: the result is read out when the save ends.
+  cam.layouts.details = [snapshot("Interview")];
+  cam.answer = (path) => (path === "/camframe/scenes" ? { delay: 600 } : null);
+  cam.seen.length = 0;
+  await openLayoutsLoad();
+  await savesReach(1);
+  await openPasteWindow();
+  await LY.waitForFunction(() => document.querySelector(".paste-status").textContent === "Camera layouts are saved in CamFrame's Scenes: Live small corner and Live right large.", null, { timeout: 8000 });
+  await LY.keyboard.press("Escape");
+  cam.answer = null;
 
   // The link turned off and on while a save waits for its answer: the new session saves by
   // itself and nothing is left saying "Saving…".
