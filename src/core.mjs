@@ -427,7 +427,7 @@ export function cueInsertion(md, from, cue) {
       cues: sections.flatMap((s) => s.entries).filter((e) => e.cue).length,
       top: sections.flatMap((s) => s.links).filter((l) => !l.inline).length,
       ql: sections.map((s) => s.entries.find((e) => e.type !== "link")?.type === "ql"),
-      errors: check(t, "lex").errors, // a cue between a Next: line and its Now: line breaks their pairing
+      pairs: check(t, "lex").problems.filter((p) => p.code === "transition-pair").length, // a cue between a Next: line and its Now: line breaks their pairing
     };
   };
   const base = shape(md);
@@ -443,7 +443,7 @@ export function cueInsertion(md, from, cue) {
     const insert = `${before && !before.endsWith("\n") ? "\n" : ""}${cue}${after.startsWith("\n") ? "" : "\n"}`;
     const now = shape(before + insert + after);
     if (now.cues !== base.cues + 1) return null; // not read there: nowhere nearby is better
-    if (now.errors <= base.errors && now.top === base.top && now.ql.length === base.ql.length && now.ql.every((q, i) => q === base.ql[i])) return { at, insert };
+    if (now.pairs <= base.pairs && now.top === base.top && now.ql.length === base.ql.length && now.ql.every((q, i) => q === base.ql[i])) return { at, insert };
   }
 }
 
