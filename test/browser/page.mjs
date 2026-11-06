@@ -497,6 +497,15 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.ok(pBox.x + pBox.width <= 1366 && pBox.y >= 0, "the preview sits inside the window, top right");
   await shot(page, "demo-camera-preview-desktop");
   await page.evaluate(() => window.scrollTo(0, 0));
+  // A reading line dragged up to camera height: the preview never covers it (no caption, then the bottom right).
+  await page.locator(".line-handle").focus();
+  await page.keyboard.press("Home");
+  const lineTop = await page.locator(".reading-line").evaluate((el) => el.getBoundingClientRect().top);
+  const raised = await page.evaluate(() => { const b = document.querySelector(".cam-preview"); return { place: b.dataset.place || "top", compact: b.hasAttribute("data-compact"), top: b.getBoundingClientRect().top, bottom: b.getBoundingClientRect().bottom }; });
+  assert.ok(raised.place === "bottom" ? raised.top > lineTop : raised.bottom <= lineTop, `the preview stays off the reading line: ${JSON.stringify(raised)} line ${lineTop}`);
+  await page.keyboard.press("End");
+  assert.equal(await page.evaluate(() => document.querySelector(".cam-preview").dataset.place || "top"), "top", "back at the top right when the line is low again");
+  await page.keyboard.press("Tab"); await page.evaluate(() => document.activeElement?.blur());
   // The demo opened from a copied link or pasted still has its preview; another script has none.
   await page.goto("about:blank");
   await page.goto(await makeLink(DEMO_SCRIPT, "lex", base));
