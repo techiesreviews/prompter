@@ -174,12 +174,13 @@ export function layoutPlan(status) {
 
 /** A refused save (`{ ok: false, body }`) or a missed one (null) in plain words. */
 export function layoutProblem(answer) {
-  if (!answer) return "CamFrame did not answer while saving the layouts. Turn the camera button off and on to try again.";
+  if (!answer) return "CamFrame did not answer while saving the layouts. Turn the camera button in Settings off and on to try again.";
   const code = answer.body?.code;
   if (code === "scene-limit") return "CamFrame has no room for another Scene. Delete Scenes you do not use in CamFrame until one slot stays free, then turn the camera button in Settings off and on.";
   if (code === "scene-exists") return "CamFrame already has a Scene with this name.";
   if (code === "not-ready") return "CamFrame's window is not open yet. Open it, then turn the camera button in Settings off and on.";
-  return `CamFrame refused: ${answer.body?.error || "no reason given"}`;
+  const why = typeof answer.body?.error === "string" && answer.body.error.trim() ? answer.body.error.trim().slice(0, 200) : "no reason given";
+  return `CamFrame refused: ${why}`;
 }
 
 /** Not enough room for the missing layouts, in plain words ("" when there is room). */
@@ -206,11 +207,11 @@ export function layoutsLine(plan, { saving = false, problem = "" } = {}) {
   if (missing.length) {
     if (!plan.room.ok) parts.push(layoutRoomWords(plan.room));
     else if (plan.tight) parts.push(`Not saved: ${missing.join(" and ")}. Saving would fill CamFrame (${plan.room.has + plan.room.need} of ${plan.room.limit} Scenes) and leave no spare slot, so the Prompter waits. Delete a Scene you do not use in CamFrame, then turn the camera button in Settings off and on.`);
-    else parts.push(`Not saved in CamFrame: ${missing.join(" and ")}. Turn the camera button off and on to save ${missing.length === 1 ? "it" : "them"}.`);
+    else parts.push(`Not saved in CamFrame: ${missing.join(" and ")}. Turn the camera button in Settings off and on to save ${missing.length === 1 ? "it" : "them"}.`);
   }
   if (different.length) parts.push(`CamFrame already has ${different.length === 1 ? "a different Scene" : "different Scenes"} named ${different.join(" and ")}; the Prompter leaves ${different.length === 1 ? "it" : "them"} alone, so the cue uses what CamFrame holds.`);
   if (!missing.length && !different.length) {
-    const older = plan.rows.filter((r) => r.state === "resized").map((r) => ` ${r.name} is at ${r.saved} px, saved before the small camera changed.`);
+    const older = plan.rows.filter((r) => r.state === "resized").map((r) => ` ${r.name} is saved at ${r.saved} px.`);
     parts.push(`Camera layouts are saved in CamFrame's Scenes: ${plan.rows.map((r) => r.name).join(" and ")}.${older.join("")}`);
   }
   return parts.join(" ");
