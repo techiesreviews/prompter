@@ -710,13 +710,14 @@ function showCamPreview(now) {
     box.querySelector(".cam-caption").textContent = words;
     box.setAttribute("aria-label", `Camera preview: ${words.replace(/^Camera: /, "")}`); // silent: the cue lines say it too
   }
-  // Keep off the reading line (it can be dragged up to camera height): first without the caption, then at the
-  // bottom right above the control bar. Measured every time, as the line and the window can change.
+  // Never cover the text (the reading line can be dragged up to camera height): first without the caption,
+  // then not shown at all while there is no room above the line. Measured every time, as the line and the
+  // window can change.
   box.removeAttribute("data-compact");
-  box.removeAttribute("data-place");
+  box.style.visibility = "";
   const clear = () => box.getBoundingClientRect().bottom <= readingLineY() - 12;
   if (!clear()) box.dataset.compact = "";
-  if (!clear()) box.dataset.place = "bottom";
+  if (!clear()) box.style.visibility = "hidden";
 }
 
 function updateCues(y) {
@@ -1078,6 +1079,7 @@ function setSize(px) {
   root.style.setProperty("--size", px + "px");
   showSize(px);
   store.set("prompter-size", px);
+  if (sections.length) updateActive(); // the lines moved: the cue the preview shows may have changed
 }
 const curSize = () => parseInt(getComputedStyle(root).getPropertyValue("--size"), 10);
 
@@ -1086,6 +1088,7 @@ function setWidth(name) {
   root.dataset.width = w;
   widthInputs.forEach((input) => { input.checked = input.value === w; });
   store.set("prompter-width", w);
+  if (sections.length) updateActive();
 }
 
 // Line spacing: more room between the lines; the row at the reading line stays there.
