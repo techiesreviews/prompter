@@ -60,11 +60,15 @@ only when he works on them.
 
 ## Camera cues list (writing the cue lines)
 
-In the "Paste a script" window a "Camera cues" list (with "Insert at cursor") puts a cue on its own line at
-the cursor, in the existing syntax (`faceCue` in `src/core.mjs`; the list is `cueChoices`): Face full, Face
+In the "Paste a script" window a "Camera cues" list (with "Insert at cursor") puts a cue on its own line, in the
+existing syntax (`faceCue` in `src/core.mjs`; the list is `cueChoices`): Face full, Face
 small, Face small in each place, then `[Face: Scene]` for every Scene CamFrame lists, the two layout Scenes
 first. A layout Scene is listed only when CamFrame lists it (not for an older CamFrame, or when there was no
-room to save it). Names `faceCue` cannot read back (with . ; ! ? or a bracket in them, or over 40
+room to save it). Where it goes is decided by the format's own reading (`cueInsertion` in `src/core.mjs`): never over a
+selection, never inside a line (a caret inside a line puts the cue after it), never ahead of a section's links
+or question line; where the cue would be skipped when the script is read (above the first title, outside the
+start and end markers) nothing is inserted and the window says so. A blank first choice means a choice that
+vanished from CamFrame never becomes another cue. Names `faceCue` cannot read back (with . ; ! ? or a bracket in them, or over 40
 characters) are left out. The list shows only while the CamFrame link answers; otherwise one line says to
 open CamFrame with its link on (and to turn on the camera button when that is off; the lead approved this
 one line on 2026-11-06). The insert is read out in the window's own status line, and the keyboard focus
