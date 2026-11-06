@@ -2342,7 +2342,8 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(cam.seen.some((r) => r.path === "/camframe/small-size"), false, "never changes CamFrame's small size");
   await noMenuItem();
   await openPasteWindow();
-  await lineIs(/^Camera layouts are saved in CamFrame \(open Scenes\): Live small corner and Live right large\.$/);
+  await lineIs(/^Camera layouts are saved in CamFrame's Scenes: Live small corner and Live right large\.$/);
+  assert.equal(await LY.locator(".paste-status").textContent(), "Camera layouts are saved in CamFrame's Scenes: Live small corner and Live right large.", "read out once, when the window opens");
   await shot(LY, "camframe-layouts-saved-desktop");
   await LY.keyboard.press("Escape");
   // Later status checks do not save again.
@@ -2368,7 +2369,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await LY.waitForTimeout(500);
   assert.deepEqual(cam.saves(), [], "no room: nothing saved");
   await openPasteWindow();
-  await lineIs(/^No room to save the layouts: CamFrame keeps at most 6 Scenes and has 5, and 2 more are needed\. Delete 1 Scene you do not use in CamFrame, then turn the camera button off and on\.$/);
+  await lineIs(/^No room to save the layouts: CamFrame keeps at most 6 Scenes and has 5, and 2 more are needed, with one slot left free\. Delete 2 Scenes you do not use in CamFrame, then turn the camera button off and on\.$/);
   await shot(LY, "camframe-layouts-no-room-desktop");
   await LY.keyboard.press("Escape");
 
@@ -2534,7 +2535,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await LY.locator("#open-menu:popover-open").waitFor();
   await LY.locator('#open-menu [data-action="paste"]').click();
   await LY.locator(".paste-dialog[open]").waitFor();
-  assert.equal(await LY.locator(".paste-status").textContent(), "", "the last insert's words are gone when the window opens again");
+  assert.doesNotMatch(await LY.locator(".paste-status").textContent(), /Inserted camera cue/, "the last insert's words are gone when the window opens again");
   // A chosen Scene that vanishes from CamFrame never turns into another cue by itself.
   await LY.locator(".cue-select").selectOption("[Face: Interview]");
   cam.layouts.details = cam.layouts.details.filter((d) => d.name !== "Interview");
