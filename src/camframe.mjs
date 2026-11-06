@@ -82,7 +82,7 @@ export function camframeAfterCheck(state, misses, answered) {
 // camera's size and place, never the camera, shape, style or crop. The page
 // saves what is missing when CamFrame connects, unless that would leave no
 // spare slot (then it waits); it never replaces a Scene
-// without a yes, never moves the camera while saving and never changes
+// (it leaves one of Lex's own with a layout's name alone), never moves the camera while saving and never changes
 // CamFrame's small size.
 
 export const LAYOUT_SMALL = "Live small corner";
@@ -126,7 +126,7 @@ export function layoutMatches(detail, want) {
 /**
  * `detail` is this layout, saved at another size: the same place and kind, so
  * the small size changed since (resizing CamFrame by hand does that). It is
- * still saved and still works; only Replace brings it to today's size.
+ * still saved and still works; the page leaves it at that size.
  */
 export function layoutResized(detail, want) {
   return Number.isFinite(want.size) && Number.isFinite(detail?.size) && detail.size !== want.size && layoutMatches({ ...detail, size: want.size }, want);
@@ -140,7 +140,7 @@ const sameName = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
  * that holds something else), the
  * missing ones to save (small first), and the room: CamFrame keeps at most
  * `sceneLimit` Scenes, shared with Lex's own, so both missing ones must fit
- * before anything is saved. `save` is what a deliberate Save sends, `auto`
+ * before anything is saved. `save` is every missing one that fits, `auto`
  * what goes by itself: nothing when it would fill CamFrame (`tight`), because
  * the next Scene saved by hand there drops its oldest, maybe one of Lex's.
  */
@@ -186,8 +186,8 @@ export function layoutProblem(answer) {
 export function layoutRoomWords(room) {
   if (room.ok) return "";
   const scenes = (n) => `${n} Scene${n === 1 ? "" : "s"}`;
-  const over = room.has + room.need - room.limit;
-  return `No room to save the layouts: CamFrame keeps at most ${scenes(room.limit)} and has ${room.has}, and ${room.need} more ${room.need === 1 ? "is" : "are"} needed. Delete ${scenes(over)} you do not use in CamFrame, then turn the camera button off and on.`;
+  const over = room.has + room.need - room.limit + 1; // one slot stays free: saving never fills CamFrame
+  return `No room to save the layouts: CamFrame keeps at most ${scenes(room.limit)} and has ${room.has}, and ${room.need} more ${room.need === 1 ? "is" : "are"} needed, with one slot left free. Delete ${scenes(over)} you do not use in CamFrame, then turn the camera button off and on.`;
 }
 
 /**
@@ -211,7 +211,7 @@ export function layoutsLine(plan, { saving = false, problem = "" } = {}) {
   if (different.length) parts.push(`CamFrame already has ${different.length === 1 ? "a different Scene" : "different Scenes"} named ${different.join(" and ")}; the Prompter leaves ${different.length === 1 ? "it" : "them"} alone, so the cue uses what CamFrame holds.`);
   if (!missing.length && !different.length) {
     const older = plan.rows.filter((r) => r.state === "resized").map((r) => ` ${r.name} is at ${r.saved} px, saved before the small camera changed.`);
-    parts.push(`Camera layouts are saved in CamFrame (open Scenes): ${plan.rows.map((r) => r.name).join(" and ")}.${older.join("")}`);
+    parts.push(`Camera layouts are saved in CamFrame's Scenes: ${plan.rows.map((r) => r.name).join(" and ")}.${older.join("")}`);
   }
   return parts.join(" ");
 }
