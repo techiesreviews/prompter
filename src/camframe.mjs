@@ -176,9 +176,9 @@ export function layoutPlan(status) {
 export function layoutProblem(answer) {
   if (!answer) return "CamFrame did not answer while saving the layouts. Turn the camera button off and on to try again.";
   const code = answer.body?.code;
-  if (code === "scene-limit") return "CamFrame has no room for another Scene. Delete one you do not use in CamFrame, then turn the camera button off and on.";
+  if (code === "scene-limit") return "CamFrame has no room for another Scene. Delete Scenes you do not use in CamFrame until one slot stays free, then turn the camera button in Settings off and on.";
   if (code === "scene-exists") return "CamFrame already has a Scene with this name.";
-  if (code === "not-ready") return "CamFrame's window is not open yet. Open it, then turn the camera button off and on.";
+  if (code === "not-ready") return "CamFrame's window is not open yet. Open it, then turn the camera button in Settings off and on.";
   return `CamFrame refused: ${answer.body?.error || "no reason given"}`;
 }
 
@@ -187,7 +187,7 @@ export function layoutRoomWords(room) {
   if (room.ok) return "";
   const scenes = (n) => `${n} Scene${n === 1 ? "" : "s"}`;
   const over = room.has + room.need - room.limit + 1; // one slot stays free: saving never fills CamFrame
-  return `No room to save the layouts: CamFrame keeps at most ${scenes(room.limit)} and has ${room.has}, and ${room.need} more ${room.need === 1 ? "is" : "are"} needed, with one slot left free. Delete ${scenes(over)} you do not use in CamFrame, then turn the camera button off and on.`;
+  return `No room to save the layouts: CamFrame keeps at most ${scenes(room.limit)} and has ${room.has}, and ${room.need} more ${room.need === 1 ? "is" : "are"} needed, with one slot left free. Delete ${scenes(over)} you do not use in CamFrame, then turn the camera button in Settings off and on.`;
 }
 
 /**
@@ -205,7 +205,7 @@ export function layoutsLine(plan, { saving = false, problem = "" } = {}) {
   const parts = [];
   if (missing.length) {
     if (!plan.room.ok) parts.push(layoutRoomWords(plan.room));
-    else if (plan.tight) parts.push(`Not saved: ${missing.join(" and ")}. Saving would fill CamFrame (${plan.room.has + plan.room.need} of ${plan.room.limit} Scenes) and leave no spare slot, so the Prompter waits. Delete a Scene you do not use in CamFrame, then turn the camera button off and on.`);
+    else if (plan.tight) parts.push(`Not saved: ${missing.join(" and ")}. Saving would fill CamFrame (${plan.room.has + plan.room.need} of ${plan.room.limit} Scenes) and leave no spare slot, so the Prompter waits. Delete a Scene you do not use in CamFrame, then turn the camera button in Settings off and on.`);
     else parts.push(`Not saved in CamFrame: ${missing.join(" and ")}. Turn the camera button off and on to save ${missing.length === 1 ? "it" : "them"}.`);
   }
   if (different.length) parts.push(`CamFrame already has ${different.length === 1 ? "a different Scene" : "different Scenes"} named ${different.join(" and ")}; the Prompter leaves ${different.length === 1 ? "it" : "them"} alone, so the cue uses what CamFrame holds.`);
