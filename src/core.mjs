@@ -263,6 +263,71 @@ Smile at the lens.
 Then press record.
 `;
 
+/**
+ * The camera demo ("Try the camera demo" on the start screen, or the address #camera-demo): a short
+ * script whose camera lines use the two layout Scenes the page saves in CamFrame (docs/camframe/layouts.md).
+ * With the CamFrame link on, scrolling past each line moves the camera; otherwise they are reminders.
+ */
+export const CAMERA_DEMO_SCRIPT = `### **PREP**
+
+- CamFrame open, Prompter link on
+- Camera button on in Settings
+- Camera layouts saved (Open menu)
+
+---
+
+### **INTRO · 00:00**
+
+QL: What does the camera do?
+
+Camera lines move your camera.
+Scroll past one, it moves.
+Without CamFrame, they are reminders.
+
+Next: a branded page.
+Now: camera to the right.
+
+---
+
+### **1 · BRANDED PAGE · 00:30**
+
+QL: Where does the camera go?
+
+[Face: Live right large]
+Camera moves to the right.
+Your page stays left.
+Same line, every take.
+
+Next: a plugin screen.
+Now: camera in the corner.
+
+---
+
+### **2 · PLUGIN SCREEN · 01:00**
+
+QL: How small can it be?
+
+[Face: Live small corner]
+Camera shrinks to the corner.
+Your screen gets the room.
+
+Next: back to full.
+Now: full face again.
+
+---
+
+### **3 · BACK TO FULL · 01:30**
+
+QL: How do you finish?
+
+[Face full]
+The camera fills the screen.
+That is the whole demo.
+
+Next: your own script.
+Now: type [Face: Live right large].
+`;
+
 /** Plain-text format guide for one preset, used by the MCP and docs. */
 export function formatGuide(presetName) {
   const preset = getPreset(presetName);
