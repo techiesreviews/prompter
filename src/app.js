@@ -109,7 +109,6 @@ let voiceFinal = 0; // speech results already final and followed
 let voiceLocal = false; // this browser recognises speech on this device (no network needed)
 let voiceAsking = null; // the question whether it can, while it is asked
 let resumeAuto = false;
-let demoOpen = false; // the demo is open: its camera preview follows the cue lines
 let cues = []; // camera cues ({ size, position?, scene? }) by data-cue
 let cueAbove = null; // cue numbers above the reading line; null until the first look after render
 // False until the person first does something on the page after it loads: until then a scroll
@@ -139,7 +138,7 @@ const plainAddress = () => location.pathname + location.search;
  * new history entry when it replaces the start screen (so Back returns there).
  * `remember` keeps it as this browser's last script. Returns false if empty.
  */
-async function openScript(text, { fromLink = false, remember = true, label = "", demo = false } = {}) {
+async function openScript(text, { fromLink = false, remember = true, label = "" } = {}) {
   const parsed = parse(text);
   if (!parsed.length) return false;
   if (voiceOn) stopVoice();
@@ -150,9 +149,7 @@ async function openScript(text, { fromLink = false, remember = true, label = "",
   root.dataset.view = "script";
   $(".empty").hidden = true;
   window.scrollTo(0, 0);
-  demoOpen = demo || text.trim() === DEMO_SCRIPT.trim(); // also the demo opened from a copied link or pasted
   render();
-  showCamPreview([]); // the demo's camera preview starts at the top: full
   setStatus(label);
   if (!fromLink) {
     try {
@@ -166,7 +163,7 @@ async function openScript(text, { fromLink = false, remember = true, label = "",
 
 function openDemo() {
   if (location.hash !== "#demo") history[isEmpty() ? "pushState" : "replaceState"](null, "", "#demo");
-  return openScript(DEMO_SCRIPT, { fromLink: true, remember: false, demo: true });
+  return openScript(DEMO_SCRIPT, { fromLink: true, remember: false });
 }
 
 // A remembered script is named by its first section after PREP and INTRO
@@ -185,8 +182,6 @@ function showStart() {
   if (lineDrag && handle.hasPointerCapture(lineDrag.id)) handle.releasePointerCapture(lineDrag.id);
   scriptText = "";
   sections = [];
-  demoOpen = false;
-  showCamPreview([]);
   main.innerHTML = "";
   active = -1;
   anchor = null;
@@ -692,54 +687,10 @@ function updateActive() {
 // A camera cue line that reaches the reading line goes to CamFrame once per
 // pass down (auto-scroll, scrolling by hand, Follow my voice and section jumps
 // all scroll the page). Failures only change the CamFrame button in Settings.
-// The demo's camera preview: where the camera is after the last cue line above the reading line (so it also
-// follows a scroll back up), drawn by the page; CamFrame itself only gets the cue when the link is on.
-function showCamPreview(now) {
-  const box = $(".cam-preview");
-  box.hidden = !demoOpen;
-  if (!demoOpen) return;
-  const state = previewState(cues, now.length ? Math.max(...now) : -1);
-  const key = `${state.mode}/${state.at}/${state.label}`;
-  if (box.dataset.key !== key) {
-    box.dataset.key = key;
-    box.dataset.mode = state.mode;
-    const size = previewBox(state);
-    const face = box.querySelector(".cam-face");
-    for (const k of ["left", "top", "width", "height"]) face.style[k] = `${size[k]}%`;
-    const words = previewWords(state);
-    box.querySelector(".cam-caption").textContent = words;
-    box.setAttribute("aria-label", `Camera preview: ${words.replace(/^Camera: /, "")}`); // silent: the cue lines say it too
-  }
-  // Never cover the text (the reading line can be dragged up to camera height): first without the caption,
-  // then smaller, and only when even that does not fit above the line (a line near the very top) not shown. Measured every time, as the line and the
-  // window can change.
-  box.removeAttribute("data-compact");
-  box.style.visibility = "";
-  box.style.inlineSize = "";
-  const clear = () => box.getBoundingClientRect().bottom <= readingLineY() - 12;
-  if (!clear()) box.dataset.compact = "";
-  if (!clear()) {
-    // Smaller, to fit the room above the line (its frame is 16:9 inside 6 px of padding and 12 px from the top).
-    const width = Math.floor(12 + (readingLineY() - 36) * 16 / 9);
-    if (width >= 64) box.style.inlineSize = `${width}px`;
-    if (width < 64 || !clear()) box.style.visibility = "hidden";
-  }
-}
-
-// Only the preview, after the text moved by a setting: no cue is sent and no link opens.
-function refreshCamPreview() {
-  if (!demoOpen || !sections.length) return;
-  const y = readingLineY();
-  const now = [];
-  main.querySelectorAll("[data-cue]").forEach((el) => { if (el.getBoundingClientRect().top <= y + 4) now.push(Number(el.dataset.cue)); });
-  showCamPreview(now);
-}
-
 function updateCues(y) {
-  if (!cues.length) { showCamPreview([]); return; }
+  if (!cues.length) return;
   const now = [];
   main.querySelectorAll("[data-cue]").forEach((el) => { if (el.getBoundingClientRect().top <= y + 4) now.push(Number(el.dataset.cue)); });
-  showCamPreview(now);
   // Opening a script, or a cue already passed when the link is turned on, sends nothing.
   if (!cueAbove || !cueArmed) { cueAbove = new Set(now); return; }
   const { above, send } = cueCrossing(cueAbove, now);
@@ -1094,7 +1045,6 @@ function setSize(px) {
   root.style.setProperty("--size", px + "px");
   showSize(px);
   store.set("prompter-size", px);
-  refreshCamPreview(); // the lines moved: the cue the preview shows may have changed (nothing is sent)
 }
 const curSize = () => parseInt(getComputedStyle(root).getPropertyValue("--size"), 10);
 
@@ -1103,7 +1053,6 @@ function setWidth(name) {
   root.dataset.width = w;
   widthInputs.forEach((input) => { input.checked = input.value === w; });
   store.set("prompter-width", w);
-  refreshCamPreview();
 }
 
 // Line spacing: more room between the lines; the row at the reading line stays there.

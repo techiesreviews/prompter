@@ -65,20 +65,17 @@ open CamFrame with its link on (and to turn on the camera button when that is of
 one line on 2026-11-06). Under the list the layouts line says where the two layouts stand. The insert is read out in the window's own status line, and the keyboard focus
 goes to the text if the list disappears under it.
 
-## The demo (cues, preview and the text scrolling together)
+## The demo
 
 The one demo on the start screen ("Try the demo", or `/#demo`; the old `/#camera-demo` opens it too) has
 camera cue lines in section 4 (the two layout Scenes `[Face: Live right large]` and `[Face: Live small
 corner]`, then `[Face small, top left]` and `[Face full]`) and in section 5 (the corner for a screen share,
-then full). The preview never covers the reading line: if it would touch it (the line dragged up to camera height, or a small window) it first loses its caption, then shrinks, and only with the line near the very top of the window is it not shown. It can sit over lines already read (faded) in a narrow window or at Full width. A small preview at the top right of the page, a stand-in for CamFrame's output, moves to where the
-camera would be as each cue line passes the reading line, and moves back when you scroll up. It is drawn by
-the page (`previewState`, `previewBox` in `src/camframe.mjs`); no CamFrame is needed and nothing new is sent to
-CamFrame. With CamFrame connected the usual link sends the same cues; the real camera moves only if CamFrame has the Scenes
-the cues name (the preview shows what the cue asks for, not what CamFrame did).
+then full). With the CamFrame link on, scrolling past each cue line moves the real camera, if CamFrame holds
+the Scenes the cues name (an older CamFrame, a full one or a same-named Scene of Lex's own may not).
+Without CamFrame the cue lines are reminders.
 
 1. Open the Prompter, press "Try the demo" and scroll to section 4 (or press play).
-2. Watch the preview: right large, small corner, top left, full, then the corner again in section 5.
-3. For the real camera: open CamFrame (Prompter link on) and turn on the camera button in Settings first; the
+2. For the real camera: open CamFrame (Prompter link on) and turn on the camera button in Settings first; the
    two layouts are then saved in its Scenes by themselves when there is room for them and no Scene of your own
    has those names (Open > Paste a script shows a line saying so, or why not).
 
