@@ -1519,7 +1519,7 @@ function showCueMenu() {
     if (camframe.state !== "lost") setStatus(off.textContent); // "not found" is said by the link itself
   }
   pick.hidden = !live;
-  if (!live) return;
+  if (!live) { $(".paste-error").hidden = true; return; } // a note about the list goes with the list
   // The layout Scenes first, but only those CamFrame lists: an older CamFrame, or no room, never saved them.
   const scenes = (layouts.status ? layouts.status.scenes : camframe.scenes).filter((n) => typeof n === "string");
   const choices = cueChoices(scenes, [LAYOUT_LARGE, LAYOUT_SMALL].filter((n) => scenes.some((s) => s.toLowerCase() === n.toLowerCase())));
@@ -1547,6 +1547,7 @@ function insertCue() {
   if (!cue) {
     error.hidden = false;
     error.textContent = "Choose a camera cue in the list first.";
+    pasteDialog.querySelector(".cue-select").focus(); // so a second try is felt: the list takes the keyboard
     return;
   }
   const place = cueInsertion(text.value, text.selectionEnd, cue);
