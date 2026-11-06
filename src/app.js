@@ -150,7 +150,7 @@ async function openScript(text, { fromLink = false, remember = true, label = "",
   root.dataset.view = "script";
   $(".empty").hidden = true;
   window.scrollTo(0, 0);
-  demoOpen = demo;
+  demoOpen = demo || text === DEMO_SCRIPT; // also the demo opened from a copied link or pasted
   render();
   showCamPreview([]); // the demo's camera preview starts at the top: full
   setStatus(label);
@@ -698,6 +698,8 @@ function showCamPreview(now) {
   const box = $(".cam-preview");
   box.hidden = !demoOpen;
   if (!demoOpen) return;
+  box.removeAttribute("data-compact"); // the caption goes when the box would cover the reading line
+  if (box.getBoundingClientRect().bottom > readingLineY() - 12) box.dataset.compact = "";
   const state = previewState(cues, now.length ? Math.max(...now) : -1);
   if (box.dataset.key === `${state.mode}/${state.at}/${state.label}`) return;
   box.dataset.key = `${state.mode}/${state.at}/${state.label}`;
