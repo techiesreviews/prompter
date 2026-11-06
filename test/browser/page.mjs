@@ -378,10 +378,11 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await page.locator(".reading-line").isVisible(), false);
   assert.equal(await page.locator(".line-handle").isVisible(), false, "no reading line handle on the start screen");
   assert.equal(await page.locator(".read-veil").isVisible(), false, "no fading veil on the start screen");
+  assert.equal(await page.locator(".cam-preview").isVisible(), false, "no camera preview on the start screen");
   assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), NIGHT);
   const card = page.locator(".empty .card");
   assert.equal(await card.locator("h1").textContent(), "Your teleprompter");
-  assert.deepEqual(await card.locator(".choices .btn:not([hidden])").allTextContents(), ["Open a script file", "Paste a script", "Wait for MCP", "Try the demo", "Try the camera demo"]);
+  assert.deepEqual(await card.locator(".choices .btn:not([hidden])").allTextContents(), ["Open a script file", "Paste a script", "Wait for MCP", "Try the demo"]);
   assert.equal(await card.locator(".btn.primary").textContent(), "Open a script file", "one orange primary action");
   assert.match(await card.textContent(), /drop a \.md or \.txt file anywhere[\s\S]*Your script stays on this device/);
   const cardBox = await card.boundingBox();
@@ -401,7 +402,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await page.goBack();
   await showsStart(page);
   assert.equal(await card.locator(".continue").textContent(), "Continue: MY TALK", "the last script is offered by its first section after PREP");
-  assert.deepEqual(await card.locator(".choices .btn:not([hidden])").allTextContents(), ["Continue: MY TALK", "Open a script file", "Paste a script", "Wait for MCP", "Try the demo", "Try the camera demo"]);
+  assert.deepEqual(await card.locator(".choices .btn:not([hidden])").allTextContents(), ["Continue: MY TALK", "Open a script file", "Paste a script", "Wait for MCP", "Try the demo"]);
   await shot(page, "start-continue-desktop");
   await page.reload();
   await showsStart(page);
@@ -411,19 +412,13 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await page.locator(".section").count(), 2);
   ok("Open a script file works from the keyboard (file picker); Back returns to the start screen, which offers “Continue: MY TALK” first and opens nothing by itself, also after a reload");
 
-  // Try the camera demo: the layout cues in a short script, from the start screen and from its address.
-  await page.goto(`${base}/`);
-  await showsStart(page);
-  await card.locator('[data-action="camera-demo"]').click();
-  await page.waitForFunction(() => document.querySelectorAll(".section").length === 5);
-  assert.equal(await page.evaluate(() => location.hash), "#camera-demo");
-  assert.deepEqual(await page.locator("[data-cue]").evaluateAll((els) => els.map((el) => el.textContent.trim())).then((t) => t.map((x) => x.replace(/\s+/g, " "))), ["Camera: Scene “Live right large”", "Camera: Scene “Live small corner”", "Camera: face full"]);
+  // The old camera-demo address opens the one demo.
   await page.goto(`${base}/`);
   await showsStart(page);
   await page.goto(`${base}/#camera-demo`);
-  await page.waitForFunction(() => document.querySelectorAll(".section").length === 5);
-  assert.equal(await page.evaluate(() => location.hash), "#camera-demo", "opened from its address");
-  ok("Try the camera demo: #camera-demo opens a five-section script with the three camera cue lines (the two layout Scenes, then Face full)");
+  await page.waitForFunction((n) => document.querySelectorAll(".section").length === n, DEMO_SECTIONS);
+  assert.equal(await page.evaluate(() => location.hash), "#demo", "#camera-demo opens the main demo");
+  ok("the old #camera-demo address opens the main demo (there is one demo)");
 
   // Try the demo: the format by example, no buttons in PREP.
   await page.goto(`${base}/`);
@@ -468,6 +463,40 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.ok(dockBox.y + dockBox.height <= 900 && dockBox.y > 900 - 100, `control bar at ${Math.round(dockBox.y)}px`);
   assert.deepEqual(await page.locator(".dock > button:not([hidden])").evaluateAll((els) => els.map((el) => el.getAttribute("aria-label") || el.textContent.trim())),
     ["Open", "Previous section", "Auto-scroll", "Next section", "Start the show clock, 00:00", "Settings"]);
+  // The demo's camera preview follows the camera cue lines with no CamFrame at all: full, then right large, small corner,
+  // top left, full again, the corner for the screen share, full; and back up the page it goes back.
+  const preview = page.locator(".cam-preview");
+  const camState = () => page.evaluate(() => { const b = document.querySelector(".cam-preview"); const f = b.querySelector(".cam-face").style; return { visible: !b.hidden, mode: b.dataset.mode, words: b.querySelector(".cam-caption").textContent, left: parseFloat(f.left), top: parseFloat(f.top), width: parseFloat(f.width) }; });
+  assert.deepEqual(await camState().then((c) => [c.visible, c.mode, c.words]), [true, "full", "Camera: full screen"], "the demo opens with the camera full");
+  await passCueOn(page, 0);
+  await page.waitForFunction(() => document.querySelector(".cam-preview").dataset.mode === "large");
+  const large = await camState();
+  assert.equal(large.words, "Camera: large, right (Live right large)");
+  assert.ok(large.left > 70 && large.width > 20, `right large: ${JSON.stringify(large)}`);
+  await shot(page, "demo-camera-preview-large-desktop");
+  await passCueOn(page, 1);
+  await page.waitForFunction(() => document.querySelector(".cam-preview").dataset.mode === "small");
+  const corner = await camState();
+  assert.equal(corner.words, "Camera: small, bottom right (Live small corner)");
+  assert.ok(corner.width < large.width && corner.top > 60, `small corner: ${JSON.stringify(corner)}`);
+  await passCueOn(page, 2);
+  await page.waitForFunction(() => document.querySelector(".cam-caption").textContent === "Camera: small, top left");
+  assert.ok((await camState()).left < 5, "top left");
+  await passCueOn(page, 3);
+  await page.waitForFunction(() => document.querySelector(".cam-preview").dataset.mode === "full");
+  await passCueOn(page, 4);
+  await page.waitForFunction(() => document.querySelector(".cam-caption").textContent === "Camera: small, bottom right");
+  await passCueOn(page, 5);
+  await page.waitForFunction(() => document.querySelector(".cam-preview").dataset.mode === "full");
+  await passCueOn(page, 1);
+  await page.waitForFunction(() => document.querySelector(".cam-caption").textContent === "Camera: small, bottom right (Live small corner)");
+  await passCueOn(page, 0, -60);
+  await page.waitForFunction(() => document.querySelector(".cam-preview").dataset.mode === "full", null, { timeout: 5000 });
+  assert.equal(await page.evaluate(() => document.querySelector(".cam-preview").getAttribute("aria-label")), "Camera preview: full screen", "its name follows silently");
+  const pBox = await preview.boundingBox();
+  assert.ok(pBox.x + pBox.width <= 1366 && pBox.y >= 0, "the preview sits inside the window, top right");
+  await shot(page, "demo-camera-preview-desktop");
+  await page.evaluate(() => window.scrollTo(0, 0));
   await shot(page, "demo-desktop");
   ok("Try the demo: #demo, PREP is a plain checklist (no buttons); text starts on the left in a centred 960px column; section title left, time right; the bar: Open, previous, play, next, clock, Settings (no mic or monitor: those are in Settings), centred at the bottom");
 
@@ -1772,6 +1801,8 @@ export async function run({ browser, base, mode, dist, out }) {
   await m.locator('.empty [data-action="demo"]').click();
   await m.locator(".section").first().waitFor();
   await noOverflow(m, "mobile demo");
+  const mPreview = await m.locator(".cam-preview").boundingBox();
+  assert.ok(mPreview && mPreview.x >= 0 && mPreview.x + mPreview.width <= 390 && mPreview.width <= 130 && mPreview.y >= 0, `phone: the camera preview is small and inside the window (${JSON.stringify(mPreview)})`);
   const mobileDock = await m.locator(".dock").boundingBox();
   assert.ok(mobileDock.x >= 0 && mobileDock.x + mobileDock.width <= 390, `control bar ${Math.round(mobileDock.width)}px fits`);
   assert.ok(Math.abs(mobileDock.x + mobileDock.width / 2 - 195) < 2, "control bar centred");
