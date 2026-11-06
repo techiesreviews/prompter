@@ -421,7 +421,7 @@ test("the demo script follows the lex preset and starts with a PREP checklist", 
 
 test("cueChoices: the cue lines the list offers read back as the same cues, the layout Scenes first", async () => {
   const { cueChoices, faceCue } = await import("../src/core.mjs");
-  const all = cueChoices(["Interview", "live small corner", "Odd. name", "Has [bracket]", "x".repeat(41), " padded", "Demo"], ["Live right large", "Live small corner"]);
+  const all = cueChoices(["Interview", "live small corner", "Odd. name", "Ready?", "A;B", "Go!", "Has [bracket]", "x".repeat(41), " padded", "Demo"], ["Live right large", "Live small corner"]);
   const texts = all.map((c) => c.text);
   assert.deepEqual(texts.slice(0, 2), ["[Face full]", "[Face small]"]);
   assert.ok(texts.includes("[Face small, bottom right]") && texts.includes("[Face small, top left]") && texts.includes("[Face small, center]"));

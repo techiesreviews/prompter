@@ -396,7 +396,7 @@ export function faceCue(note) {
  * the existing syntax ("[Face full]", "[Face small, bottom right]", "[Face: Scene name]"). `layouts` are the
  * layout Scene names (offered first, whether or not they are saved yet); `scenes` are the names CamFrame
  * lists. Only a text that faceCue reads back as the same cue is offered, so a Scene name with a full stop,
- * a bracket or more than 40 characters is left out.
+ * semicolon, ! or ?, a bracket or more than 40 characters is left out.
  */
 export function cueChoices(scenes = [], layouts = []) {
   const choices = [{ label: "Face full (fill the screen)", text: "[Face full]" }, { label: "Face small (keep the place)", text: "[Face small]" }];
