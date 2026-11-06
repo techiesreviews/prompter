@@ -39,7 +39,7 @@ itself, and the paste window's Camera cues list says where they stand.
   answers and CamFrame can save layouts) says where the layouts stand, true for the last status read:
   saved (naming one at an older size), saving, not saved (no room, would fill CamFrame, deleted later, a
   refusal or a lost answer in plain words), or a Scene of Lex's own left alone. It never says saved unless
-  both are. It is read out only when it changes while the paste window is open; a save made by itself is
+  both are. It is read out once, when the paste window opens; a save made by itself is
   quiet (it would talk over "CamFrame link: connected"). **A real screen reader has not been tried:** the
   browser checks read Chromium's accessibility tree, which shows the text can be reached, not how it sounds.
 - A refused save stops and is said in the line; a lost answer is not repeated blindly: the status is read

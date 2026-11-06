@@ -799,7 +799,8 @@ function setCamframe(patch) {
 // (layoutsLine in src/camframe.mjs) says where the layouts stand. A save made by itself is never read out.
 function seeLayouts(body) {
   layouts.status = layoutsSupported(body) ? body : null;
-  if (!layouts.status) layouts.problem = "";
+  // The line follows the status: a problem from an earlier save goes once nothing is missing, or for an older CamFrame.
+  if (!layouts.status || (!layoutsSaving() && !layoutPlan(layouts.status).rows.some((r) => r.state === "missing"))) layouts.problem = "";
   if (layouts.status && layouts.auto !== camframe.session) saveLayouts();
   showCueMenu();
 }
@@ -1290,12 +1291,10 @@ function showCueMenu() {
   pick.hidden = !live;
   const line = pasteDialog.querySelector(".cue-layouts");
   if (!live) { line.hidden = true; const note = $(".paste-error"); if (note.dataset.cue) note.hidden = true; return; } // a note about the list goes with the list
-  // Where the two layouts stand in CamFrame, in one line (the window that used to say it is gone). Read out
-  // when it changes while this window is open; never otherwise (a save made by itself is quiet).
-  const said = line.textContent;
+  // Where the two layouts stand in CamFrame, in one line (the window that used to say it is gone). It is read
+  // out once, when this window opens; a save made by itself is quiet.
   line.textContent = layoutsLine(layouts.status && layoutPlan(layouts.status), { saving: layoutsSaving(), problem: layouts.problem });
   line.hidden = !line.textContent;
-  if (pasteDialog.open && line.textContent && line.textContent !== said) setStatus(line.textContent);
   // The layout Scenes first, but only those CamFrame lists: an older CamFrame, or no room, never saved them.
   const scenes = (layouts.status ? layouts.status.scenes : camframe.scenes).filter((n) => typeof n === "string");
   const choices = cueChoices(scenes, [LAYOUT_LARGE, LAYOUT_SMALL].filter((n) => scenes.some((s) => s.toLowerCase() === n.toLowerCase())));
@@ -1356,6 +1355,8 @@ function openPaste() {
   showCueMenu();
   showDialog(pasteDialog);
   $("#paste-text").focus();
+  const line = pasteDialog.querySelector(".cue-layouts");
+  if (!line.hidden) setStatus(line.textContent);
 }
 
 async function submitPaste() {

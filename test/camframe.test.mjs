@@ -245,10 +245,10 @@ test("layoutProblem: CamFrame's refusals and a missed call in plain words", () =
 
 test("layoutRoomWords: how many Scenes to delete in CamFrame, true also after another layout was saved", () => {
   assert.equal(layoutRoomWords({ has: 1, limit: 6, need: 2, ok: true, free: 5 }), "");
-  assert.equal(layoutRoomWords({ has: 5, limit: 6, need: 2, ok: false, free: 1 }), "No room to save the layouts: CamFrame keeps at most 6 Scenes and has 5, and 2 more are needed. Delete 1 Scene you do not use in CamFrame, then turn the camera button off and on.");
-  assert.match(layoutRoomWords({ has: 6, limit: 6, need: 1, ok: false, free: 0 }), /has 6, and 1 more is needed\. Delete 1 Scene /);
-  assert.match(layoutRoomWords({ has: 6, limit: 6, need: 2, ok: false, free: 0 }), /Delete 2 Scenes /);
-  assert.match(layoutRoomWords({ has: 8, limit: 6, need: 2, ok: false, free: 0 }), /has 8, .* Delete 4 Scenes /, "more Scenes than the limit: all of the extra ones count");
+  assert.equal(layoutRoomWords({ has: 5, limit: 6, need: 2, ok: false, free: 1 }), "No room to save the layouts: CamFrame keeps at most 6 Scenes and has 5, and 2 more are needed, with one slot left free. Delete 2 Scenes you do not use in CamFrame, then turn the camera button off and on.");
+  assert.match(layoutRoomWords({ has: 6, limit: 6, need: 1, ok: false, free: 0 }), /has 6, and 1 more is needed, with one slot left free\. Delete 2 Scenes /);
+  assert.match(layoutRoomWords({ has: 6, limit: 6, need: 2, ok: false, free: 0 }), /Delete 3 Scenes /);
+  assert.match(layoutRoomWords({ has: 8, limit: 6, need: 2, ok: false, free: 0 }), /has 8, .* Delete 5 Scenes /, "more Scenes than the limit: all of the extra ones count");
 });
 
 test("layoutPlan: both layouts ready needs no room, even with more Scenes than the limit", () => {
@@ -290,8 +290,8 @@ test("layoutsLine: where the layouts stand, true for the status, with no word of
   const scenes = (n) => Array.from({ length: n }, (_, k) => `S${k}`);
   const withScenes = (n, extra = []) => api2({ scenes: [...scenes(n), ...extra.map((d) => d.name)], sceneDetails: [...scenes(n).map((name) => ({ name, kind: "snapshot" })), ...extra] });
   assert.equal(layoutsLine(null), "");
-  assert.equal(layoutsLine(layoutPlan(withScenes(1, [SMALL_DETAIL, LARGE_DETAIL]))), "Camera layouts are saved in CamFrame (open Scenes): Live small corner and Live right large.");
-  assert.match(layoutsLine(layoutPlan(withScenes(1, [SMALL_DETAIL, { ...LARGE_DETAIL, size: 400 }]))), /saved in CamFrame .* Live right large is at 400 px, saved before the small camera changed\.$/);
+  assert.equal(layoutsLine(layoutPlan(withScenes(1, [SMALL_DETAIL, LARGE_DETAIL]))), "Camera layouts are saved in CamFrame's Scenes: Live small corner and Live right large.");
+  assert.match(layoutsLine(layoutPlan(withScenes(1, [SMALL_DETAIL, { ...LARGE_DETAIL, size: 400 }]))), /saved in CamFrame's Scenes: .* Live right large is at 400 px, saved before the small camera changed\.$/);
   assert.equal(layoutsLine(layoutPlan(withScenes(1)), { saving: true }), "Saving the camera layouts in CamFrame…");
   assert.equal(layoutsLine(layoutPlan(withScenes(1)), { problem: "CamFrame refused: no." }), "CamFrame refused: no.");
   assert.match(layoutsLine(layoutPlan(withScenes(1, [SMALL_DETAIL]))), /^Not saved in CamFrame: Live right large\. Turn the camera button off and on to save it\.$/, "deleted later: nothing saves it before the next connect");
