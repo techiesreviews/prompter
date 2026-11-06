@@ -150,7 +150,7 @@ async function openScript(text, { fromLink = false, remember = true, label = "",
   root.dataset.view = "script";
   $(".empty").hidden = true;
   window.scrollTo(0, 0);
-  demoOpen = demo || text === DEMO_SCRIPT; // also the demo opened from a copied link or pasted
+  demoOpen = demo || text.trim() === DEMO_SCRIPT.trim(); // also the demo opened from a copied link or pasted
   render();
   showCamPreview([]); // the demo's camera preview starts at the top: full
   setStatus(label);
@@ -698,18 +698,25 @@ function showCamPreview(now) {
   const box = $(".cam-preview");
   box.hidden = !demoOpen;
   if (!demoOpen) return;
-  box.removeAttribute("data-compact"); // the caption goes when the box would cover the reading line
-  if (box.getBoundingClientRect().bottom > readingLineY() - 12) box.dataset.compact = "";
   const state = previewState(cues, now.length ? Math.max(...now) : -1);
-  if (box.dataset.key === `${state.mode}/${state.at}/${state.label}`) return;
-  box.dataset.key = `${state.mode}/${state.at}/${state.label}`;
-  box.dataset.mode = state.mode;
-  const size = previewBox(state);
-  const face = box.querySelector(".cam-face");
-  for (const k of ["left", "top", "width", "height"]) face.style[k] = `${size[k]}%`;
-  const words = previewWords(state);
-  box.querySelector(".cam-caption").textContent = words;
-  box.setAttribute("aria-label", `Camera preview: ${words.replace(/^Camera: /, "")}`); // silent: the cue lines say it too
+  const key = `${state.mode}/${state.at}/${state.label}`;
+  if (box.dataset.key !== key) {
+    box.dataset.key = key;
+    box.dataset.mode = state.mode;
+    const size = previewBox(state);
+    const face = box.querySelector(".cam-face");
+    for (const k of ["left", "top", "width", "height"]) face.style[k] = `${size[k]}%`;
+    const words = previewWords(state);
+    box.querySelector(".cam-caption").textContent = words;
+    box.setAttribute("aria-label", `Camera preview: ${words.replace(/^Camera: /, "")}`); // silent: the cue lines say it too
+  }
+  // Keep off the reading line (it can be dragged up to camera height): first without the caption, then at the
+  // bottom right above the control bar. Measured every time, as the line and the window can change.
+  box.removeAttribute("data-compact");
+  box.removeAttribute("data-place");
+  const clear = () => box.getBoundingClientRect().bottom <= readingLineY() - 12;
+  if (!clear()) box.dataset.compact = "";
+  if (!clear()) box.dataset.place = "bottom";
 }
 
 function updateCues(y) {
