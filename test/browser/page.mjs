@@ -3227,16 +3227,16 @@ export async function run({ browser, base, mode, dist, out }) {
   await LY.locator("#paste-text").evaluate((el) => { el.focus(); el.setSelectionRange(12, 12); }); // after "He", mid-line
   await LY.locator(".cue-select").selectOption("[Face: Live right large]");
   await LY.locator('[data-action="insert-cue"]').click();
-  assert.equal(await LY.locator("#paste-text").inputValue(), "### **A**\nHe\n[Face: Live right large]\nllo\nWorld", "on its own line at the cursor");
+  assert.equal(await LY.locator("#paste-text").inputValue(), "### **A**\nHello\n[Face: Live right large]\nWorld", "on its own line, after the line the cursor is in (no line is split)");
   assert.equal(await LY.locator(".paste-status").textContent(), "Inserted camera cue [Face: Live right large]", "read out in the window's own status line");
   assert.equal(await LY.evaluate(() => document.activeElement.id), "paste-text", "focus back in the text");
   // A selection stays (the cue goes after it), and Undo takes the insert back.
   const selValue = await LY.locator("#paste-text").inputValue();
-  const llo = selValue.indexOf("llo");
+  const llo = selValue.indexOf("Hello");
   await LY.locator("#paste-text").evaluate((el, at) => { el.focus(); el.setSelectionRange(at, at + 3); }, llo);
   await LY.locator(".cue-select").selectOption("[Face full]");
   await LY.locator('[data-action="insert-cue"]').click();
-  assert.equal(await LY.locator("#paste-text").inputValue(), "### **A**\nHe\n[Face: Live right large]\nllo\n[Face full]\nWorld", "the selected text stays, the cue follows it");
+  assert.equal(await LY.locator("#paste-text").inputValue(), "### **A**\nHello\n[Face full]\n[Face: Live right large]\nWorld", "the selected text stays, the cue follows its line");
   await LY.keyboard.press("Control+z");
   assert.equal(await LY.locator("#paste-text").inputValue(), selValue, "Undo takes the insert back");
   // A cursor inside a section title: the cue goes after that line, the title stays whole.
@@ -3245,6 +3245,19 @@ export async function run({ browser, base, mode, dist, out }) {
   await LY.locator(".cue-select").selectOption("[Face full]");
   await LY.locator('[data-action="insert-cue"]').click();
   assert.equal(await LY.locator("#paste-text").inputValue(), "### **INTRO · 00:00**\n[Face full]\nHello", "the title is not split");
+  await LY.locator("#paste-text").fill("### **INTRO · 00:00**\n- Site: https://x.test/a\nQL: Why?\nHello");
+  await LY.locator("#paste-text").evaluate((el) => { el.focus(); el.setSelectionRange(8, 8); });
+  await LY.locator('[data-action="insert-cue"]').click();
+  assert.equal(await LY.locator("#paste-text").inputValue(), "### **INTRO · 00:00**\n- Site: https://x.test/a\nQL: Why?\n[Face full]\nHello", "after the title's link and question line");
+  await LY.locator("#paste-text").fill("- Docs: https://x.test/y/z\n### **A**\nHello");
+  await LY.locator("#paste-text").evaluate((el) => { el.focus(); el.setSelectionRange(20, 20); });
+  await LY.locator('[data-action="insert-cue"]').click();
+  assert.equal(await LY.locator("#paste-text").inputValue(), "- Docs: https://x.test/y/z\n### **A**\nHello", "a cursor inside notes above the first title: nothing is put there");
+  await LY.locator("#paste-text").fill("### **NOTES**\nx\n<!--SCRIPT-START-->\n### **A**\nHello");
+  await LY.locator("#paste-text").evaluate((el) => { el.focus(); el.setSelectionRange(14, 14); });
+  await LY.locator('[data-action="insert-cue"]').click();
+  assert.equal(await LY.locator("#paste-text").inputValue(), "### **NOTES**\nx\n<!--SCRIPT-START-->\n### **A**\nHello", "before the start marker the cue would be skipped: nothing is put there");
+  assert.equal(await LY.locator(".paste-error").isVisible(), true);
   // A bare ### is no title (the format's own reading): nothing is put there.
   await LY.locator("#paste-text").fill("### \nHello");
   await LY.locator("#paste-text").evaluate((el) => { el.focus(); el.setSelectionRange(10, 10); });
