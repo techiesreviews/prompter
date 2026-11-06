@@ -1295,7 +1295,9 @@ function showCueMenu() {
   // window open it is read out each time it settles on new words (not "Saving…"), a moment after the change
   // (so it comes after a link message, though whether a screen reader finishes that one first is untried);
   // with the window closed the Prompter says nothing (a save by itself is quiet).
-  line.textContent = layoutsLine(layouts.status && layoutPlan(layouts.status), { saving: layoutsSaving(), problem: layouts.problem });
+  // Only while the link says on: while it is reconnecting, CamFrame has just missed a check and nothing is claimed.
+  line.textContent = camframe.state === "on" ? layoutsLine(layouts.status && layoutPlan(layouts.status), { saving: layoutsSaving(), problem: layouts.problem }) : "";
+  line.classList.toggle("error-text", Boolean(line.textContent) && !/^(Camera layouts are saved|Saving)/.test(line.textContent));
   line.hidden = !line.textContent;
   clearTimeout(layouts.sayTimer);
   if (pasteDialog.open && !line.hidden && !layoutsSaving() && line.textContent !== layouts.said) {
@@ -1350,6 +1352,7 @@ function insertCue() {
   text.setSelectionRange(place.at, place.at);
   // As typed text, so Undo (Ctrl+Z) takes it back; setRangeText is the fallback.
   if (!document.execCommand("insertText", false, place.insert)) { text.setRangeText(place.insert, place.at, place.at, "end"); text.dispatchEvent(new Event("input", { bubbles: true })); }
+  clearTimeout(layouts.sayTimer); // the insert's words must not be overwritten by a line read-out that is due
   setStatus(`Inserted camera cue ${cue}`);
 }
 
