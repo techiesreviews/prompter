@@ -1514,7 +1514,10 @@ function showCueMenu() {
     : "Camera cues show here when CamFrame is connected: turn on the camera button in Settings, and open CamFrame with its Prompter link on.";
   // The row may hold the focus when the link drops: the text takes it, so the keyboard is never lost, and the
   // window says why the list went.
-  if (!live && !pick.hidden && pasteDialog.open) { if (pick.contains(document.activeElement)) $("#paste-text").focus(); setStatus(off.textContent); }
+  if (!live && !pick.hidden && pasteDialog.open) {
+    if (pick.contains(document.activeElement)) $("#paste-text").focus();
+    if (camframe.state !== "lost") setStatus(off.textContent); // "not found" is said by the link itself
+  }
   pick.hidden = !live;
   if (!live) return;
   // The layout Scenes first, but only those CamFrame lists: an older CamFrame, or no room, never saved them.
@@ -1541,13 +1544,16 @@ function insertCue() {
   const text = $("#paste-text");
   const cue = pasteDialog.querySelector(".cue-select").value;
   const error = $(".paste-error");
-  if (!cue) { setStatus("Choose a camera cue first."); return; }
+  if (!cue) {
+    error.hidden = false;
+    error.textContent = "Choose a camera cue in the list first.";
+    return;
+  }
   const place = cueInsertion(text.value, text.selectionEnd, cue);
   if (!place) {
     error.hidden = false;
     error.textContent = "Put the cursor under a section title (a line like ### **INTRO · 00:00**) first: a camera cue above the first title, or outside the script's start and end markers, is skipped.";
     text.focus();
-    setStatus(error.textContent);
     return;
   }
   error.hidden = true;
