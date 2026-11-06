@@ -575,7 +575,6 @@
 </dialog>
 <dialog class="dialog paste-dialog" aria-labelledby="paste-title">
   <h2 id="paste-title">Paste a script</h2>
-  <label for="paste-text" class="muted">Script text (Markdown, like the demo)</label>
   <span class="paste-status sr-only" role="status"></span>
   <div class="cue-pick" hidden>
     <label for="cue-select" class="muted">Camera cues</label>
@@ -583,6 +582,7 @@
     <button class="btn" type="button" data-action="insert-cue">Insert at cursor</button>
   </div>
   <p class="muted cue-off" hidden>Camera cues show here when CamFrame is connected: open CamFrame with its Prompter link on, then turn on the camera button in Settings.</p>
+  <label for="paste-text" class="muted">Script text (Markdown, like the demo)</label>
   <textarea id="paste-text" class="paste" placeholder="### **INTRO · 00:00**&#10;&#10;QL: Why should they stay?&#10;&#10;Hi, I'm Sam. Welcome."></textarea>
   <p class="error-text paste-error" role="alert" hidden></p>
   <p class="dialog-actions"><button class="btn primary" type="button" data-action="open-paste">Open in the prompter</button> <button class="btn" type="button" data-action="close-dialog">Cancel</button></p>

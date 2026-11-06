@@ -3230,20 +3230,39 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await LY.locator("#paste-text").inputValue(), "### **A**\nHe\n[Face: Live right large]\nllo\nWorld", "on its own line at the cursor");
   assert.equal(await LY.locator(".paste-status").textContent(), "Inserted camera cue [Face: Live right large]", "read out in the window's own status line");
   assert.equal(await LY.evaluate(() => document.activeElement.id), "paste-text", "focus back in the text");
-  await LY.locator(".paste-dialog [data-action=close-dialog]").click();
-  // Not connected: no list, one line instead.
-  await cam.stop();
-  await LY.evaluate(() => document.querySelector("#settings").dispatchEvent(new ToggleEvent("toggle", { newState: "open" })));
-  await LY.waitForFunction(() => ["reconnecting", "lost"].includes(document.querySelector(".camframe").dataset.state), null, { timeout: 15_000 });
-  await LY.waitForFunction(() => document.querySelector(".camframe").dataset.state === "lost", null, { timeout: 30_000 });
+  // Opening the pasted script is read out on the page after the window closes.
+  await LY.locator('[data-action="open-paste"]').click();
+  await LY.waitForFunction(() => !document.querySelector(".paste-dialog").open);
+  await LY.waitForFunction(() => document.querySelector(".status").textContent === "Opened pasted script");
   await (await dock(LY, ".open-btn")).click();
   await LY.locator("#open-menu:popover-open").waitFor();
   await LY.locator('#open-menu [data-action="paste"]').click();
   await LY.locator(".paste-dialog[open]").waitFor();
+  assert.equal(await LY.locator(".paste-status").textContent(), "", "the last insert's words are gone when the window opens again");
+  // Not connected: no list, one line instead; focus on the list goes to the text.
+  await LY.locator(".cue-select").focus();
+  await cam.stop();
+  await LY.evaluate(() => document.querySelector("#settings").dispatchEvent(new ToggleEvent("toggle", { newState: "open" })));
+  await LY.waitForFunction(() => ["reconnecting", "lost"].includes(document.querySelector(".camframe").dataset.state), null, { timeout: 15_000 });
+  await LY.waitForFunction(() => document.querySelector(".camframe").dataset.state === "lost", null, { timeout: 30_000 });
   assert.equal(await LY.locator(".cue-pick").isHidden(), true);
-  assert.match(await LY.locator(".cue-off").textContent(), /^Camera cues show here when CamFrame is connected/);
+  assert.match(await LY.locator(".cue-off").textContent(), /^Camera cues show here once CamFrame answers/, "the link is on, so no advice to turn it on");
+  assert.equal(await LY.evaluate(() => document.activeElement.id), "paste-text", "the list went away under the keyboard: focus is in the text");
   await LY.keyboard.press("Escape");
   await cam.start();
+  // An older CamFrame lists only its own Scenes: no layout Scenes are offered, and the link off says how to turn it on.
+  cam.layouts = null;
+  await LY.goto("about:blank");
+  await LY.goto(layoutsLink);
+  await LY.locator(".section").first().waitFor();
+  await LY.waitForFunction(() => document.querySelector(".camframe").dataset.state === "on");
+  await (await dock(LY, ".open-btn")).click();
+  await LY.locator("#open-menu:popover-open").waitFor();
+  await LY.locator('#open-menu [data-action="paste"]').click();
+  await LY.locator(".paste-dialog[open]").waitFor();
+  const oldLabels = await LY.locator(".cue-select option").allTextContents();
+  assert.ok(oldLabels.includes("Scene: Intro") && !oldLabels.some((l) => l.includes("(layout)")), `an older CamFrame: ${oldLabels.join(" | ")}`);
+  await LY.keyboard.press("Escape");
   // Back to an older CamFrame: the item hides again.
   cam.layouts = null;
   await (await dock(LY, ".settings-btn")).click();

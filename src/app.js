@@ -742,7 +742,6 @@ async function checkCamframe() {
     afterCheck(body);
     if (body) {
       camframe.scenes = Array.isArray(body.scenes) ? body.scenes.filter((n) => typeof n === "string") : [];
-      showCueMenu();
       seeLayouts(body);
     }
   }
@@ -795,7 +794,6 @@ function setCamframe(patch) {
   camframeBtn.setAttribute("aria-label", name);
   camframeBtn.title = camframe.state === "lost" ? name + CAMFRAME_LOST_HELP : name;
   updateSettingsBtn();
-  showCueMenu();
   showLayouts(); // first: not found closes that window, and is then said on the page
   // Not again when it comes back from a missed check or two (reconnecting).
   if (was !== camframe.state && ((camframe.state === "on" && was !== "reconnecting") || camframe.state === "lost")) setStatus(`${name}.`);
@@ -992,6 +990,7 @@ function shownNote(plan) {
 
 // The Open menu's item (with a dot when the window needs a look) and the window's rows.
 function showLayouts() {
+  showCueMenu(); // the paste window's list follows what CamFrame holds
   const status = layouts.status;
   const live = Boolean(status) && camframe.on && (camframe.state === "on" || camframe.state === "reconnecting");
   layoutsItem.hidden = !live;
@@ -1508,10 +1507,18 @@ async function copyLink(button) {
 function showCueMenu() {
   const live = camframe.on && (camframe.state === "on" || camframe.state === "reconnecting");
   const pick = pasteDialog.querySelector(".cue-pick");
-  pasteDialog.querySelector(".cue-off").hidden = live;
+  const off = pasteDialog.querySelector(".cue-off");
+  off.hidden = live;
+  off.textContent = camframe.on
+    ? "Camera cues show here once CamFrame answers: open CamFrame with its Prompter link on."
+    : "Camera cues show here when CamFrame is connected: turn on the camera button in Settings, and open CamFrame with its Prompter link on.";
+  // The row may hold the focus when the link drops: the text takes it, so the keyboard is never lost.
+  if (!live && pick.contains(document.activeElement)) $("#paste-text").focus();
   pick.hidden = !live;
   if (!live) return;
-  const choices = cueChoices(camframe.scenes, [LAYOUT_LARGE, LAYOUT_SMALL]);
+  // The layout Scenes first, but only those CamFrame lists: an older CamFrame, or no room, never saved them.
+  const scenes = layouts.status ? layouts.status.scenes : camframe.scenes;
+  const choices = cueChoices(scenes, [LAYOUT_LARGE, LAYOUT_SMALL].filter((n) => scenes.some((s) => s.toLowerCase() === n.toLowerCase())));
   const select = pasteDialog.querySelector(".cue-select");
   const key = choices.map((c) => c.text).join("\n");
   if (select.dataset.key === key) return; // a check every 10 s must not reset the choice
@@ -1537,13 +1544,14 @@ function insertCue() {
 
 function openPaste() {
   $(".paste-error").hidden = true;
+  pasteStatus.textContent = ""; // the last insert's words are not news again
   showCueMenu();
   showDialog(pasteDialog);
   $("#paste-text").focus();
 }
 
 async function submitPaste() {
-  const ok = await openScript($("#paste-text").value, { label: "Opened pasted script" });
+  const ok = await openScript($("#paste-text").value);
   if (!ok) {
     const err = $(".paste-error");
     err.hidden = false;
@@ -1552,6 +1560,7 @@ async function submitPaste() {
   }
   showAlert("");
   pasteDialog.close();
+  setStatus("Opened pasted script"); // after the window: its own status line goes away with it
 }
 
 async function loadFile(file) {
