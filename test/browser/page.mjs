@@ -378,7 +378,6 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await page.locator(".reading-line").isVisible(), false);
   assert.equal(await page.locator(".line-handle").isVisible(), false, "no reading line handle on the start screen");
   assert.equal(await page.locator(".read-veil").isVisible(), false, "no fading veil on the start screen");
-  assert.equal(await page.locator(".cam-preview").isVisible(), false, "no camera preview on the start screen");
   assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), NIGHT);
   const card = page.locator(".empty .card");
   assert.equal(await card.locator("h1").textContent(), "Your teleprompter");
@@ -463,61 +462,6 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.ok(dockBox.y + dockBox.height <= 900 && dockBox.y > 900 - 100, `control bar at ${Math.round(dockBox.y)}px`);
   assert.deepEqual(await page.locator(".dock > button:not([hidden])").evaluateAll((els) => els.map((el) => el.getAttribute("aria-label") || el.textContent.trim())),
     ["Open", "Previous section", "Auto-scroll", "Next section", "Start the show clock, 00:00", "Settings"]);
-  // The demo's camera preview follows the camera cue lines with no CamFrame at all: full, then right large, small corner,
-  // top left, full again, the corner for the screen share, full; and back up the page it goes back.
-  const preview = page.locator(".cam-preview");
-  const camState = () => page.evaluate(() => { const b = document.querySelector(".cam-preview"); const f = b.querySelector(".cam-face").style; return { visible: !b.hidden, mode: b.dataset.mode, words: b.querySelector(".cam-caption").textContent, left: parseFloat(f.left), top: parseFloat(f.top), width: parseFloat(f.width) }; });
-  assert.deepEqual(await camState().then((c) => [c.visible, c.mode, c.words]), [true, "full", "Camera: full screen"], "the demo opens with the camera full");
-  await passCueOn(page, 0);
-  await page.waitForFunction(() => document.querySelector(".cam-preview").dataset.mode === "large");
-  const large = await camState();
-  assert.equal(large.words, "Camera: large, right (Live right large)");
-  assert.ok(large.left > 70 && large.width > 20, `right large: ${JSON.stringify(large)}`);
-  await shot(page, "demo-camera-preview-large-desktop");
-  await passCueOn(page, 1);
-  await page.waitForFunction(() => document.querySelector(".cam-preview").dataset.mode === "small");
-  const corner = await camState();
-  assert.equal(corner.words, "Camera: small, bottom right (Live small corner)");
-  assert.ok(corner.width < large.width && corner.top > 60, `small corner: ${JSON.stringify(corner)}`);
-  await passCueOn(page, 2);
-  await page.waitForFunction(() => document.querySelector(".cam-caption").textContent === "Camera: small, top left");
-  assert.ok((await camState()).left < 5, "top left");
-  await passCueOn(page, 3);
-  await page.waitForFunction(() => document.querySelector(".cam-preview").dataset.mode === "full");
-  await passCueOn(page, 4);
-  await page.waitForFunction(() => document.querySelector(".cam-caption").textContent === "Camera: small, bottom right");
-  await passCueOn(page, 5);
-  await page.waitForFunction(() => document.querySelector(".cam-preview").dataset.mode === "full");
-  await passCueOn(page, 1);
-  await page.waitForFunction(() => document.querySelector(".cam-caption").textContent === "Camera: small, bottom right (Live small corner)");
-  await passCueOn(page, 0, -60);
-  await page.waitForFunction(() => document.querySelector(".cam-preview").dataset.mode === "full", null, { timeout: 5000 });
-  assert.equal(await page.evaluate(() => document.querySelector(".cam-preview").getAttribute("aria-label")), "Camera preview: full screen", "its name follows silently");
-  const pBox = await preview.boundingBox();
-  assert.ok(pBox.x + pBox.width <= 1366 && pBox.y >= 0, "the preview sits inside the window, top right");
-  await shot(page, "demo-camera-preview-desktop");
-  await page.evaluate(() => window.scrollTo(0, 0));
-  // A reading line dragged up to camera height: the preview never covers it (no caption, then the bottom right).
-  await page.locator(".line-handle").focus();
-  await page.keyboard.press("Home");
-  const lineTop = await page.locator(".reading-line").evaluate((el) => el.getBoundingClientRect().top);
-  const raised = await page.evaluate(() => { const b = document.querySelector(".cam-preview"); return { hidden: getComputedStyle(b).visibility === "hidden", compact: b.hasAttribute("data-compact"), bottom: b.getBoundingClientRect().bottom }; });
-  assert.ok(!raised.hidden && raised.bottom <= lineTop, `the line at camera height (8%): the preview shrinks and stays, off the reading line: ${JSON.stringify(raised)} line ${lineTop}`);
-  await page.keyboard.press("End");
-  assert.deepEqual(await page.evaluate(() => { const b = document.querySelector(".cam-preview"); return [getComputedStyle(b).visibility, b.hasAttribute("data-compact")]; }), ["visible", false], "back with its caption when the line is low again");
-  await page.keyboard.press("Tab"); await page.evaluate(() => document.activeElement?.blur());
-  // The demo opened from a copied link or pasted still has its preview; another script has none.
-  await page.goto("about:blank");
-  await page.goto(await makeLink(DEMO_SCRIPT, "lex", base));
-  await page.waitForFunction((n) => document.querySelectorAll(".section").length === n, DEMO_SECTIONS);
-  assert.equal(await page.locator(".cam-preview").isVisible(), true, "a copied demo shows the preview its text talks about");
-  await page.goto("about:blank");
-  await page.goto(await makeLink(EXAMPLE_SCRIPT, "lex", base));
-  await page.waitForFunction(() => document.querySelectorAll(".section").length > 0);
-  assert.equal(await page.locator(".cam-preview").isVisible(), false, "another script: no preview");
-  await page.goto("about:blank");
-  await page.goto(`${base}/#demo`);
-  await page.waitForFunction((n) => document.querySelectorAll(".section").length === n, DEMO_SECTIONS);
   await shot(page, "demo-desktop");
   ok("Try the demo: #demo, PREP is a plain checklist (no buttons); text starts on the left in a centred 960px column; section title left, time right; the bar: Open, previous, play, next, clock, Settings (no mic or monitor: those are in Settings), centred at the bottom");
 
@@ -1822,8 +1766,6 @@ export async function run({ browser, base, mode, dist, out }) {
   await m.locator('.empty [data-action="demo"]').click();
   await m.locator(".section").first().waitFor();
   await noOverflow(m, "mobile demo");
-  const mPreview = await m.locator(".cam-preview").boundingBox();
-  assert.ok(mPreview && mPreview.x >= 0 && mPreview.x + mPreview.width <= 390 && mPreview.width <= 130 && mPreview.y >= 0, `phone: the camera preview is small and inside the window (${JSON.stringify(mPreview)})`);
   const mobileDock = await m.locator(".dock").boundingBox();
   assert.ok(mobileDock.x >= 0 && mobileDock.x + mobileDock.width <= 390, `control bar ${Math.round(mobileDock.width)}px fits`);
   assert.ok(Math.abs(mobileDock.x + mobileDock.width / 2 - 195) < 2, "control bar centred");

@@ -138,7 +138,7 @@ Thanks for watching.
  * The demo the page opens from its start screen ("Try the demo"): how to be a
  * better speaker with a prompter. It follows the "lex" preset and teaches the
  * format by example, including camera cues for CamFrame (section 4 uses the two layout Scenes the page saves
- * in CamFrame, a corner and full; section 5 uses them again) with a preview that follows them (docs/camframe/layouts.md),
+ * in CamFrame, a corner and full; section 5 uses them again),
  * a link that opens itself and one inside a sentence (section 5).
  */
 export const DEMO_SCRIPT = `### **PREP**
@@ -221,7 +221,6 @@ QL: How does the camera follow?
 [Turn on the CamFrame link.]
 
 Camera lines switch your view.
-Watch the preview closely.
 [Face: Live right large]
 Camera right, page left.
 [Face: Live small corner]
@@ -230,7 +229,6 @@ Small camera, bottom corner.
 Same size, top left.
 [Face full]
 The camera fills the screen.
-No CamFrame? Preview still moves.
 
 Next: show your screen.
 Now: links open themselves.
