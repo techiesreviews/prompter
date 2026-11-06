@@ -1519,7 +1519,7 @@ function showCueMenu() {
     if (camframe.state !== "lost") setStatus(off.textContent); // "not found" is said by the link itself
   }
   pick.hidden = !live;
-  if (!live) { $(".paste-error").hidden = true; return; } // a note about the list goes with the list
+  if (!live) { const note = $(".paste-error"); if (note.dataset.cue) note.hidden = true; return; } // a note about the list goes with the list
   // The layout Scenes first, but only those CamFrame lists: an older CamFrame, or no room, never saved them.
   const scenes = (layouts.status ? layouts.status.scenes : camframe.scenes).filter((n) => typeof n === "string");
   const choices = cueChoices(scenes, [LAYOUT_LARGE, LAYOUT_SMALL].filter((n) => scenes.some((s) => s.toLowerCase() === n.toLowerCase())));
@@ -1546,6 +1546,7 @@ function insertCue() {
   const error = $(".paste-error");
   if (!cue) {
     error.hidden = false;
+    error.dataset.cue = "1";
     error.textContent = "Choose a camera cue in the list first.";
     pasteDialog.querySelector(".cue-select").focus(); // so a second try is felt: the list takes the keyboard
     return;
@@ -1553,17 +1554,25 @@ function insertCue() {
   const place = cueInsertion(text.value, text.selectionEnd, cue);
   if (!place) {
     error.hidden = false;
+    error.dataset.cue = "1";
     error.textContent = "Put the cursor under a section title (a line like ### **INTRO · 00:00**) first: a camera cue above the first title, or outside the script's start and end markers, is skipped.";
     text.focus();
     return;
   }
   error.hidden = true;
+  delete error.dataset.cue;
   text.focus();
   text.setSelectionRange(place.at, place.at);
   // As typed text, so Undo (Ctrl+Z) takes it back; setRangeText is the fallback.
   if (!document.execCommand("insertText", false, place.insert)) { text.setRangeText(place.insert, place.at, place.at, "end"); text.dispatchEvent(new Event("input", { bubbles: true })); }
   setStatus(`Inserted camera cue ${cue}`);
 }
+
+// Choosing a cue ends the "choose one" note.
+pasteDialog.querySelector(".cue-select").addEventListener("change", () => {
+  const note = $(".paste-error");
+  if (note.dataset.cue) { note.hidden = true; delete note.dataset.cue; }
+});
 
 function openPaste() {
   $(".paste-error").hidden = true;
@@ -1578,6 +1587,7 @@ async function submitPaste() {
   if (!ok) {
     const err = $(".paste-error");
     err.hidden = false;
+    delete err.dataset.cue; // this one stays whatever the list does
     err.textContent = "No sections found. Each section starts with a title line like: ### **INTRO · 00:00**";
     return;
   }
