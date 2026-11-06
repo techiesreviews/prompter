@@ -452,6 +452,8 @@ test("cueInsertion: a cue goes on its own line, never splits a line, never ahead
   assert.equal(put("### **A**\nHello\n", 17), "### **A**\nHello\n[Face full]\n", "on the empty last line");
   assert.equal(put("- Docs: https://x.test/y/z\n### **A**\nHello", 20), null, "above the first title: skipped when read, so refused");
   assert.equal(put("", 0), null);
+  assert.equal(put("### **A**\n- Site: https://x.test/a", 3), "### **A**\n- Site: https://x.test/a\n[Face full]\n", "links as the last line: after them");
+  assert.equal(put("### **A**\n- Site: https://x.test/a\nQL: Why?", 3), "### **A**\n- Site: https://x.test/a\nQL: Why?\n[Face full]\n", "a question line as the last line");
   assert.equal(put("### **NOTES**\nx\n<!--SCRIPT-START-->\n### **A**\nHello", 14), null, "before the start marker");
   assert.equal(put("### **A**\nHello\n<!--SCRIPT-END-->\nafter", 25), null, "after the end marker");
   assert.equal(put("### **A**\nHello\n\n---\n\n### **B**\nBye", 12), "### **A**\nHello\n[Face full]\n\n---\n\n### **B**\nBye", "a section's own text: after the line");

@@ -434,8 +434,8 @@ export function cueInsertion(md, from, cue) {
   let at = from;
   for (let tries = 0; tries < 400; tries++) {
     if (tries > 0 || at > lineStart) { // inside or at the end of a line: after that line
+      if (tries > 0 && at >= md.length) return null; // the end of the text was the last place
       const next = md.indexOf("\n", tries > 0 ? at + 1 : at);
-      if (next < 0 && tries > 0) return null;
       at = next < 0 ? md.length : next;
     }
     const before = md.slice(0, at), after = md.slice(at);
