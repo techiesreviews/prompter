@@ -272,7 +272,7 @@ export const CAMERA_DEMO_SCRIPT = `### **PREP**
 
 - CamFrame open, Prompter link on
 - Camera button on in Settings
-- Camera layouts in Open menu
+- Camera cues list shows layouts
 
 ---
 
@@ -283,10 +283,6 @@ QL: What does the camera do?
 Camera lines move your camera.
 Scroll past one, it moves.
 Without CamFrame, they are reminders.
-No Camera layouts item?
-Camera button on in Settings?
-CamFrame link on? Still none:
-Update CamFrame.
 
 Next: a branded page.
 Now: camera to the right.
