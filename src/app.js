@@ -1295,14 +1295,16 @@ function showCueMenu() {
   // window open it is read out each time it settles on new words (not "Saving…"), a moment after the change
   // (so it comes after a link message, though whether a screen reader finishes that one first is untried);
   // with the window closed the Prompter says nothing (a save by itself is quiet).
-  // Only while the link says on: while it is reconnecting, CamFrame has just missed a check and nothing is claimed.
-  line.textContent = camframe.state === "on" ? layoutsLine(layouts.status && layoutPlan(layouts.status), { saving: layoutsSaving(), problem: layouts.problem }) : "";
+  // While reconnecting the old words keep their room but cannot be read (the text box below must not jump).
+  const words = layoutsLine(layouts.status && layoutPlan(layouts.status), { saving: layoutsSaving(), problem: layouts.problem });
+  line.textContent = camframe.state === "on" || (camframe.state === "reconnecting" && line.textContent) ? words : "";
+  line.style.visibility = camframe.state === "on" ? "" : "hidden";
   line.classList.toggle("error-text", Boolean(line.textContent) && !/^(Camera layouts are saved|Saving)/.test(line.textContent));
   line.hidden = !line.textContent;
   clearTimeout(layouts.sayTimer);
-  if (pasteDialog.open && !line.hidden && !layoutsSaving() && line.textContent !== layouts.said) {
+  if (pasteDialog.open && !line.hidden && camframe.state === "on" && !layoutsSaving() && line.textContent !== layouts.said) {
     layouts.sayTimer = setTimeout(() => {
-      if (!pasteDialog.open || line.hidden || line.textContent === layouts.said) return;
+      if (!pasteDialog.open || line.hidden || camframe.state !== "on" || line.textContent === layouts.said) return;
       layouts.said = line.textContent;
       setStatus(line.textContent);
     }, 600);
