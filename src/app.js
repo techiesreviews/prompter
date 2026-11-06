@@ -60,10 +60,7 @@ const spacingInputs = document.querySelectorAll('input[name="spacing"]');
 const toastEl = $(".toast");
 const toastText = $(".toast-text");
 const camframeBtn = $(".big-toggle.camframe"); // in Settings
-const layoutsItem = $(".layouts-item"); // in the Open menu, only for a CamFrame that can save layouts
-const layoutsDialog = $(".layouts-dialog");
 const pasteStatus = $(".paste-status"); // the same for the paste window, which is modal too
-const layoutsStatus = $(".layouts-status"); // the status line while that window is open: a modal window hides the page's from screen readers
 const WINDOW_NAME = "prompter-main-screen";
 const SETTLE_MS = 700; // wait this long on a section before changing the main screen
 const LAST_KEY = "prompter-last-script";
@@ -124,16 +121,11 @@ let cueTimer = 0;
 // reconnecting (a check or two missed after it answered) or lost (several missed in a row).
 // session counts turns on and off, so a cue sent before that is not news after it.
 const camframe = { on: store.get(CAMFRAME_KEY) === "on", state: "off", timer: 0, retry: 0, seq: 0, misses: 0, session: 0, scenes: [] };
-// Camera layouts: CamFrame's last status when it can save layouts (API 2), a save under way,
-// the link session the layouts were last saved for by themselves, and the last problem.
-// `quiet` is the running save's: a save from the window during one on connect makes it read out.
-// `busy` is the link session a save runs for (-1: none), so a save left from before the link was
-// turned off and on never holds up the new session's.
-// `saving` names the Scenes that save is sending; `stamp` changes when a save starts or ends;
-// `openMissed`: the window's opening read missed, so the next answer stands in for it;
-// `notTaken`: the layout the "still shows the old Scene after the Replace" note speaks of.
-// `opening`: the window's opening read is under way (`openSeq` numbers the reads: only the latest one ends it).
-const layouts = { status: null, busy: -1, auto: -1, note: "", quiet: false, saving: [], stamp: 0, openMissed: false, notTaken: "", opening: false, openSeq: 0 };
+// Camera layouts: CamFrame's last status when it can save layouts (API 2), the link session the layouts were
+// last saved for by themselves (once per session), a save under way (`busy` is the session it runs for, -1: none,
+// so a save left from before the link was turned off and on never holds up the new session's) and the problem
+// it ended with ("" when none).
+const layouts = { status: null, busy: -1, auto: -1, problem: "" };
 const layoutsSaving = () => layouts.busy === camframe.session;
 
 // ---------- Opening scripts ----------
@@ -764,8 +756,7 @@ function setCamframeOn(on) {
   clearInterval(camframe.timer);
   clearTimeout(camframe.retry);
   layouts.status = null;
-  layouts.note = "";
-  layouts.opening = false;
+  layouts.problem = "";
   camframe.scenes = [];
   if (!on) { setCamframe({ state: "off", misses: 0 }); return; }
   setCamframe({ state: "looking", misses: 0 });
@@ -794,136 +785,44 @@ function setCamframe(patch) {
   camframeBtn.setAttribute("aria-label", name);
   camframeBtn.title = camframe.state === "lost" ? name + CAMFRAME_LOST_HELP : name;
   updateSettingsBtn();
-  showLayouts(); // first: not found closes that window, and is then said on the page
+  showCueMenu();
   // Not again when it comes back from a missed check or two (reconnecting).
   if (was !== camframe.state && ((camframe.state === "on" && was !== "reconnecting") || camframe.state === "lost")) setStatus(`${name}.`);
 }
 
 // ---------- Camera layouts (CamFrame API 2) ----------
-// The two layout Scenes for Lex's cue lines (layoutPlan in src/camframe.mjs). Approved by Lex
-// (2026-11-04): when a CamFrame that can save layouts connects, the page saves the missing ones
-// by itself, once per link session, small first, unless that would leave CamFrame no spare slot
-// (then only after Save in the window); it blocks up front when CamFrame has no room for both,
-// never replaces a Scene without a yes (Replace in the window), never moves the camera
-// and never changes CamFrame's small size. The Open menu's Camera layouts item (hidden for an
-// older CamFrame) opens a window with each layout's state, the small size in use, and any
-// problem; opening it reads CamFrame again and saves what is still missing, with focus on Close,
-// so Replace and Save take a deliberate move.
+// The two layout Scenes for Lex's cue lines (layoutPlan in src/camframe.mjs). Approved by Lex (2026-11-04,
+// no window since 2026-11-06): when a CamFrame that can save layouts connects, the page saves the missing
+// ones by itself, once per link session, small first, unless that would leave CamFrame no spare slot or no
+// room at all (then nothing is saved and the Camera cues list says so); it never replaces a Scene of Lex's own,
+// never moves the camera and never changes CamFrame's small size. The one line under the Camera cues list
+// (layoutsLine in src/camframe.mjs) says where the layouts stand. A save made by itself is never read out.
 function seeLayouts(body) {
-  // A room note follows CamFrame; a refusal's stays until both layouts are exactly right.
-  const roomNote = layouts.status && !layoutsSaving() ? layoutNote(layoutPlan(layouts.status)) : null;
-  const waited = roomNote === layouts.note;
-  const noAnswer = layouts.note === layoutProblem(null); // so does this: here is the answer
-  const opening = noAnswer && layouts.openMissed;
-  const shownBefore = layoutsDialog.querySelector(".layouts-note").textContent; // what the window says now
-  layouts.openMissed = false;
-  const wasOpen = layoutsDialog.open;
   layouts.status = layoutsSupported(body) ? body : null;
-  if (!layouts.status) layouts.note = ""; // an older CamFrame: no note about what it holds
-  const plan = layouts.status && layoutPlan(layouts.status);
-  if (plan && !layoutsSaving()) {
-    // Notes about what CamFrame holds go when it no longer does.
-    const missing = plan.rows.some((r) => r.state === "missing");
-    const offersReplace = plan.rows.some((r) => r.name === layouts.notTaken && (r.state === "different" || r.state === "resized"));
-    const outdated = (layouts.note === LAYOUT_NOT_KEPT && !missing) || (layouts.note === LAYOUT_REPLACE_NOT_TAKEN && !offersReplace);
-    if (waited || noAnswer || outdated || plan.rows.every((r) => r.state === "ready")) layouts.note = layoutNote(plan);
-    // A save whose answer and read were lost, and it is not there: no second try by itself, so say how to go on.
-    if (noAnswer && !opening && !layouts.note && plan.rows.some((r) => r.state === "missing")) layouts.note = LAYOUT_NOT_KEPT;
-  }
-  showLayouts();
-  if (wasOpen && !layoutsDialog.open && !layouts.status) showAlert(LAYOUT_OLDER_CAMFRAME); // the window closed: said on the page
-  // Not read out: it would talk over "CamFrame link: connected" from the same check.
-  if (plan && layouts.auto !== camframe.session) saveLayouts({ quiet: true });
-  // With the window open: this answer stands in for its opening read, or room was made in CamFrame, as its note asked.
-  else if (plan && layoutsDialog.open && (opening || (waited && roomNote && plan.auto.length))) saveLayouts();
-  // Any other note that changes in the open window is read out too (also the Save offer for a layout
-  // gone from CamFrame); none left says where things stand.
-  else if (plan && layoutsDialog.open && shownNote(plan) !== shownBefore) setStatus(shownNote(plan) ? `Camera layouts: ${shownNote(plan)}` : layoutResultWords(plan));
+  if (!layouts.status) layouts.problem = "";
+  if (layouts.status && layouts.auto !== camframe.session) saveLayouts();
+  showCueMenu();
 }
 
-async function openLayouts() {
-  layouts.note = "";
-  layouts.opening = true;
-  const read = ++layouts.openSeq;
-  layouts.openMissed = false;
-  if (layoutsSaving()) layouts.quiet = false; // the window is open now: read the running save's result out
-  layoutsStatus.textContent = ""; // the same result next time is news again
-  showDialog(layoutsDialog);
-  showLayouts();
-  layoutsDialog.querySelector('[data-action="close-dialog"]').focus();
-  const session = camframe.session;
-  const stamp = layouts.stamp;
-  let body = null;
-  try { ({ body } = await camframeCall("status")); } catch { /* not there */ }
-  if (read !== layouts.openSeq) return; // the window was opened again meanwhile: that read speaks
-  layouts.opening = false;
-  if (!camframe.on || camframe.session !== session) return;
-  if (!layoutsDialog.open) return; // closed meanwhile (also by an older CamFrame, which said so): nothing to add
-  // A save started or ended since: this answer is older than what that save reads. What the window shows
-  // may still have changed (the Save offer, held back during the read), so draw it and say it.
-  if (layouts.stamp !== stamp || layoutsSaving()) {
-    const before = layoutsDialog.querySelector(".layouts-note").textContent;
-    showLayouts();
-    const now = layoutsDialog.querySelector(".layouts-note").textContent;
-    if (layoutsDialog.open && now && now !== before && !layoutsSaving()) setStatus(`Camera layouts: ${now}`);
-    return;
-  }
-  if (!body) {
-    layouts.note = layoutProblem(null);
-    layouts.openMissed = true;
-    showLayouts();
-    // Say what the window shows: the note, and the warning beside Save when saving would fill CamFrame.
-    setStatus(`Camera layouts: ${layouts.status ? shownNote(layoutPlan(layouts.status)) : layouts.note}`);
-    return;
-  }
-  layouts.status = layoutsSupported(body) ? body : null;
-  if (!layouts.status) layouts.note = ""; // an older CamFrame: no note about what it holds
-  saveLayouts();
-}
-
-// Saves the missing layouts (`deliberate`: after Save, also when that fills CamFrame), or replaces
-// the one named `replace` after Lex's yes; `quiet` reads nothing out. No automatic second try: a save whose answer was lost may have worked, so the
-// status is read again instead.
-async function saveLayouts({ replace = "", quiet = false, deliberate = false } = {}) {
-  if (layoutsSaving()) {
-    if (!quiet) layouts.quiet = false; // the window is open now: read the running save's result out
-    if (replace) setStatus("Camera layouts: a save is under way. Press Replace again in a moment.");
-    return;
-  }
-  if (!layouts.status) {
-    const wasOpen = layoutsDialog.open;
-    showLayouts();
-    if (wasOpen && !layoutsDialog.open) showAlert(LAYOUT_OLDER_CAMFRAME); // CamFrame answers as an older version: the window closed
-    return;
-  }
-  layouts.quiet = quiet;
-  const say = (text) => { if (!layouts.quiet) setStatus(text); };
+// Saves the missing layouts (what layoutPlan says may go by itself). No automatic second try: a save whose
+// answer was lost may have worked, so the status is read again instead.
+async function saveLayouts() {
+  if (layoutsSaving() || !layouts.status) return;
   const session = camframe.session;
   const current = () => camframe.on && camframe.session === session;
   const plan = layoutPlan(layouts.status);
   layouts.auto = session;
-  const todo = replace
-    ? plan.rows.filter((r) => r.name === replace && (r.state === "different" || r.state === "resized")).map((r) => ({ ...r.scene, replace: true }))
-    : deliberate ? plan.save : plan.auto;
-  if (!replace) layouts.note = layoutNote(plan);
-  if (!todo.length) {
-    say(layouts.note ? `Camera layouts: ${layouts.note}` : layoutResultWords(plan));
-    showLayouts();
-    return;
-  }
+  if (!plan.auto.length) { showCueMenu(); return; }
   layouts.busy = session;
-  layouts.saving = todo.map((scene) => scene.name);
-  layouts.stamp++;
-  layouts.note = "";
+  layouts.problem = "";
   camframe.seq++; // a status check sent before this save says nothing about after it
-  showLayouts();
-  say(`Saving camera layouts in CamFrame. Small camera: ${plan.smallSize} px.`);
+  showCueMenu();
   let problem = "";
   const yes = []; // what CamFrame said it saved
-  for (const scene of todo) {
+  for (const scene of plan.auto) {
     let answer = null;
     try { answer = await camframeCall("scenes", scene); } catch { /* lost: the status says */ }
-    if (!current()) { if (layouts.busy === session) layouts.busy = -1; layouts.stamp++; showLayouts(); return; }
+    if (!current()) { if (layouts.busy === session) layouts.busy = -1; showCueMenu(); return; }
     if (answer?.ok && answer.body?.scene) yes.push(answer.body.scene);
     if (answer?.ok || answer?.body?.code === "scene-exists") continue; // saved meanwhile: the status says what it holds
     problem = layoutProblem(answer);
@@ -932,149 +831,19 @@ async function saveLayouts({ replace = "", quiet = false, deliberate = false } =
   camframe.seq++; // this status read is the news: a check still on its way is older
   let body = null;
   try { ({ body } = await camframeCall("status")); } catch { /* not there */ }
-  if (layouts.busy === session) { layouts.busy = -1; layouts.saving = []; }
-  layouts.stamp++;
-  if (!current()) { showLayouts(); return; }
-  if (body) { layouts.status = layoutsSupported(body) ? body : null; layouts.openMissed = false; }
+  if (layouts.busy === session) layouts.busy = -1;
+  if (!current()) { showCueMenu(); return; }
+  if (body) { layouts.status = layoutsSupported(body) ? body : null; camframe.scenes = Array.isArray(body.scenes) ? body.scenes.filter((n) => typeof n === "string") : camframe.scenes; }
   // The read missed: CamFrame's yes to a save counts for now (unless it answers as an older one by now).
   else if (layouts.status) layouts.status = layoutsWithSaved(layouts.status, yes);
   afterCheck(body); // this read is a check like any other: a miss checks again soon, an answer ends reconnecting
-  if (!layouts.status) {
-    // CamFrame answered as an older version meanwhile (this read or a check): nobody knows what it holds, and the
-    // window closes, with a note on the page that says why (it stays until dismissed, so saying it again is harmless).
-    layouts.note = "";
-    showLayouts();
-    if (!layouts.quiet) showAlert(LAYOUT_OLDER_CAMFRAME); // also when a check closed the window first: it said it, and a lost read must not replace it with other words
-    return;
-  }
   const after = layouts.status && layoutPlan(layouts.status);
-  const kept = (scene) => {
-    const row = after?.rows.find((r) => r.name === scene.name);
-    if (row?.state === "ready") return true;
-    // A Scene saved under the same name meanwhile shows as different or resized, with Replace: that row says it.
-    if (!replace) return row?.state === "different" || row?.state === "resized";
-    // A Replace counts once that row is ready, or holds what was sent when the small size changed meanwhile.
-    return row?.state === "resized" && row.saved === scene.size;
-  };
-  if (todo.every(kept)) problem = "";
-  else if (!problem) {
-    const offered = after?.rows.find((r) => r.name === replace);
-    layouts.notTaken = offered && offered.state !== "missing" ? replace : "";
-    problem = !body ? layoutProblem(null) : layouts.notTaken ? LAYOUT_REPLACE_NOT_TAKEN : LAYOUT_NOT_KEPT;
-  }
-  // The room note stays while a missing layout still has no room, also after a Replace worked.
-  layouts.note = problem || (after ? layoutNote(after) : "");
-  if (problem) say(`Camera layouts: ${after ? shownNote(after) : problem}`);
-  else if (after) say(`${layoutResultWords(after)} ${shownNote(after)}`.trim()); // with the Save offer, if a layout is still missing
-  showLayouts();
-}
-
-// A layout missing from CamFrame with room for it while the window is open (deleted there, say)
-// is saved by nothing by itself: Save is offered, with a line saying so, so the window is never a
-// dead end. Not during the opening read, after it missed, or beside another problem's note
-// (a refusal's stays as it is); a note that a Replace did not take stands beside it.
-function offersSave(plan) {
-  return layoutsDialog.open && !layoutsSaving() && !layouts.opening && !layouts.openMissed && plan.auto.length > 0 && (!layouts.note || layouts.note === LAYOUT_REPLACE_NOT_TAKEN || layouts.note === LAYOUT_NOT_KEPT);
-}
-
-// The window's note: the note, then the Save offer's line, then the warning when saving would fill
-// CamFrame (Save is shown for it, so its warning always is). It follows CamFrame, so a line goes by
-// itself when it no longer holds.
-function shownNote(plan) {
-  // (Also when there is no room at all beside the Replace note; a refusal's note stays as it is.)
-  const waits = plan.tight || (!plan.room.ok && layouts.note === LAYOUT_REPLACE_NOT_TAKEN);
-  const full = waits && !layoutsSaving() && layouts.note !== layoutNote(plan) ? layoutNote(plan) : "";
-  // (The "still not saved" note already points at Save, so it needs no second line.)
-  return [layouts.note, offersSave(plan) && layouts.note !== LAYOUT_NOT_KEPT ? layoutGoneWords(plan) : "", full].filter(Boolean).join(" ");
-}
-
-// The Open menu's item (with a dot when the window needs a look) and the window's rows.
-function showLayouts() {
-  showCueMenu(); // the paste window's list follows what CamFrame holds
-  const status = layouts.status;
-  const live = Boolean(status) && camframe.on && (camframe.state === "on" || camframe.state === "reconnecting");
-  layoutsItem.hidden = !live;
-  if (!live) {
-    if (layoutsDialog.open) layoutsDialog.close(); // nothing to Replace in a CamFrame that is not there
-    return;
-  }
-  const plan = layoutPlan(status);
-  // A layout that is not saved or differs needs a look, unless it is being saved right now.
-  const attention = Boolean(layouts.note) || plan.rows.some((r) => r.state === "different" || (r.state === "missing" && !layoutsSaving()));
-  layoutsItem.querySelector(".layouts-dot").hidden = !attention;
-  layoutsItem.setAttribute("aria-label", attention ? "Camera layouts: needs a look" : "Camera layouts");
-  // Said only when it is known: both layouts are in CamFrame as of an answer just now (not while a note,
-  // a missed read or a reconnecting link says otherwise).
-  const lead = layoutsDialog.querySelector(".layouts-lead");
-  // While the window reads or the link reconnects the line keeps its room (hidden, not removed), so the buttons do not jump.
-  const could = plan.done && !layouts.note && !layouts.openMissed;
-  lead.textContent = could ? "Both layouts are in CamFrame's Scenes, ready for your cue lines." : "";
-  lead.hidden = !could;
-  lead.style.visibility = could && (layouts.opening || camframe.state !== "on") ? "hidden" : "";
-  const large = plan.rows.find((r) => r.name === LAYOUT_LARGE);
-  layoutsDialog.querySelector(".layouts-size").textContent =
-    `Small camera: ${plan.smallSize} px, as CamFrame has it now; the Prompter never changes it. Live small corner follows it; Live right large is ${large.state === "resized" ? `saved at ${large.saved}` : plan.largeSize} px.`;
-  // Rows are rebuilt only when a row's state changes, so a status check every 10 s or a save
-  // under way keeps focus on Replace; a focused Replace that goes away hands focus to Close,
-  // never to another Replace.
-  const closeBtn = layoutsDialog.querySelector('[data-action="close-dialog"]');
-  const key = plan.rows.map((r) => [r.state, r.saved, r.scene.size].join("/")).join();
-  const list = layoutsDialog.querySelector(".layouts-rows");
-  if (list.dataset.key !== key) {
-    const hadFocus = list.contains(document.activeElement);
-    list.dataset.key = key;
-    list.replaceChildren(...layoutRows(plan));
-    if (hadFocus) closeBtn.focus();
-  }
-  // Save only for a save that would fill CamFrame, or one the note offers for a layout that went missing; never while one runs.
-  const saveBtn = layoutsDialog.querySelector(".layouts-save");
-  const saveFocused = document.activeElement === saveBtn;
-  saveBtn.hidden = !(plan.tight || offersSave(plan)) || layoutsSaving();
-  if (saveFocused && saveBtn.hidden) closeBtn.focus();
-  for (const row of list.children) {
-    const sending = layoutsSaving() && layouts.saving.includes(row.querySelector(".layout-name").textContent);
-    if (row.dataset.state === "missing") row.querySelector(".layout-state").textContent = sending ? "Saving…" : "Not saved yet";
-    const yes = row.querySelector(".layout-replace");
-    if (!yes) continue;
-    yes.setAttribute("aria-disabled", String(layoutsSaving())); // waits for the save under way
-    yes.textContent = sending ? "Saving…" : "Replace";
-  }
-  const note = layoutsDialog.querySelector(".layouts-note");
-  const words = shownNote(plan);
-  if (note.textContent !== words) note.textContent = words;
-  note.hidden = !words;
-}
-
-function layoutRows(plan) {
-  const words = (r) => ({
-    ready: "Saved in CamFrame",
-    missing: "Not saved yet",
-    different: "CamFrame has a different Scene with this name. Replace it with this layout?",
-    resized: r.state === "resized" ? layoutResizedWords(r, plan.smallSize) : "",
-  })[r.state];
-  return plan.rows.map((r) => {
-    const li = document.createElement("li");
-    li.dataset.state = r.state;
-    const name = document.createElement("span");
-    name.className = "layout-name";
-    name.textContent = r.name;
-    const state = document.createElement("span");
-    const asks = r.state === "different" || r.state === "resized";
-    state.className = asks ? "layout-state layout-ask" : "layout-state";
-    state.textContent = words(r);
-    li.append(name, state);
-    if (asks) {
-      const yes = document.createElement("button");
-      yes.className = "btn layout-replace";
-      yes.type = "button";
-      yes.dataset.action = "layout-replace";
-      yes.dataset.name = r.name;
-      yes.textContent = "Replace";
-      yes.setAttribute("aria-label", `Replace ${r.name}`);
-      li.append(yes);
-    }
-    return li;
-  });
+  // Nothing is claimed that the status does not show: a layout still missing after the saves says so.
+  const stillMissing = after?.rows.some((r) => plan.auto.some((w) => w.name === r.name) && r.state === "missing");
+  if (!stillMissing) problem = "";
+  else if (!problem) problem = body ? "" : layoutProblem(null); // an answered status that still lacks it is shown by the line itself
+  layouts.problem = after ? problem : "";
+  showCueMenu();
 }
 
 // ---------- Main screen ----------
@@ -1163,7 +932,7 @@ function showLink(si, li, fromUser) {
 let statusSeq = 0;
 function setStatus(t) {
   const n = ++statusSeq;
-  const el = layoutsDialog.open ? layoutsStatus : pasteDialog.open ? pasteStatus : statusEl;
+  const el = pasteDialog.open ? pasteStatus : statusEl;
   if (t && el.textContent === t) { el.textContent = ""; requestAnimationFrame(() => { if (n === statusSeq) el.textContent = t; }); }
   else el.textContent = t;
 }
@@ -1519,7 +1288,14 @@ function showCueMenu() {
     if (camframe.state !== "lost") setStatus(off.textContent); // "not found" is said by the link itself
   }
   pick.hidden = !live;
-  if (!live) { const note = $(".paste-error"); if (note.dataset.cue) note.hidden = true; return; } // a note about the list goes with the list
+  const line = pasteDialog.querySelector(".cue-layouts");
+  if (!live) { line.hidden = true; const note = $(".paste-error"); if (note.dataset.cue) note.hidden = true; return; } // a note about the list goes with the list
+  // Where the two layouts stand in CamFrame, in one line (the window that used to say it is gone). Read out
+  // when it changes while this window is open; never otherwise (a save made by itself is quiet).
+  const said = line.textContent;
+  line.textContent = layoutsLine(layouts.status && layoutPlan(layouts.status), { saving: layoutsSaving(), problem: layouts.problem });
+  line.hidden = !line.textContent;
+  if (pasteDialog.open && line.textContent && line.textContent !== said) setStatus(line.textContent);
   // The layout Scenes first, but only those CamFrame lists: an older CamFrame, or no room, never saved them.
   const scenes = (layouts.status ? layouts.status.scenes : camframe.scenes).filter((n) => typeof n === "string");
   const choices = cueChoices(scenes, [LAYOUT_LARGE, LAYOUT_SMALL].filter((n) => scenes.some((s) => s.toLowerCase() === n.toLowerCase())));
@@ -1677,9 +1453,6 @@ document.addEventListener("click", (e) => {
   else if (action === "open-paste") submitPaste();
   else if (action === "insert-cue") insertCue();
   else if (action === "close-dialog") button.closest("dialog").close();
-  else if (action === "layouts") openLayouts();
-  else if (action === "layout-replace") saveLayouts({ replace: button.dataset.name });
-  else if (action === "layouts-save") saveLayouts({ deliberate: true });
   else if (action === "copy-link") copyLink(button);
   else if (action === "start") { showAlert(""); history.pushState(null, "", plainAddress()); showStart(); }
   else if (action === "demo") { showAlert(""); openDemo(); }
