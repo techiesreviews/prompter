@@ -81,7 +81,7 @@ export function camframeAfterCheck(state, misses, answered) {
 // right]`) on plugin and advisory screens. A layout Scene changes only the
 // camera's size and place, never the camera, shape, style or crop. The page
 // saves what is missing when CamFrame connects, unless that would leave no
-// spare slot (then only after Save in its window); it never replaces a Scene
+// spare slot (then it waits); it never replaces a Scene
 // without a yes, never moves the camera while saving and never changes
 // CamFrame's small size.
 
@@ -172,20 +172,13 @@ export function layoutPlan(status) {
   };
 }
 
-/** A save that CamFrame's status does not show, whatever it answered: a layout is really missing. */
-export const LAYOUT_NOT_KEPT = "A layout is still not saved in CamFrame. Press Save if it shows; otherwise open Camera layouts again to try once more.";
-/** The same for a Replace whose row still offers it: what CamFrame shows is the old Scene, and opening the window would not try again. */
-export const LAYOUT_REPLACE_NOT_TAKEN = "CamFrame still shows the old Scene after the Replace. Press Replace to try once more.";
-/** CamFrame answers as an older version (right after a save, or wherever that closes the window): nobody knows what it holds, so nothing says saved or not saved. */
-export const LAYOUT_OLDER_CAMFRAME = "Camera layouts: CamFrame now answers as an older version, so what it holds is not known. Update CamFrame to use camera layouts.";
-
 /** A refused save (`{ ok: false, body }`) or a missed one (null) in plain words. */
 export function layoutProblem(answer) {
-  if (!answer) return "CamFrame did not answer. Check it is open with Prompter link on, then open Camera layouts again.";
+  if (!answer) return "CamFrame did not answer when the layouts were saved. Turn the camera button off and on to try again.";
   const code = answer.body?.code;
-  if (code === "scene-limit") return "CamFrame has no room for another Scene. Delete one you do not use in CamFrame, then open Camera layouts again.";
+  if (code === "scene-limit") return "CamFrame has no room for another Scene. Delete one you do not use in CamFrame, then turn the camera button off and on.";
   if (code === "scene-exists") return "CamFrame already has a Scene with this name.";
-  if (code === "not-ready") return "CamFrame's window is not open yet. Open it, then open Camera layouts again.";
+  if (code === "not-ready") return "CamFrame's window is not open yet. Open it, then turn the camera button off and on.";
   return `CamFrame refused: ${answer.body?.error || "no reason given"}`;
 }
 
@@ -194,37 +187,33 @@ export function layoutRoomWords(room) {
   if (room.ok) return "";
   const scenes = (n) => `${n} Scene${n === 1 ? "" : "s"}`;
   const over = room.has + room.need - room.limit;
-  return `No room to save what is missing: CamFrame keeps at most ${scenes(room.limit)} and has ${room.has}, and ${room.need} more ${room.need === 1 ? "is" : "are"} needed. Delete ${scenes(over)} you do not use in CamFrame, then open Camera layouts again.`;
+  return `No room to save the layouts: CamFrame keeps at most ${scenes(room.limit)} and has ${room.has}, and ${room.need} more ${room.need === 1 ? "is" : "are"} needed. Delete ${scenes(over)} you do not use in CamFrame, then turn the camera button off and on.`;
 }
 
-/** Why the missing layouts wait, in plain words ("" when they do not). */
-export function layoutNote(plan) {
-  if (!plan.tight) return layoutRoomWords(plan.room);
-  return `Saving what is missing would fill CamFrame: ${plan.room.has + plan.room.need} of ${plan.room.limit} Scenes, with no spare slot, and the next Scene saved by hand there drops its oldest. Not saved yet: press Save to save anyway, or delete a Scene you do not use in CamFrame and open Camera layouts again.`;
-}
-
-/** A layout that went missing while the window is open (deleted in CamFrame): nothing saves it by itself now, so Save is offered. */
-export function layoutGoneWords(plan) {
-  const names = plan.rows.filter((r) => r.state === "missing").map((r) => r.name);
-  return `CamFrame does not have ${names.join(" or ")}. Press Save to save ${names.length === 1 ? "it" : "them"}.`;
-}
-
-/** A layout saved at an older size, in plain words: the 1.5 times sum, or CamFrame's limit when that passes it. */
-export function layoutResizedWords(row, smallSize) {
-  const would = Math.round(smallSize * 1.5) > row.scene.size
-    ? `1.5 × today's small camera is more than CamFrame allows, so the largest it can be is ${row.scene.size} px`
-    : `1.5 × today's small camera would be ${row.scene.size} px`;
-  return `Saved at ${row.saved} px; ${would}. Replace it?`;
-}
-
-/** What a save leaves, in plain words: "saved" only when both layouts are saved, naming one at an older size. */
-export function layoutResultWords(plan) {
-  if (plan.done) {
-    const older = plan.rows.filter((r) => r.state === "resized").map((r) => ` ${r.name} is still at ${r.saved} px.`);
-    return `Camera layouts saved in CamFrame.${older.join("")}`;
+/**
+ * The one line under the Camera cues list: where the two layouts stand in CamFrame, true for the status
+ * just read ("" for nothing to say). `saving` while the page saves them, `problem` a refused or lost save.
+ * Nothing here asks for a window: the page saves the missing layouts by itself when CamFrame connects, never
+ * replaces a Scene of Lex's own and never fills CamFrame's last spare slot.
+ */
+export function layoutsLine(plan, { saving = false, problem = "" } = {}) {
+  if (!plan) return "";
+  if (saving) return "Saving the camera layouts in CamFrame…";
+  if (problem) return problem;
+  const missing = plan.rows.filter((r) => r.state === "missing").map((r) => r.name);
+  const different = plan.rows.filter((r) => r.state === "different").map((r) => r.name);
+  const parts = [];
+  if (missing.length) {
+    if (!plan.room.ok) parts.push(layoutRoomWords(plan.room));
+    else if (plan.tight) parts.push(`Not saved: ${missing.join(" and ")}. Saving would fill CamFrame (${plan.room.has + plan.room.need} of ${plan.room.limit} Scenes) and leave no spare slot, so the Prompter waits. Delete a Scene you do not use in CamFrame, then turn the camera button off and on.`);
+    else parts.push(`Not saved in CamFrame: ${missing.join(" and ")}. Turn the camera button off and on to save ${missing.length === 1 ? "it" : "them"}.`);
   }
-  const left = plan.rows.filter((r) => r.state === "missing" || r.state === "different").map((r) => `${r.name} ${r.state === "different" ? "needs Replace" : "is not saved"}`);
-  return `Camera layouts: ${left.join("; ")}.`;
+  if (different.length) parts.push(`CamFrame already has ${different.length === 1 ? "a different Scene" : "different Scenes"} named ${different.join(" and ")}; the Prompter leaves ${different.length === 1 ? "it" : "them"} alone, so the cue uses what CamFrame holds.`);
+  if (!missing.length && !different.length) {
+    const older = plan.rows.filter((r) => r.state === "resized").map((r) => ` ${r.name} is at ${r.saved} px, saved before the small camera changed.`);
+    parts.push(`Camera layouts are saved in CamFrame (open Scenes): ${plan.rows.map((r) => r.name).join(" and ")}.${older.join("")}`);
+  }
+  return parts.join(" ");
 }
 
 /**

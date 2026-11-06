@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CAMFRAME_MISSES, CAMFRAME_ORIGIN, CAMFRAME_RETRY_MS, camframeAfterCheck, camframeCall, cueCrossing, cueRest, cueWords, LAYOUT_LARGE, LAYOUT_NOT_KEPT, LAYOUT_OLDER_CAMFRAME, LAYOUT_REPLACE_NOT_TAKEN, LAYOUT_SMALL, layoutGoneWords, layoutMatches, layoutNote, layoutPlan, layoutProblem, layoutResizedWords, layoutResultWords, layoutRoomWords, layoutsWithSaved, layoutsSupported, layoutWants } from "../src/camframe.mjs";
+import { CAMFRAME_MISSES, CAMFRAME_ORIGIN, CAMFRAME_RETRY_MS, camframeAfterCheck, camframeCall, cueCrossing, cueRest, cueWords, LAYOUT_LARGE, LAYOUT_SMALL, layoutMatches, layoutPlan, layoutProblem, layoutRoomWords, layoutsLine, layoutsWithSaved, layoutsSupported, layoutWants } from "../src/camframe.mjs";
 import { check, classify, faceCue, FACE_SPOTS, formatGuide, parse } from "../src/core.mjs";
 
 test("faceCue: Lex's existing cue lines still work", () => {
@@ -239,24 +239,13 @@ test("layoutProblem: CamFrame's refusals and a missed call in plain words", () =
   assert.match(layoutProblem({ ok: false, body: { code: "not-ready", error: "x" } }), /CamFrame's window is not open yet/);
   assert.match(layoutProblem({ ok: false, body: { error: "Not allowed." } }), /CamFrame refused: Not allowed\./, "anything else: CamFrame's own words");
   assert.match(layoutProblem({ ok: false, body: {} }), /CamFrame refused/);
-  assert.match(layoutProblem(null), /CamFrame did not answer/);
-  assert.equal(LAYOUT_NOT_KEPT, "A layout is still not saved in CamFrame. Press Save if it shows; otherwise open Camera layouts again to try once more.", "said when a layout is really missing, also beside one that did save");
-  assert.equal(LAYOUT_REPLACE_NOT_TAKEN, "CamFrame still shows the old Scene after the Replace. Press Replace to try once more.", "a Replace: what CamFrame shows is the old Scene, and opening the window would not try again");
-});
-
-test("layoutGoneWords and LAYOUT_OLDER_CAMFRAME: true whatever CamFrame holds, and no claim about a save", () => {
-  const plan = (details) => layoutPlan({ api: 2, scenes: details.map((d) => d.name), sceneDetails: details, sceneLimit: 6, smallSize: 288 });
-  const small = { name: "Live small corner", kind: "layout", size: 288, followsSmallSize: true, position: "bottom-right" };
-  const large = { name: "Live right large", kind: "layout", size: 432, followsSmallSize: false, position: "right", withinRight: 0.3 };
-  assert.equal(layoutGoneWords(plan([small])), "CamFrame does not have Live right large. Press Save to save it.");
-  assert.equal(layoutGoneWords(plan([])), "CamFrame does not have Live small corner or Live right large. Press Save to save them.");
-  assert.equal(layoutGoneWords(plan([large])), "CamFrame does not have Live small corner. Press Save to save it.", "only what is missing is named");
-  assert.doesNotMatch(LAYOUT_OLDER_CAMFRAME, /still not saved|did not take/, "an older CamFrame: nobody knows what it holds");
+  assert.match(layoutProblem(null), /CamFrame did not answer when the layouts were saved\. Turn the camera button off and on/);
+  for (const answer of [null, { ok: false, body: { code: "scene-limit" } }, { ok: false, body: { code: "not-ready" } }]) assert.doesNotMatch(layoutProblem(answer), /Camera layouts again|Replace|Save/, "no word of a window that is gone");
 });
 
 test("layoutRoomWords: how many Scenes to delete in CamFrame, true also after another layout was saved", () => {
   assert.equal(layoutRoomWords({ has: 1, limit: 6, need: 2, ok: true, free: 5 }), "");
-  assert.equal(layoutRoomWords({ has: 5, limit: 6, need: 2, ok: false, free: 1 }), "No room to save what is missing: CamFrame keeps at most 6 Scenes and has 5, and 2 more are needed. Delete 1 Scene you do not use in CamFrame, then open Camera layouts again.");
+  assert.equal(layoutRoomWords({ has: 5, limit: 6, need: 2, ok: false, free: 1 }), "No room to save the layouts: CamFrame keeps at most 6 Scenes and has 5, and 2 more are needed. Delete 1 Scene you do not use in CamFrame, then turn the camera button off and on.");
   assert.match(layoutRoomWords({ has: 6, limit: 6, need: 1, ok: false, free: 0 }), /has 6, and 1 more is needed\. Delete 1 Scene /);
   assert.match(layoutRoomWords({ has: 6, limit: 6, need: 2, ok: false, free: 0 }), /Delete 2 Scenes /);
   assert.match(layoutRoomWords({ has: 8, limit: 6, need: 2, ok: false, free: 0 }), /has 8, .* Delete 4 Scenes /, "more Scenes than the limit: all of the extra ones count");
@@ -269,20 +258,6 @@ test("layoutPlan: both layouts ready needs no room, even with more Scenes than t
   assert.equal(layoutRoomWords(plan.room), "");
 });
 
-test("layoutResultWords: says saved only when both layouts are ready, otherwise names what is left", () => {
-  const both = layoutPlan(api2({ scenes: ["Live small corner", "Live right large"], sceneDetails: [SMALL_DETAIL, LARGE_DETAIL] }));
-  assert.equal(layoutResultWords(both), "Camera layouts saved in CamFrame.");
-  const largeDifferent = layoutPlan(api2({ scenes: ["Live small corner", "Live right large"], sceneDetails: [SMALL_DETAIL, { ...LARGE_DETAIL, kind: "snapshot" }] }));
-  assert.equal(layoutResultWords(largeDifferent), "Camera layouts: Live right large needs Replace.");
-  const smallMissing = layoutPlan(api2({ scenes: ["Live right large"], sceneDetails: [LARGE_DETAIL] }));
-  assert.equal(layoutResultWords(smallMissing), "Camera layouts: Live small corner is not saved.");
-  assert.equal(layoutResultWords(layoutPlan(api2())), "Camera layouts: Live small corner is not saved; Live right large is not saved.");
-  const resizedAndMissing = layoutPlan(api2({ smallSize: 300, scenes: ["Live right large"], sceneDetails: [LARGE_DETAIL] }));
-  assert.equal(layoutResultWords(resizedAndMissing), "Camera layouts: Live small corner is not saved.", "an older size is still saved");
-  const bothOneOlder = layoutPlan(api2({ smallSize: 300, scenes: ["Live small corner", "Live right large"], sceneDetails: [SMALL_DETAIL, LARGE_DETAIL] }));
-  assert.equal(layoutResultWords(bothOneOlder), "Camera layouts saved in CamFrame. Live right large is still at 432 px.", "saved, and says which is at an older size");
-});
-
 test("layoutsWithSaved: CamFrame's yes counts when the check after it missed, without changing the old status", () => {
   const before = api2({ scenes: ["Interview", "live right large"], sceneDetails: [{ id: "i", name: "Interview", kind: "snapshot" }, { name: "live right large", kind: "snapshot" }] });
   const after = layoutsWithSaved(before, [SMALL_DETAIL, LARGE_DETAIL]);
@@ -292,35 +267,37 @@ test("layoutsWithSaved: CamFrame's yes counts when the check after it missed, wi
   assert.equal(before.sceneDetails[1].kind, "snapshot");
 });
 
-test("layoutPlan: an automatic save always leaves a spare slot; filling CamFrame takes a deliberate Save", () => {
+test("layoutPlan: an automatic save always leaves a spare slot", () => {
   const scenes = (n) => Array.from({ length: n }, (_, k) => `S${k}`);
   const withScenes = (n) => api2({ scenes: scenes(n), sceneDetails: scenes(n).map((name) => ({ name, kind: "snapshot" })) });
   const three = layoutPlan(withScenes(3));
   assert.equal(three.tight, false, "3 + 2 = 5 of 6: one slot stays free");
   assert.deepEqual(three.auto.map((s) => s.name), [LAYOUT_SMALL, LAYOUT_LARGE]);
-  assert.equal(layoutNote(three), "");
   const four = layoutPlan(withScenes(4));
   assert.equal(four.tight, true, "4 + 2 = 6 of 6: no slot left");
   assert.deepEqual(four.auto, [], "nothing saved by itself");
-  assert.deepEqual(four.save.map((s) => s.name), [LAYOUT_SMALL, LAYOUT_LARGE], "Save in the window saves both");
-  assert.equal(layoutNote(four), "Saving what is missing would fill CamFrame: 6 of 6 Scenes, with no spare slot, and the next Scene saved by hand there drops its oldest. Not saved yet: press Save to save anyway, or delete a Scene you do not use in CamFrame and open Camera layouts again.");
   const five = layoutPlan(withScenes(5));
   assert.equal(five.room.ok, false);
-  assert.equal(five.tight, false, "no room at all is not the same as tight: Save could not work");
-  assert.match(layoutNote(five), /^No room to save what is missing/);
+  assert.equal(five.tight, false, "no room at all is not the same as tight");
   const one = ["A", "B", "C", "D", "Live small corner"];
   const oneLeft = layoutPlan(api2({ scenes: one, sceneDetails: [...one.slice(0, 4).map((name) => ({ name, kind: "snapshot" })), SMALL_DETAIL] }));
   assert.equal(oneLeft.tight, true, "only the large one missing, and it would take the last slot");
   const both = layoutPlan(api2({ scenes: [...scenes(4), LAYOUT_SMALL, LAYOUT_LARGE], sceneDetails: [SMALL_DETAIL, LARGE_DETAIL] }));
   assert.equal(both.tight, false, "nothing missing: nothing to hold back, even when CamFrame is full");
-  assert.equal(layoutNote(both), "");
 });
 
-test("layoutResizedWords: the 1.5 times sum, reworded when it would pass CamFrame's largest camera", () => {
-  const row = (smallSize) => layoutPlan(api2({ smallSize, scenes: ["Live right large"], sceneDetails: [LARGE_DETAIL] })).rows[1];
-  assert.equal(layoutResizedWords(row(300), 300), "Saved at 432 px; 1.5 × today's small camera would be 450 px. Replace it?");
-  assert.equal(row(500).scene.size, 640, "CamFrame's largest");
-  assert.equal(layoutResizedWords(row(500), 500), "Saved at 432 px; 1.5 × today's small camera is more than CamFrame allows, so the largest it can be is 640 px. Replace it?");
-  assert.match(layoutResizedWords(row(426), 426), /would be 639 px/, "just under the limit the sum is still true");
-  assert.match(layoutResizedWords(row(427), 427), /more than CamFrame allows/, "427 × 1.5 is past 640");
+test("layoutsLine: where the layouts stand, true for the status, with no word of a window", () => {
+  const scenes = (n) => Array.from({ length: n }, (_, k) => `S${k}`);
+  const withScenes = (n, extra = []) => api2({ scenes: [...scenes(n), ...extra.map((d) => d.name)], sceneDetails: [...scenes(n).map((name) => ({ name, kind: "snapshot" })), ...extra] });
+  assert.equal(layoutsLine(null), "");
+  assert.equal(layoutsLine(layoutPlan(withScenes(1, [SMALL_DETAIL, LARGE_DETAIL]))), "Camera layouts are saved in CamFrame (open Scenes): Live small corner and Live right large.");
+  assert.match(layoutsLine(layoutPlan(withScenes(1, [SMALL_DETAIL, { ...LARGE_DETAIL, size: 400 }]))), /saved in CamFrame .* Live right large is at 400 px, saved before the small camera changed\.$/);
+  assert.equal(layoutsLine(layoutPlan(withScenes(1)), { saving: true }), "Saving the camera layouts in CamFrame…");
+  assert.equal(layoutsLine(layoutPlan(withScenes(1)), { problem: "CamFrame refused: no." }), "CamFrame refused: no.");
+  assert.match(layoutsLine(layoutPlan(withScenes(1, [SMALL_DETAIL]))), /^Not saved in CamFrame: Live right large\. Turn the camera button off and on to save it\.$/, "deleted later: nothing saves it before the next connect");
+  assert.match(layoutsLine(layoutPlan(withScenes(4))), /^Not saved: Live small corner and Live right large\. Saving would fill CamFrame \(6 of 6 Scenes\) and leave no spare slot, so the Prompter waits\. Delete a Scene you do not use in CamFrame, then turn the camera button off and on\.$/);
+  assert.match(layoutsLine(layoutPlan(withScenes(5))), /^No room to save the layouts: /);
+  assert.match(layoutsLine(layoutPlan(withScenes(1, [{ name: LAYOUT_SMALL, kind: "snapshot" }, LARGE_DETAIL]))), /^CamFrame already has a different Scene named Live small corner; the Prompter leaves it alone, so the cue uses what CamFrame holds\.$/);
+  for (const plan of [withScenes(4), withScenes(5), withScenes(1, [SMALL_DETAIL])]) assert.doesNotMatch(layoutsLine(layoutPlan(plan)), /Camera layouts window|Replace|press Save/i);
 });
+
