@@ -997,6 +997,10 @@ function showLayouts() {
   const attention = Boolean(layouts.note) || plan.rows.some((r) => r.state === "different" || (r.state === "missing" && !layoutsSaving()));
   layoutsItem.querySelector(".layouts-dot").hidden = !attention;
   layoutsItem.setAttribute("aria-label", attention ? "Camera layouts: needs a look" : "Camera layouts");
+  // Said only when it is true: both layouts are in CamFrame (the page saves them by itself when CamFrame connects).
+  const lead = layoutsDialog.querySelector(".layouts-lead");
+  lead.textContent = plan.done ? "Both layouts are in CamFrame's Scenes. The Prompter saves them there by itself when CamFrame connects." : "";
+  lead.hidden = !plan.done;
   const large = plan.rows.find((r) => r.name === LAYOUT_LARGE);
   layoutsDialog.querySelector(".layouts-size").textContent =
     `Small camera: ${plan.smallSize} px, as CamFrame has it now; the Prompter never changes it. Live small corner follows it; Live right large is ${large.state === "resized" ? `saved at ${large.saved}` : plan.largeSize} px.`;
