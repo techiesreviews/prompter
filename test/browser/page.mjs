@@ -497,6 +497,18 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.ok(pBox.x + pBox.width <= 1366 && pBox.y >= 0, "the preview sits inside the window, top right");
   await shot(page, "demo-camera-preview-desktop");
   await page.evaluate(() => window.scrollTo(0, 0));
+  // The demo opened from a copied link or pasted still has its preview; another script has none.
+  await page.goto("about:blank");
+  await page.goto(await makeLink(DEMO_SCRIPT, "lex", base));
+  await page.waitForFunction((n) => document.querySelectorAll(".section").length === n, DEMO_SECTIONS);
+  assert.equal(await page.locator(".cam-preview").isVisible(), true, "a copied demo shows the preview its text talks about");
+  await page.goto("about:blank");
+  await page.goto(await makeLink(EXAMPLE_SCRIPT, "lex", base));
+  await page.waitForFunction(() => document.querySelectorAll(".section").length > 0);
+  assert.equal(await page.locator(".cam-preview").isVisible(), false, "another script: no preview");
+  await page.goto("about:blank");
+  await page.goto(`${base}/#demo`);
+  await page.waitForFunction((n) => document.querySelectorAll(".section").length === n, DEMO_SECTIONS);
   await shot(page, "demo-desktop");
   ok("Try the demo: #demo, PREP is a plain checklist (no buttons); text starts on the left in a centred 960px column; section title left, time right; the bar: Open, previous, play, next, clock, Settings (no mic or monitor: those are in Settings), centred at the bottom");
 
