@@ -418,8 +418,11 @@ export async function run({ browser, base, mode, dist, out }) {
   await page.waitForFunction(() => document.querySelectorAll(".section").length === 5);
   assert.equal(await page.evaluate(() => location.hash), "#camera-demo");
   assert.deepEqual(await page.locator("[data-cue]").evaluateAll((els) => els.map((el) => el.textContent.trim())).then((t) => t.map((x) => x.replace(/\s+/g, " "))), ["Camera: Scene “Live right large”", "Camera: Scene “Live small corner”", "Camera: face full"]);
+  await page.goto(`${base}/`);
+  await showsStart(page);
   await page.goto(`${base}/#camera-demo`);
   await page.waitForFunction(() => document.querySelectorAll(".section").length === 5);
+  assert.equal(await page.evaluate(() => location.hash), "#camera-demo", "opened from its address");
   ok("Try the camera demo: #camera-demo opens a five-section script with the three camera cue lines (the two layout Scenes, then Face full)");
 
   // Try the demo: the format by example, no buttons in PREP.
@@ -2411,6 +2414,7 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.deepEqual((await rowStates()).map((r) => r[1]), ["missing", "missing"]);
   assert.equal(await dotShown(), true);
   await shot(LY, "camframe-layouts-no-room-desktop");
+  assert.equal(await LY.locator(".layouts-lead").isHidden(), true, "no \"both layouts are in CamFrame\" line while one is missing");
   assert.equal(await LY.locator(".layouts-save").isHidden(), true, "no room at all: no Save to press");
   await LY.keyboard.press("Escape");
 
@@ -3187,6 +3191,23 @@ export async function run({ browser, base, mode, dist, out }) {
   await LY.keyboard.press("Escape");
   cam.answer = null;
 
+  // The camera demo moves the camera: scrolling past its first camera line sends the layout Scene.
+  cam.seen.length = 0;
+  await LY.goto("about:blank");
+  await LY.goto(`${base}/#camera-demo`);
+  await LY.locator(".section").first().waitFor();
+  await LY.waitForFunction(() => document.querySelector(".camframe").dataset.state === "on");
+  await passCueOn(LY, 0, -200);
+  await LY.mouse.wheel(0, 1);
+  await LY.waitForTimeout(200);
+  await passCueOn(LY, 0);
+  for (let t = 0; t < 60 && !cam.cues().length; t++) await LY.waitForTimeout(50);
+  assert.deepEqual(cam.cues(), [{ size: "small", scene: "Live right large" }], "the demo's first camera line sends the layout Scene");
+  // The window's lead line is said only when both layouts are in CamFrame.
+  await openWindow();
+  await LY.waitForFunction(() => !document.querySelector(".layouts-lead").hidden);
+  assert.match(await LY.locator(".layouts-lead").textContent(), /^Both layouts are in CamFrame's Scenes\./);
+  await LY.keyboard.press("Escape");
   // Back to an older CamFrame: the item hides again.
   cam.layouts = null;
   await (await dock(LY, ".settings-btn")).click();

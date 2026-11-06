@@ -60,9 +60,11 @@ only when he works on them.
 
 ## Camera demo (try the cues without writing a script)
 
-1. Open CamFrame (Prompter link on) and turn on the camera button in Prompter's Settings; the two layouts
-   are saved in CamFrame's Scenes by themselves when it connects.
-2. On the start screen press "Try the camera demo" (or open `/#camera-demo` on the preview site).
+1. Open CamFrame (Prompter link on). On Prompter's start screen press "Try the camera demo" (or open
+   `/#camera-demo` on the preview site).
+2. Turn on the camera button in Settings: the two layouts are saved in CamFrame's Scenes by themselves
+   when it connects. The Open menu then has "Camera layouts"; if that item shows a dot, open it and
+   follow its note (no room, or a Scene with the same name). No such item: CamFrame is too old.
 3. Scroll or press play: each `[Face: …]` line moves the camera when it reaches the reading line.
 
 ## Still to prove on the streaming PC (CamFrame W-30)
