@@ -2399,7 +2399,7 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(cam.saves().length, triedBefore, "a check does not try a refused save again");
   cam.answer = null;
   await openPasteWindow();
-  await lineIs(/^CamFrame's window is not open yet\. Open it, then turn the camera button in Settings off and on\.$/);
+  await lineIs(/^CamFrame's window was not open when the layouts were saved\. Open it, then turn the camera button in Settings off and on\.$/);
   await LY.keyboard.press("Escape");
 
   // An answer lost on its way back after CamFrame saved: no blind repeat; the status shows it saved.

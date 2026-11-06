@@ -178,9 +178,9 @@ export function layoutProblem(answer) {
   const code = answer.body?.code;
   if (code === "scene-limit") return "CamFrame has no room for another Scene. Delete Scenes you do not use in CamFrame until one slot stays free, then turn the camera button in Settings off and on.";
   if (code === "scene-exists") return "CamFrame already has a Scene with this name.";
-  if (code === "not-ready") return "CamFrame's window is not open yet. Open it, then turn the camera button in Settings off and on.";
-  const why = typeof answer.body?.error === "string" && answer.body.error.trim() ? answer.body.error.trim().slice(0, 200) : "no reason given";
-  return `CamFrame refused: ${why}`;
+  if (code === "not-ready") return "CamFrame's window was not open when the layouts were saved. Open it, then turn the camera button in Settings off and on.";
+  const why = typeof answer.body?.error === "string" && answer.body.error.trim() ? answer.body.error.trim().slice(0, 200).replace(/[.!?\s]+$/, "") : "no reason given";
+  return `CamFrame refused: ${why}. Turn the camera button in Settings off and on to try again.`;
 }
 
 /** Not enough room for the missing layouts, in plain words ("" when there is room). */
