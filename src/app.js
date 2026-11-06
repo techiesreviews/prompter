@@ -1000,9 +1000,11 @@ function showLayouts() {
   // Said only when it is known: both layouts are in CamFrame as of an answer just now (not while a note,
   // a missed read or a reconnecting link says otherwise).
   const lead = layoutsDialog.querySelector(".layouts-lead");
-  const known = plan.done && !layouts.note && !layouts.openMissed && !layouts.opening && camframe.state === "on";
-  lead.textContent = known ? "Both layouts are in CamFrame's Scenes, ready for your cue lines." : "";
-  lead.hidden = !known;
+  // While the window reads or the link reconnects the line keeps its room (hidden, not removed), so the buttons do not jump.
+  const could = plan.done && !layouts.note && !layouts.openMissed;
+  lead.textContent = could ? "Both layouts are in CamFrame's Scenes, ready for your cue lines." : "";
+  lead.hidden = !could;
+  lead.style.visibility = could && (layouts.opening || camframe.state !== "on") ? "hidden" : "";
   const large = plan.rows.find((r) => r.name === LAYOUT_LARGE);
   layoutsDialog.querySelector(".layouts-size").textContent =
     `Small camera: ${plan.smallSize} px, as CamFrame has it now; the Prompter never changes it. Live small corner follows it; Live right large is ${large.state === "resized" ? `saved at ${large.saved}` : plan.largeSize} px.`;
