@@ -3239,6 +3239,17 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await LY.locator("#paste-text").inputValue(), "### **A**\nHe\n[Face: Live right large]\nllo\n[Face full]\nWorld", "the selected text stays, the cue follows it");
   await LY.keyboard.press("Control+z");
   assert.equal(await LY.locator("#paste-text").inputValue(), selValue, "Undo takes the insert back");
+  // A cursor inside a section title: the cue goes after that line, the title stays whole.
+  await LY.locator("#paste-text").fill("### **INTRO · 00:00**\nHello");
+  await LY.locator("#paste-text").evaluate((el) => { el.focus(); el.setSelectionRange(8, 8); });
+  await LY.locator(".cue-select").selectOption("[Face full]");
+  await LY.locator('[data-action="insert-cue"]').click();
+  assert.equal(await LY.locator("#paste-text").inputValue(), "### **INTRO · 00:00**\n[Face full]\nHello", "the title is not split");
+  // A bare ### is no title (the format's own reading): nothing is put there.
+  await LY.locator("#paste-text").fill("### \nHello");
+  await LY.locator("#paste-text").evaluate((el) => { el.focus(); el.setSelectionRange(10, 10); });
+  await LY.locator('[data-action="insert-cue"]').click();
+  assert.equal(await LY.locator("#paste-text").inputValue(), "### \nHello");
   // No section title above the cursor: nothing is put there, and the window says why.
   await LY.locator("#paste-text").fill("");
   await LY.locator('[data-action="insert-cue"]').click();
