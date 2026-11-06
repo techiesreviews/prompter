@@ -221,7 +221,7 @@ QL: How does the camera follow?
 [Turn on the CamFrame link.]
 
 Camera lines switch your view.
-Watch the preview, top right.
+Watch the preview closely.
 [Face: Live right large]
 Camera right, page left.
 [Face: Live small corner]

@@ -501,10 +501,10 @@ export async function run({ browser, base, mode, dist, out }) {
   await page.locator(".line-handle").focus();
   await page.keyboard.press("Home");
   const lineTop = await page.locator(".reading-line").evaluate((el) => el.getBoundingClientRect().top);
-  const raised = await page.evaluate(() => { const b = document.querySelector(".cam-preview"); return { place: b.dataset.place || "top", compact: b.hasAttribute("data-compact"), top: b.getBoundingClientRect().top, bottom: b.getBoundingClientRect().bottom }; });
-  assert.ok(raised.place === "bottom" ? raised.top > lineTop : raised.bottom <= lineTop, `the preview stays off the reading line: ${JSON.stringify(raised)} line ${lineTop}`);
+  const raised = await page.evaluate(() => { const b = document.querySelector(".cam-preview"); return { hidden: getComputedStyle(b).visibility === "hidden", compact: b.hasAttribute("data-compact"), bottom: b.getBoundingClientRect().bottom }; });
+  assert.ok(raised.hidden || raised.bottom <= lineTop, `the preview never covers the reading line: ${JSON.stringify(raised)} line ${lineTop}`);
   await page.keyboard.press("End");
-  assert.equal(await page.evaluate(() => document.querySelector(".cam-preview").dataset.place || "top"), "top", "back at the top right when the line is low again");
+  assert.deepEqual(await page.evaluate(() => { const b = document.querySelector(".cam-preview"); return [getComputedStyle(b).visibility, b.hasAttribute("data-compact")]; }), ["visible", false], "back with its caption when the line is low again");
   await page.keyboard.press("Tab"); await page.evaluate(() => document.activeElement?.blur());
   // The demo opened from a copied link or pasted still has its preview; another script has none.
   await page.goto("about:blank");
