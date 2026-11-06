@@ -1517,7 +1517,7 @@ function showCueMenu() {
   pick.hidden = !live;
   if (!live) return;
   // The layout Scenes first, but only those CamFrame lists: an older CamFrame, or no room, never saved them.
-  const scenes = layouts.status ? layouts.status.scenes : camframe.scenes;
+  const scenes = (layouts.status ? layouts.status.scenes : camframe.scenes).filter((n) => typeof n === "string");
   const choices = cueChoices(scenes, [LAYOUT_LARGE, LAYOUT_SMALL].filter((n) => scenes.some((s) => s.toLowerCase() === n.toLowerCase())));
   const select = pasteDialog.querySelector(".cue-select");
   const key = choices.map((c) => c.text).join("\n");
@@ -1533,12 +1533,23 @@ function insertCue() {
   const text = $("#paste-text");
   const cue = pasteDialog.querySelector(".cue-select").value;
   if (!cue) return;
-  const from = text.selectionStart, to = text.selectionEnd;
-  const before = text.value.slice(0, from), after = text.value.slice(to);
+  // After a selection, never over it: the selected text stays. A cue above the first section title would be
+  // skipped when the script is read, so it is not put there.
+  const at = text.selectionEnd;
+  const before = text.value.slice(0, at), after = text.value.slice(at);
+  const error = $(".paste-error");
+  if (!/^#{2,3}\s/m.test(before)) {
+    error.hidden = false;
+    error.textContent = "Put the cursor under a section title (a line like ### **INTRO · 00:00**) first: a camera cue above the first title is skipped.";
+    text.focus();
+    return;
+  }
+  error.hidden = true;
   const insert = `${before && !before.endsWith("\n") ? "\n" : ""}${cue}${after.startsWith("\n") ? "" : "\n"}`;
-  text.setRangeText(insert, from, to, "end");
-  text.dispatchEvent(new Event("input", { bubbles: true }));
   text.focus();
+  text.setSelectionRange(at, at);
+  // As typed text, so Undo (Ctrl+Z) takes it back; setRangeText is the fallback.
+  if (!document.execCommand("insertText", false, insert)) { text.setRangeText(insert, at, at, "end"); text.dispatchEvent(new Event("input", { bubbles: true })); }
   setStatus(`Inserted camera cue ${cue}`);
 }
 
