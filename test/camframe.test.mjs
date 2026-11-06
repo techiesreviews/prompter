@@ -294,6 +294,8 @@ test("layoutsLine: where the layouts stand, true for the status, with no word of
   assert.match(layoutsLine(layoutPlan(withScenes(1, [SMALL_DETAIL, { ...LARGE_DETAIL, size: 400 }]))), /saved in CamFrame's Scenes: .* Live right large is saved at 400 px\.$/);
   assert.equal(layoutsLine(layoutPlan(withScenes(1)), { saving: true }), "Saving the camera layouts in CamFrame…");
   assert.equal(layoutsLine(layoutPlan(withScenes(1)), { problem: "CamFrame refused: no." }), "CamFrame refused: no.");
+  assert.equal(layoutsLine(layoutPlan(withScenes(1, [{ name: LAYOUT_SMALL, kind: "snapshot" }])), { problem: "CamFrame refused: no." }), "CamFrame refused: no. CamFrame already has a different Scene named Live small corner; the Prompter leaves it alone, so the cue uses what CamFrame holds.", "a problem and a Scene left alone are both said");
+  assert.match(layoutProblem({ ok: false, body: { error: "..." } }), /^CamFrame refused: no reason given\. Turn/, "a reason that is only punctuation is no reason");
   assert.match(layoutsLine(layoutPlan(withScenes(1, [SMALL_DETAIL]))), /^Not saved in CamFrame: Live right large\. Turn the camera button in Settings off and on to save it\.$/, "deleted later: nothing saves it before the next connect");
   assert.match(layoutsLine(layoutPlan(withScenes(4))), /^Not saved: Live small corner and Live right large\. Saving would fill CamFrame \(6 of 6 Scenes\) and leave no spare slot, so the Prompter waits\. Delete a Scene you do not use in CamFrame, then turn the camera button in Settings off and on\.$/);
   assert.match(layoutsLine(layoutPlan(withScenes(5))), /^No room to save the layouts: /);
