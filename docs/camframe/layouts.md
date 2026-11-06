@@ -36,8 +36,8 @@ itself, and the paste window's Camera cues list says where they stand.
   alone: there is no Replace. The cue then uses what CamFrame holds. A hand resize in CamFrame changes its
   small size; a layout saved at the older size still works and the line says what it was saved at.
 - **The one line** under the Camera cues list (`layoutsLine` in `src/camframe.mjs`; shown while the link
-  answers and CamFrame can save layouts) says where the layouts stand, true for the last status read:
-  saved (naming one at an older size), saving, not saved (no room, would fill CamFrame, deleted later, a
+  answers (on, not reconnecting) and CamFrame can save layouts) says where the layouts stand, true for the last status read:
+  saved (naming the size of a layout saved at another one, when both are saved), saving, not saved (no room, would fill CamFrame, deleted later, a
   refusal or a lost answer in plain words), or a Scene of Lex's own left alone. It never says saved unless
   both are. With the paste window open it is read out each time it settles on new words (not while
   saving), a little after the change; with the window closed the Prompter says nothing, so a save made by
