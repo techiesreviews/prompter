@@ -64,7 +64,7 @@ only when he works on them.
    `/#camera-demo` on the preview site).
 2. Turn on the camera button in Settings: the two layouts are saved in CamFrame's Scenes by themselves
    when it connects. The Open menu then has "Camera layouts"; if that item shows a dot, open it and
-   follow its note (no room, or a Scene with the same name). No such item: CamFrame is too old.
+   follow its note (no room, or a Scene with the same name). CamFrame connected but no such item: it is too old; not connected: check the camera button.
 3. Scroll or press play: each `[Face: …]` line moves the camera when it reaches the reading line.
 
 ## Still to prove on the streaming PC (CamFrame W-30)
