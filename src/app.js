@@ -125,7 +125,7 @@ const camframe = { on: store.get(CAMFRAME_KEY) === "on", state: "off", timer: 0,
 // last saved for by themselves (once per session), a save under way (`busy` is the session it runs for, -1: none,
 // so a save left from before the link was turned off and on never holds up the new session's) and the problem
 // it ended with ("" when none).
-const layouts = { status: null, busy: -1, auto: -1, problem: "" };
+const layouts = { status: null, busy: -1, auto: -1, problem: "", sayEnd: false };
 const layoutsSaving = () => layouts.busy === camframe.session;
 
 // ---------- Opening scripts ----------
@@ -845,6 +845,9 @@ async function saveLayouts() {
   else if (!problem) problem = body ? "" : layoutProblem(null); // an answered status that still lacks it is shown by the line itself
   layouts.problem = after ? problem : "";
   showCueMenu();
+  // The paste window opened during this save: its result is read out, once.
+  if (layouts.sayEnd && pasteDialog.open) { layouts.sayEnd = false; const line = pasteDialog.querySelector(".cue-layouts"); if (!line.hidden) setStatus(line.textContent); }
+  layouts.sayEnd = false;
 }
 
 // ---------- Main screen ----------
@@ -1355,8 +1358,11 @@ function openPaste() {
   showCueMenu();
   showDialog(pasteDialog);
   $("#paste-text").focus();
+  // Read out once the window has settled (a status that already holds its text may not be announced); if it
+  // says "Saving…", its result is read out when the save ends.
   const line = pasteDialog.querySelector(".cue-layouts");
-  if (!line.hidden) setStatus(line.textContent);
+  layouts.sayEnd = layoutsSaving();
+  setTimeout(() => { if (pasteDialog.open && !line.hidden) setStatus(line.textContent); }, 150);
 }
 
 async function submitPaste() {

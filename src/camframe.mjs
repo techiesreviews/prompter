@@ -174,7 +174,7 @@ export function layoutPlan(status) {
 
 /** A refused save (`{ ok: false, body }`) or a missed one (null) in plain words. */
 export function layoutProblem(answer) {
-  if (!answer) return "CamFrame did not answer when the layouts were saved. Turn the camera button off and on to try again.";
+  if (!answer) return "CamFrame did not answer while saving the layouts. Turn the camera button off and on to try again.";
   const code = answer.body?.code;
   if (code === "scene-limit") return "CamFrame has no room for another Scene. Delete one you do not use in CamFrame, then turn the camera button off and on.";
   if (code === "scene-exists") return "CamFrame already has a Scene with this name.";
