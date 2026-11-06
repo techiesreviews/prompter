@@ -2308,14 +2308,6 @@ export async function run({ browser, base, mode, dist, out }) {
     for (let t = 0; cam.saves().length < n; t += 50) { assert.ok(t < 5000, `waiting for ${n} saves, got ${cam.saves().length}`); await LY.waitForTimeout(50); }
     await LY.waitForTimeout(300);
   };
-  // What a screen reader can reach: Chromium's own accessibility tree, where a modal window hides
-  // everything outside it. Not a real screen reader; those have not been tried.
-  const spoken = async () => {
-    const cdp = await layCtx.newCDPSession(LY);
-    const { nodes } = await cdp.send("Accessibility.getFullAXTree");
-    await cdp.detach();
-    return nodes.filter((n) => !n.ignored).map((n) => n.name?.value || "").join("\n");
-  };
   // A status check now, as opening Settings starts one (Settings cannot open behind the window).
   const checkNow = () => LY.evaluate(() => document.querySelector("#settings").dispatchEvent(new ToggleEvent("toggle", { newState: "open" })));
   const SMALL = { name: "Live small corner", size: "small", position: "bottom-right" };
@@ -2369,7 +2361,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await LY.waitForTimeout(500);
   assert.deepEqual(cam.saves(), [], "no room: nothing saved");
   await openPasteWindow();
-  await lineIs(/^No room to save the layouts: CamFrame keeps at most 6 Scenes and has 5, and 2 more are needed, with one slot left free\. Delete 2 Scenes you do not use in CamFrame, then turn the camera button off and on\.$/);
+  await lineIs(/^No room to save the layouts: CamFrame keeps at most 6 Scenes and has 5, and 2 more are needed, with one slot left free\. Delete 2 Scenes you do not use in CamFrame, then turn the camera button in Settings off and on\.$/);
   await shot(LY, "camframe-layouts-no-room-desktop");
   await LY.keyboard.press("Escape");
 
@@ -2407,7 +2399,7 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(cam.saves().length, triedBefore, "a check does not try a refused save again");
   cam.answer = null;
   await openPasteWindow();
-  await lineIs(/^CamFrame's window is not open yet\. Open it, then turn the camera button off and on\.$/);
+  await lineIs(/^CamFrame's window is not open yet\. Open it, then turn the camera button in Settings off and on\.$/);
   await LY.keyboard.press("Escape");
 
   // An answer lost on its way back after CamFrame saved: no blind repeat; the status shows it saved.

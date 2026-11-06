@@ -234,7 +234,7 @@ test("layoutPlan: never saves one of two and then runs out of room; blocks up fr
 });
 
 test("layoutProblem: CamFrame's refusals and a missed call in plain words", () => {
-  assert.match(layoutProblem({ ok: false, body: { code: "scene-limit", error: "x" } }), /no room for another Scene/);
+  assert.match(layoutProblem({ ok: false, body: { code: "scene-limit", error: "x" } }), /no room for another Scene\. Delete Scenes you do not use in CamFrame until one slot stays free/);
   assert.match(layoutProblem({ ok: false, body: { code: "scene-exists", error: "x" } }), /already has a Scene with this name/);
   assert.match(layoutProblem({ ok: false, body: { code: "not-ready", error: "x" } }), /CamFrame's window is not open yet/);
   assert.match(layoutProblem({ ok: false, body: { error: "Not allowed." } }), /CamFrame refused: Not allowed\./, "anything else: CamFrame's own words");
@@ -245,7 +245,7 @@ test("layoutProblem: CamFrame's refusals and a missed call in plain words", () =
 
 test("layoutRoomWords: how many Scenes to delete in CamFrame, true also after another layout was saved", () => {
   assert.equal(layoutRoomWords({ has: 1, limit: 6, need: 2, ok: true, free: 5 }), "");
-  assert.equal(layoutRoomWords({ has: 5, limit: 6, need: 2, ok: false, free: 1 }), "No room to save the layouts: CamFrame keeps at most 6 Scenes and has 5, and 2 more are needed, with one slot left free. Delete 2 Scenes you do not use in CamFrame, then turn the camera button off and on.");
+  assert.equal(layoutRoomWords({ has: 5, limit: 6, need: 2, ok: false, free: 1 }), "No room to save the layouts: CamFrame keeps at most 6 Scenes and has 5, and 2 more are needed, with one slot left free. Delete 2 Scenes you do not use in CamFrame, then turn the camera button in Settings off and on.");
   assert.match(layoutRoomWords({ has: 6, limit: 6, need: 1, ok: false, free: 0 }), /has 6, and 1 more is needed, with one slot left free\. Delete 2 Scenes /);
   assert.match(layoutRoomWords({ has: 6, limit: 6, need: 2, ok: false, free: 0 }), /Delete 3 Scenes /);
   assert.match(layoutRoomWords({ has: 8, limit: 6, need: 2, ok: false, free: 0 }), /has 8, .* Delete 5 Scenes /, "more Scenes than the limit: all of the extra ones count");
@@ -295,7 +295,7 @@ test("layoutsLine: where the layouts stand, true for the status, with no word of
   assert.equal(layoutsLine(layoutPlan(withScenes(1)), { saving: true }), "Saving the camera layouts in CamFrame…");
   assert.equal(layoutsLine(layoutPlan(withScenes(1)), { problem: "CamFrame refused: no." }), "CamFrame refused: no.");
   assert.match(layoutsLine(layoutPlan(withScenes(1, [SMALL_DETAIL]))), /^Not saved in CamFrame: Live right large\. Turn the camera button off and on to save it\.$/, "deleted later: nothing saves it before the next connect");
-  assert.match(layoutsLine(layoutPlan(withScenes(4))), /^Not saved: Live small corner and Live right large\. Saving would fill CamFrame \(6 of 6 Scenes\) and leave no spare slot, so the Prompter waits\. Delete a Scene you do not use in CamFrame, then turn the camera button off and on\.$/);
+  assert.match(layoutsLine(layoutPlan(withScenes(4))), /^Not saved: Live small corner and Live right large\. Saving would fill CamFrame \(6 of 6 Scenes\) and leave no spare slot, so the Prompter waits\. Delete a Scene you do not use in CamFrame, then turn the camera button in Settings off and on\.$/);
   assert.match(layoutsLine(layoutPlan(withScenes(5))), /^No room to save the layouts: /);
   assert.match(layoutsLine(layoutPlan(withScenes(1, [{ name: LAYOUT_SMALL, kind: "snapshot" }, LARGE_DETAIL]))), /^CamFrame already has a different Scene named Live small corner; the Prompter leaves it alone, so the cue uses what CamFrame holds\.$/);
   for (const plan of [withScenes(4), withScenes(5), withScenes(1, [SMALL_DETAIL])]) assert.doesNotMatch(layoutsLine(layoutPlan(plan)), /Camera layouts window|Replace|press Save/i);
