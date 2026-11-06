@@ -109,6 +109,7 @@ let voiceFinal = 0; // speech results already final and followed
 let voiceLocal = false; // this browser recognises speech on this device (no network needed)
 let voiceAsking = null; // the question whether it can, while it is asked
 let resumeAuto = false;
+let demoOpen = false; // the demo is open: its camera preview follows the cue lines
 let cues = []; // camera cues ({ size, position?, scene? }) by data-cue
 let cueAbove = null; // cue numbers above the reading line; null until the first look after render
 // False until the person first does something on the page after it loads: until then a scroll
@@ -138,7 +139,7 @@ const plainAddress = () => location.pathname + location.search;
  * new history entry when it replaces the start screen (so Back returns there).
  * `remember` keeps it as this browser's last script. Returns false if empty.
  */
-async function openScript(text, { fromLink = false, remember = true, label = "" } = {}) {
+async function openScript(text, { fromLink = false, remember = true, label = "", demo = false } = {}) {
   const parsed = parse(text);
   if (!parsed.length) return false;
   if (voiceOn) stopVoice();
@@ -149,7 +150,9 @@ async function openScript(text, { fromLink = false, remember = true, label = "" 
   root.dataset.view = "script";
   $(".empty").hidden = true;
   window.scrollTo(0, 0);
+  demoOpen = demo;
   render();
+  showCamPreview([]); // the demo's camera preview starts at the top: full
   setStatus(label);
   if (!fromLink) {
     try {
@@ -161,9 +164,9 @@ async function openScript(text, { fromLink = false, remember = true, label = "" 
   return true;
 }
 
-function openDemo(hash = "#demo", script = DEMO_SCRIPT) {
-  if (location.hash !== hash) history[isEmpty() ? "pushState" : "replaceState"](null, "", hash);
-  return openScript(script, { fromLink: true, remember: false });
+function openDemo() {
+  if (location.hash !== "#demo") history[isEmpty() ? "pushState" : "replaceState"](null, "", "#demo");
+  return openScript(DEMO_SCRIPT, { fromLink: true, remember: false, demo: true });
 }
 
 // A remembered script is named by its first section after PREP and INTRO
@@ -182,6 +185,8 @@ function showStart() {
   if (lineDrag && handle.hasPointerCapture(lineDrag.id)) handle.releasePointerCapture(lineDrag.id);
   scriptText = "";
   sections = [];
+  demoOpen = false;
+  showCamPreview([]);
   main.innerHTML = "";
   active = -1;
   anchor = null;
@@ -221,7 +226,7 @@ async function route() {
     return;
   }
   if (hash === "#demo") { await openDemo(); return; }
-  if (hash === "#camera-demo") { await openDemo(hash, CAMERA_DEMO_SCRIPT); return; }
+  if (hash === "#camera-demo") { history.replaceState(null, "", "#demo"); await openDemo(); return; } // the old address: the one demo
   const embedded = $("#script-md").textContent;
   if (parse(embedded).length) {
     await openScript(embedded, { fromLink: true, remember: false });
@@ -687,10 +692,29 @@ function updateActive() {
 // A camera cue line that reaches the reading line goes to CamFrame once per
 // pass down (auto-scroll, scrolling by hand, Follow my voice and section jumps
 // all scroll the page). Failures only change the CamFrame button in Settings.
+// The demo's camera preview: where the camera is after the last cue line above the reading line (so it also
+// follows a scroll back up), drawn by the page; CamFrame itself only gets the cue when the link is on.
+function showCamPreview(now) {
+  const box = $(".cam-preview");
+  box.hidden = !demoOpen;
+  if (!demoOpen) return;
+  const state = previewState(cues, now.length ? Math.max(...now) : -1);
+  if (box.dataset.key === `${state.mode}/${state.at}/${state.label}`) return;
+  box.dataset.key = `${state.mode}/${state.at}/${state.label}`;
+  box.dataset.mode = state.mode;
+  const size = previewBox(state);
+  const face = box.querySelector(".cam-face");
+  for (const k of ["left", "top", "width", "height"]) face.style[k] = `${size[k]}%`;
+  const words = previewWords(state);
+  box.querySelector(".cam-caption").textContent = words;
+  box.setAttribute("aria-label", `Camera preview: ${words.replace(/^Camera: /, "")}`); // silent: the cue lines say it too
+}
+
 function updateCues(y) {
-  if (!cues.length) return;
+  if (!cues.length) { showCamPreview([]); return; }
   const now = [];
   main.querySelectorAll("[data-cue]").forEach((el) => { if (el.getBoundingClientRect().top <= y + 4) now.push(Number(el.dataset.cue)); });
+  showCamPreview(now);
   // Opening a script, or a cue already passed when the link is turned on, sends nothing.
   if (!cueAbove || !cueArmed) { cueAbove = new Set(now); return; }
   const { above, send } = cueCrossing(cueAbove, now);
@@ -1472,7 +1496,6 @@ document.addEventListener("click", (e) => {
   else if (action === "copy-link") copyLink(button);
   else if (action === "start") { showAlert(""); history.pushState(null, "", plainAddress()); showStart(); }
   else if (action === "demo") { showAlert(""); openDemo(); }
-  else if (action === "camera-demo") { showAlert(""); openDemo("#camera-demo", CAMERA_DEMO_SCRIPT); }
   else if (action === "continue") { showAlert(""); openScript(store.get(LAST_KEY) || "", { label: "Your last script" }); }
   else if (action === "mcp") pressMcp(button);
   else if (action === "dismiss") showAlert("");

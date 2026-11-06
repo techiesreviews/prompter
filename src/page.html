@@ -352,6 +352,20 @@
   .cue-select { flex: 1 1 14em; min-inline-size: 0; padding: 8px; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); }
   .dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-block-end: 0; }
   .cue-layouts { margin-block: 8px; overflow-wrap: anywhere; }
+  /* The demo's camera preview: a small stand-in for CamFrame's output that follows the camera cue lines the
+     reading line has passed (top right, where the text is already read). Drawn by the page, never CamFrame. */
+  .cam-preview { position: fixed; z-index: 5; inset-block-start: 12px; inset-inline-end: 12px; inline-size: clamp(120px, 14vw, 190px); margin: 0; padding: 6px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); pointer-events: none; }
+  .cam-preview[hidden] { display: none; }
+  .cam-frame { position: relative; aspect-ratio: 16 / 9; overflow: hidden; background: var(--chip); border-radius: 6px; }
+  .cam-screen { position: absolute; inset: 0; display: grid; align-content: center; gap: 8%; padding: 0 12% 0 8%; }
+  .cam-screen i { display: block; block-size: 7%; min-block-size: 3px; border-radius: 2px; background: var(--border); }
+  .cam-screen i:nth-child(odd) { inline-size: 62%; }
+  .cam-screen i:nth-child(even) { inline-size: 44%; }
+  .cam-face { position: absolute; display: grid; place-items: center; box-sizing: border-box; color: var(--accent); background: var(--bg); border: 2px solid var(--accent); border-radius: 12%; transition: left 350ms var(--ease-out), top 350ms var(--ease-out), width 350ms var(--ease-out), height 350ms var(--ease-out), border-radius 350ms var(--ease-out); }
+  .cam-face svg { inline-size: 62%; block-size: 62%; }
+  .cam-preview[data-mode="full"] .cam-face { border-radius: 0; border-width: 0; }
+  @media (prefers-reduced-motion: reduce) { .cam-face { transition: none; } }
+  .cam-caption { margin: 6px 2px 0; font-size: 12px; line-height: 1.3; color: var(--muted); overflow-wrap: anywhere; }
   /* Your agent over MCP, as in the script editor: a status dot (grey off, orange waiting,
      green connected), the action with a copy icon after it, and a check with "Copied" once
      the message is on the clipboard. Connected, it reads Disconnect MCP, with no agent row. */
@@ -445,7 +459,6 @@
       <button class="btn mcp-action" type="button" data-action="mcp" data-state="off"><span class="status-dot"></span><span class="mcp-label" aria-live="polite">Wait for MCP</span><svg class="i-copy" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><svg class="i-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button>
       <textarea class="paste mcp-prompt" readonly hidden aria-label="Message for your AI agent"></textarea>
       <button class="btn" type="button" data-action="demo">Try the demo</button>
-      <button class="btn" type="button" data-action="camera-demo">Try the camera demo</button>
     </div>
     <div class="card-foot">
       <p>Or drop a .md or .txt file anywhere on this page.</p>
@@ -465,6 +478,13 @@
 </div>
 <input class="file-input" type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" tabindex="-1" aria-hidden="true">
 
+<aside class="cam-preview" role="img" aria-label="Camera preview: full screen" hidden>
+  <div class="cam-frame">
+    <div class="cam-screen"><i></i><i></i><i></i><i></i></div>
+    <div class="cam-face"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="9" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg></div>
+  </div>
+  <p class="cam-caption">Camera: full screen</p>
+</aside>
 <div class="dock-wrap">
   <p class="note-row alert" role="alert" hidden><span class="alert-text"></span><button class="btn" type="button" data-action="dismiss">OK</button></p>
   <p class="note-row voice-notice" hidden>
