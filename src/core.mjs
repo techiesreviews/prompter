@@ -412,6 +412,41 @@ export function cueChoices(scenes = [], layouts = []) {
   return choices;
 }
 
+/**
+ * Where the cue line `cue` can go in the script `md` for a caret at `from`, by the format's own reading (parse):
+ * `{ at, insert }` (put `insert` at `at`), or null when the cue would not be read there (above the first
+ * section title, outside the start and end markers). A cue never splits a line: a caret inside a line puts it
+ * after that line. It also never lands ahead of a section's top links or its question line (that would turn the
+ * links into inline ones and the question line into a later one), so from such a place it goes on to the next
+ * line that is fine.
+ */
+export function cueInsertion(md, from, cue) {
+  const shape = (t) => {
+    const sections = parse(t);
+    return {
+      cues: sections.flatMap((s) => s.entries).filter((e) => e.cue).length,
+      top: sections.flatMap((s) => s.links).filter((l) => !l.inline).length,
+      ql: sections.map((s) => s.entries.find((e) => e.type !== "link")?.type === "ql"),
+    };
+  };
+  const base = shape(md);
+  const lineStart = md.lastIndexOf("\n", from - 1) + 1;
+  let at = from;
+  for (let tries = 0; tries < 400; tries++) {
+    if (tries > 0 || at > lineStart) { // inside or at the end of a line: after that line
+      const next = md.indexOf("\n", tries > 0 ? at + 1 : at);
+      if (next < 0 && tries > 0) return null;
+      at = next < 0 ? md.length : next;
+    }
+    const before = md.slice(0, at), after = md.slice(at);
+    const insert = `${before && !before.endsWith("\n") ? "\n" : ""}${cue}${after.startsWith("\n") ? "" : "\n"}`;
+    const now = shape(before + insert + after);
+    if (now.cues !== base.cues + 1) return null; // not read there: nowhere nearby is better
+    if (now.top === base.top && now.ql.length === base.ql.length && now.ql.every((q, i) => q === base.ql[i])) return { at, insert };
+  }
+  return null;
+}
+
 // ---------- Parsing ----------
 
 const timeRe = /^(.*?)\s*·\s*(\d{1,3}:\d{2})\s*$/;
