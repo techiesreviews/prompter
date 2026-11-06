@@ -58,6 +58,15 @@ only when he works on them.
 - Saving a 7th Scene by hand in CamFrame's own settings drops its oldest Scene, which may be one of
   these two (CamFrame KG-14): keep a spare slot.
 
+## Camera cues list (writing the cue lines)
+
+In the "Paste a script" window a "Camera cues" list (with "Insert at cursor") puts a cue on its own line at
+the cursor, in the existing syntax (`faceCue` in `src/core.mjs`; the list is `cueChoices`): Face full, Face
+small, Face small in each place, then `[Face: Scene]` for the two layout Scenes first and every other
+Scene CamFrame lists (names `faceCue` cannot read back, with a full stop, bracket or over 40 characters,
+are left out). It shows only while the CamFrame link answers; otherwise one line says to open CamFrame
+with its link on and turn on the camera button. The insert is read out in the window's own status line.
+
 ## Camera demo (try the cues without writing a script)
 
 1. Open CamFrame (Prompter link on). On Prompter's start screen press "Try the camera demo" (or open

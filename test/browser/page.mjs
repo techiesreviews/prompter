@@ -3210,6 +3210,40 @@ export async function run({ browser, base, mode, dist, out }) {
   await LY.waitForFunction(() => !document.querySelector(".layouts-lead").hidden);
   assert.match(await LY.locator(".layouts-lead").textContent(), /^Both layouts are in CamFrame's Scenes, ready for your cue lines\./);
   await LY.keyboard.press("Escape");
+  // The Camera cues list in the paste window: the layout Scenes and CamFrame's own, inserted at the cursor.
+  await LY.goto("about:blank");
+  await LY.goto(layoutsLink);
+  await LY.locator(".section").first().waitFor();
+  await LY.waitForFunction(() => document.querySelector(".camframe").dataset.state === "on");
+  await (await dock(LY, ".open-btn")).click();
+  await LY.locator("#open-menu:popover-open").waitFor();
+  await LY.locator('#open-menu [data-action="paste"]').click();
+  await LY.locator(".paste-dialog[open]").waitFor();
+  const cueLabels = await LY.locator(".cue-select option").allTextContents();
+  assert.equal(cueLabels[0], "Face full (fill the screen)");
+  assert.ok(cueLabels.includes("Scene: Live right large (layout)") && cueLabels.includes("Scene: Live small corner (layout)") && cueLabels.includes("Scene: Interview"), "the two layout Scenes and CamFrame's own");
+  assert.equal(await LY.locator(".cue-off").isHidden(), true);
+  await LY.locator("#paste-text").fill("### **A**\nHello\nWorld");
+  await LY.locator("#paste-text").evaluate((el) => { el.focus(); el.setSelectionRange(12, 12); }); // after "He", mid-line
+  await LY.locator(".cue-select").selectOption("[Face: Live right large]");
+  await LY.locator('[data-action="insert-cue"]').click();
+  assert.equal(await LY.locator("#paste-text").inputValue(), "### **A**\nHe\n[Face: Live right large]\nllo\nWorld", "on its own line at the cursor");
+  assert.equal(await LY.locator(".paste-status").textContent(), "Inserted camera cue [Face: Live right large]", "read out in the window's own status line");
+  assert.equal(await LY.evaluate(() => document.activeElement.id), "paste-text", "focus back in the text");
+  await LY.locator(".paste-dialog [data-action=close-dialog]").click();
+  // Not connected: no list, one line instead.
+  await cam.stop();
+  await LY.evaluate(() => document.querySelector("#settings").dispatchEvent(new ToggleEvent("toggle", { newState: "open" })));
+  await LY.waitForFunction(() => ["reconnecting", "lost"].includes(document.querySelector(".camframe").dataset.state), null, { timeout: 15_000 });
+  await LY.waitForFunction(() => document.querySelector(".camframe").dataset.state === "lost", null, { timeout: 30_000 });
+  await (await dock(LY, ".open-btn")).click();
+  await LY.locator("#open-menu:popover-open").waitFor();
+  await LY.locator('#open-menu [data-action="paste"]').click();
+  await LY.locator(".paste-dialog[open]").waitFor();
+  assert.equal(await LY.locator(".cue-pick").isHidden(), true);
+  assert.match(await LY.locator(".cue-off").textContent(), /^Camera cues show here when CamFrame is connected/);
+  await LY.keyboard.press("Escape");
+  await cam.start();
   // Back to an older CamFrame: the item hides again.
   cam.layouts = null;
   await (await dock(LY, ".settings-btn")).click();
