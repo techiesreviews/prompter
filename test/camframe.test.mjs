@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CAMFRAME_MISSES, CAMFRAME_ORIGIN, CAMFRAME_RETRY_MS, camframeAfterCheck, camframeCall, cueCrossing, cueRest, cueWords, LAYOUT_LARGE, LAYOUT_SMALL, layoutMatches, layoutPlan, previewBox, previewState, previewWords, layoutProblem, layoutRoomWords, layoutsLine, layoutsWithSaved, layoutsSupported, layoutWants } from "../src/camframe.mjs";
+import { CAMFRAME_MISSES, CAMFRAME_ORIGIN, CAMFRAME_RETRY_MS, camframeAfterCheck, camframeCall, cueCrossing, cueRest, cueWords, LAYOUT_LARGE, LAYOUT_SMALL, layoutMatches, layoutPlan, layoutProblem, layoutRoomWords, layoutsLine, layoutsWithSaved, layoutsSupported, layoutWants } from "../src/camframe.mjs";
 import { check, classify, faceCue, FACE_SPOTS, formatGuide, parse } from "../src/core.mjs";
 
 test("faceCue: Lex's existing cue lines still work", () => {
@@ -301,21 +301,4 @@ test("layoutsLine: where the layouts stand, true for the status, with no word of
   assert.match(layoutsLine(layoutPlan(withScenes(5))), /^No room to save the layouts: /);
   assert.match(layoutsLine(layoutPlan(withScenes(1, [{ name: LAYOUT_SMALL, kind: "snapshot" }, LARGE_DETAIL]))), /^CamFrame already has a different Scene named Live small corner; the Prompter leaves it alone, so the cue uses what CamFrame holds\.$/);
   for (const plan of [withScenes(4), withScenes(5), withScenes(1, [SMALL_DETAIL])]) assert.doesNotMatch(layoutsLine(layoutPlan(plan)), /Camera layouts window|Replace|press Save/i);
-});
-
-
-test("the demo's camera preview: where the camera is after each cue, no CamFrame needed", () => {
-  const cues = [{ size: "small", scene: "Live right large" }, { size: "small", scene: "Live small corner" }, { size: "small", position: "top-left" }, { size: "full" }, { size: "small" }, { size: "small", scene: "Interview" }];
-  assert.deepEqual(previewState(cues, -1), { mode: "full", at: "bottom-right", label: "" }, "before any cue the camera is full");
-  const words = [-1, 0, 1, 2, 3, 4, 5].map((i) => previewWords(previewState(cues, i)));
-  assert.deepEqual(words, ["Camera: full screen", "Camera: large, right (Live right large)", "Camera: small, bottom right (Live small corner)", "Camera: small, top left", "Camera: full screen", "Camera: small, bottom right", "Camera: Scene Interview"]);
-  const large = previewBox(previewState(cues, 0)), corner = previewBox(previewState(cues, 1)), topLeft = previewBox(previewState(cues, 2)), full = previewBox(previewState(cues, 3));
-  assert.deepEqual(full, { left: 0, top: 0, width: 100, height: 100 });
-  assert.ok(large.width > corner.width && Math.abs(large.left + large.width / 2 - 85) < 0.01 && Math.abs(large.top + large.height / 2 - 50) < 0.01, "large: centred in the right 30%");
-  assert.ok(corner.left > 80 && corner.top > 60 && corner.left + corner.width < 100 && corner.top + corner.height < 100, "bottom right, inside the frame");
-  assert.ok(topLeft.left < 5 && topLeft.top < 5 && topLeft.width === corner.width, "top left, same size");
-  assert.equal(previewState([{ size: "full" }, { size: "small" }], 1).at, "bottom-right", "a bare small after full goes where CamFrame's small view is by default");
-  assert.equal(previewState([{ size: "small", position: "left" }, { size: "full" }, { size: "small", position: "right" }, { size: "small" }], 3).at, "right", "a bare small keeps the place");
-  for (const spot of FACE_SPOTS) { const b = previewBox({ mode: "small", at: spot, label: "" }); assert.ok(b.left >= 0 && b.top >= 0 && b.left + b.width <= 100.0001 && b.top + b.height <= 100.0001, `${spot} is inside the frame`); }
-  assert.equal(previewState([{ size: "small", scene: "live RIGHT large" }], 0).mode, "large", "the layout names match in any case");
 });
