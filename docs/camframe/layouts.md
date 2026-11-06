@@ -39,9 +39,11 @@ itself, and the paste window's Camera cues list says where they stand.
   answers and CamFrame can save layouts) says where the layouts stand, true for the last status read:
   saved (naming one at an older size), saving, not saved (no room, would fill CamFrame, deleted later, a
   refusal or a lost answer in plain words), or a Scene of Lex's own left alone. It never says saved unless
-  both are. With the paste window open it is read out each time it settles on new words (not while saving);
-  with the window closed the Prompter says nothing (a save made by itself is quiet) (it would talk over "CamFrame link: connected"). **A real screen reader has not been tried:** the
-  browser checks read Chromium's accessibility tree, which shows the text can be reached, not how it sounds.
+  both are. With the paste window open it is read out each time it settles on new words (not while
+  saving), a little after the change; with the window closed the Prompter says nothing, so a save made by
+  itself does not talk over "CamFrame link: connected". **A real screen reader has not been tried:** the
+  browser checks only read the text the Prompter puts in its status elements, which shows the words are
+  there, not how they sound or in what order they are spoken.
 - A refused save stops and is said in the line; a lost answer is not repeated blindly: the status is read
   again.
 - Saving a 7th Scene by hand in CamFrame's own settings drops its oldest Scene, which may be one of

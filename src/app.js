@@ -1292,8 +1292,9 @@ function showCueMenu() {
   const line = pasteDialog.querySelector(".cue-layouts");
   if (!live) { line.hidden = true; const note = $(".paste-error"); if (note.dataset.cue) note.hidden = true; return; } // a note about the list goes with the list
   // Where the two layouts stand in CamFrame, in one line (the window that used to say it is gone). With this
-  // window open it is read out each time it settles on new words (not "Saving…"), a moment after the change so
-  // it does not cut off "connected"; with the window closed the Prompter says nothing (a save by itself is quiet).
+  // window open it is read out each time it settles on new words (not "Saving…"), a moment after the change
+  // (so it comes after a link message, though whether a screen reader finishes that one first is untried);
+  // with the window closed the Prompter says nothing (a save by itself is quiet).
   line.textContent = layoutsLine(layouts.status && layoutPlan(layouts.status), { saving: layoutsSaving(), problem: layouts.problem });
   line.hidden = !line.textContent;
   clearTimeout(layouts.sayTimer);
@@ -1302,7 +1303,7 @@ function showCueMenu() {
       if (!pasteDialog.open || line.hidden || line.textContent === layouts.said) return;
       layouts.said = line.textContent;
       setStatus(line.textContent);
-    }, 200);
+    }, 600);
   }
   // The layout Scenes first, but only those CamFrame lists: an older CamFrame, or no room, never saved them.
   const scenes = (layouts.status ? layouts.status.scenes : camframe.scenes).filter((n) => typeof n === "string");
