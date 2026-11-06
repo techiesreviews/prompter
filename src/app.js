@@ -720,6 +720,15 @@ function showCamPreview(now) {
   if (!clear()) box.style.visibility = "hidden";
 }
 
+// Only the preview, after the text moved by a setting: no cue is sent and no link opens.
+function refreshCamPreview() {
+  if (!demoOpen || !sections.length) return;
+  const y = readingLineY();
+  const now = [];
+  main.querySelectorAll("[data-cue]").forEach((el) => { if (el.getBoundingClientRect().top <= y + 4) now.push(Number(el.dataset.cue)); });
+  showCamPreview(now);
+}
+
 function updateCues(y) {
   if (!cues.length) { showCamPreview([]); return; }
   const now = [];
@@ -1079,7 +1088,7 @@ function setSize(px) {
   root.style.setProperty("--size", px + "px");
   showSize(px);
   store.set("prompter-size", px);
-  if (sections.length) updateActive(); // the lines moved: the cue the preview shows may have changed
+  refreshCamPreview(); // the lines moved: the cue the preview shows may have changed (nothing is sent)
 }
 const curSize = () => parseInt(getComputedStyle(root).getPropertyValue("--size"), 10);
 
@@ -1088,7 +1097,7 @@ function setWidth(name) {
   root.dataset.width = w;
   widthInputs.forEach((input) => { input.checked = input.value === w; });
   store.set("prompter-width", w);
-  if (sections.length) updateActive();
+  refreshCamPreview();
 }
 
 // Line spacing: more room between the lines; the row at the reading line stays there.
