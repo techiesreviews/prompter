@@ -1528,28 +1528,43 @@ function showCueMenu() {
   if (choices.some((c) => c.text === chosen)) select.value = chosen;
 }
 
-// Puts the chosen cue on its own line at the cursor (after a selection, never over it) and says so.
+// Puts the chosen cue on its own line at the cursor and says so. Never over a selection, and never inside a
+// line (a link, a title, a reminder or a spoken line is not split): a cursor inside a line puts the cue after
+// that line, and after a section title also past the blank lines, links and question line that follow it. If the
+// script, read by the format's own parse (core.mjs), would not hold the cue afterwards (above the first title,
+// outside the start and end markers), nothing is put there and the window says so.
 function insertCue() {
   const text = $("#paste-text");
   const cue = pasteDialog.querySelector(".cue-select").value;
   if (!cue) return;
-  // After a selection, never over it: the selected text stays. A cue above the first section title would be
-  // skipped when the script is read, so it is not put there.
+  const value = text.value;
   let at = text.selectionEnd;
-  // A cursor inside a section title would split it: the cue goes after that line instead.
-  const lineStart = text.value.lastIndexOf("\n", at - 1) + 1;
-  const lineEnd = text.value.indexOf("\n", at) < 0 ? text.value.length : text.value.indexOf("\n", at);
-  if (at > lineStart && /^\s*#{2,3}\s/.test(text.value.slice(lineStart, lineEnd))) at = lineEnd;
-  const before = text.value.slice(0, at), after = text.value.slice(at);
+  const lineStart = value.lastIndexOf("\n", at - 1) + 1;
+  if (at > lineStart) { // inside or at the end of a line: after that line
+    const next = value.indexOf("\n", at);
+    at = next < 0 ? value.length : next;
+    if (/^\s*#{2,3}\s/.test(value.slice(lineStart, at))) {
+      // After a title: past what belongs to its top (blank lines, links, the question line).
+      for (;;) {
+        const from = at + 1;
+        if (from >= value.length) break;
+        const end = value.indexOf("\n", from) < 0 ? value.length : value.indexOf("\n", from);
+        if (!/^\s*$|^\s*-\s|^\s*QL:/i.test(value.slice(from, end))) break;
+        at = end;
+      }
+    }
+  }
+  const before = value.slice(0, at), after = value.slice(at);
+  const insert = `${before && !before.endsWith("\n") ? "\n" : ""}${cue}${after.startsWith("\n") ? "" : "\n"}`;
+  const cues = (md) => parse(md).flatMap((sec) => sec.entries).filter((e) => e.cue).length;
   const error = $(".paste-error");
-  if (!parse(before).length) { // the format's own reading (core.mjs): a real title above the cue, after the start marker
+  if (cues(before + insert + after) <= cues(value)) {
     error.hidden = false;
-    error.textContent = "Put the cursor under a section title (a line like ### **INTRO · 00:00**) first: a camera cue above the first title is skipped.";
+    error.textContent = "Put the cursor under a section title (a line like ### **INTRO · 00:00**) first: a camera cue above the first title, or outside the script's start and end markers, is skipped.";
     text.focus();
     return;
   }
   error.hidden = true;
-  const insert = `${before && !before.endsWith("\n") ? "\n" : ""}${cue}${after.startsWith("\n") ? "" : "\n"}`;
   text.focus();
   text.setSelectionRange(at, at);
   // As typed text, so Undo (Ctrl+Z) takes it back; setRangeText is the fallback.
