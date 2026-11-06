@@ -125,7 +125,7 @@ const camframe = { on: store.get(CAMFRAME_KEY) === "on", state: "off", timer: 0,
 // last saved for by themselves (once per session), a save under way (`busy` is the session it runs for, -1: none,
 // so a save left from before the link was turned off and on never holds up the new session's) and the problem
 // it ended with ("" when none).
-const layouts = { status: null, busy: -1, auto: -1, problem: "", sayEnd: false };
+const layouts = { status: null, busy: -1, auto: -1, problem: "", said: "", sayTimer: 0 };
 const layoutsSaving = () => layouts.busy === camframe.session;
 
 // ---------- Opening scripts ----------
@@ -845,9 +845,6 @@ async function saveLayouts() {
   else if (!problem) problem = body ? "" : layoutProblem(null); // an answered status that still lacks it is shown by the line itself
   layouts.problem = after ? problem : "";
   showCueMenu();
-  // The paste window opened during this save: its result is read out, once.
-  if (layouts.sayEnd && pasteDialog.open) { layouts.sayEnd = false; const line = pasteDialog.querySelector(".cue-layouts"); if (!line.hidden) setStatus(line.textContent); }
-  layouts.sayEnd = false;
 }
 
 // ---------- Main screen ----------
@@ -1294,10 +1291,19 @@ function showCueMenu() {
   pick.hidden = !live;
   const line = pasteDialog.querySelector(".cue-layouts");
   if (!live) { line.hidden = true; const note = $(".paste-error"); if (note.dataset.cue) note.hidden = true; return; } // a note about the list goes with the list
-  // Where the two layouts stand in CamFrame, in one line (the window that used to say it is gone). It is read
-  // out once, when this window opens; a save made by itself is quiet.
+  // Where the two layouts stand in CamFrame, in one line (the window that used to say it is gone). With this
+  // window open it is read out each time it settles on new words (not "Saving…"), a moment after the change so
+  // it does not cut off "connected"; with the window closed the Prompter says nothing (a save by itself is quiet).
   line.textContent = layoutsLine(layouts.status && layoutPlan(layouts.status), { saving: layoutsSaving(), problem: layouts.problem });
   line.hidden = !line.textContent;
+  clearTimeout(layouts.sayTimer);
+  if (pasteDialog.open && !line.hidden && !layoutsSaving() && line.textContent !== layouts.said) {
+    layouts.sayTimer = setTimeout(() => {
+      if (!pasteDialog.open || line.hidden || line.textContent === layouts.said) return;
+      layouts.said = line.textContent;
+      setStatus(line.textContent);
+    }, 200);
+  }
   // The layout Scenes first, but only those CamFrame lists: an older CamFrame, or no room, never saved them.
   const scenes = (layouts.status ? layouts.status.scenes : camframe.scenes).filter((n) => typeof n === "string");
   const choices = cueChoices(scenes, [LAYOUT_LARGE, LAYOUT_SMALL].filter((n) => scenes.some((s) => s.toLowerCase() === n.toLowerCase())));
@@ -1358,11 +1364,8 @@ function openPaste() {
   showCueMenu();
   showDialog(pasteDialog);
   $("#paste-text").focus();
-  // Read out once the window has settled (a status that already holds its text may not be announced); if it
-  // says "Saving…", its result is read out when the save ends.
-  const line = pasteDialog.querySelector(".cue-layouts");
-  layouts.sayEnd = layoutsSaving();
-  setTimeout(() => { if (pasteDialog.open && !line.hidden) setStatus(line.textContent); }, 150);
+  layouts.said = ""; // opening the window reads the line once (showCueMenu, after the window has settled)
+  showCueMenu();
 }
 
 async function submitPaste() {
