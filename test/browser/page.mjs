@@ -2422,7 +2422,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await savesReach(2);
   cam.answer = null;
   await openPasteWindow();
-  await lineIs(/^Not saved in CamFrame: Live small corner and Live right large\. Turn the camera button off and on to save them\.$|^CamFrame did not answer while saving the layouts\./);
+  await lineIs(/^Not saved in CamFrame: Live small corner and Live right large\. Turn the camera button in Settings off and on to save them\.$|^CamFrame did not answer while saving the layouts\./);
   await LY.keyboard.press("Escape");
 
   // A layout deleted in CamFrame later: the next check shows it is not saved; nothing re-adds it until the next connect.
@@ -2435,7 +2435,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await LY.waitForTimeout(500);
   assert.equal(cam.saves().length, 2, "nothing is saved again by itself");
   await openPasteWindow();
-  await lineIs(/^Not saved in CamFrame: Live right large\. Turn the camera button off and on to save it\.$/);
+  await lineIs(/^Not saved in CamFrame: Live right large\. Turn the camera button in Settings off and on to save it\.$/);
   await LY.keyboard.press("Escape");
 
   // The window opened during a save made by itself: the result is read out when the save ends.
