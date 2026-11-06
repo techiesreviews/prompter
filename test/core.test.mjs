@@ -452,6 +452,7 @@ test("cueInsertion: a cue goes on its own line, never splits a line, never ahead
   assert.equal(put("### **A**\nHello\n", 17), "### **A**\nHello\n[Face full]\n", "on the empty last line");
   assert.equal(put("- Docs: https://x.test/y/z\n### **A**\nHello", 20), null, "above the first title: skipped when read, so refused");
   assert.equal(put("", 0), null);
+  assert.equal(put("### **A**\nHello", 12) && cueInsertion("### **A**\nHello", 12, "[Face: Interview with a guest on the left]").insert, "\n[Face: Interview with a guest on the left]\n", "a long Scene name (over the preset's five words) is still inserted");
   assert.equal(put("### **A**\nNext: x\nNow: y\nBye", 12), "### **A**\nNext: x\nNow: y\n[Face full]\nBye", "never between a Next: line and its Now: line");
   assert.equal(put("### **A**\n- Site: https://x.test/a", 3), "### **A**\n- Site: https://x.test/a\n[Face full]\n", "links as the last line: after them");
   assert.equal(put("### **A**\n- Site: https://x.test/a\nQL: Why?", 3), "### **A**\n- Site: https://x.test/a\nQL: Why?\n[Face full]\n", "a question line as the last line");
