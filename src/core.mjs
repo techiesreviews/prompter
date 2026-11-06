@@ -137,7 +137,8 @@ Thanks for watching.
 /**
  * The demo the page opens from its start screen ("Try the demo"): how to be a
  * better speaker with a prompter. It follows the "lex" preset and teaches the
- * format by example, including camera cues for CamFrame (section 4, then used in section 5),
+ * format by example, including camera cues for CamFrame (section 4 uses the two layout Scenes the page saves
+ * in CamFrame, a corner and full; section 5 uses them again) with a preview that follows them (docs/camframe/layouts.md),
  * a link that opens itself and one inside a sentence (section 5).
  */
 export const DEMO_SCRIPT = `### **PREP**
@@ -220,12 +221,16 @@ QL: How does the camera follow?
 [Turn on the CamFrame link.]
 
 Camera lines switch your view.
-CamFrame runs on your computer.
+Watch the preview, top right.
+[Face: Live right large]
+Camera right, page left.
+[Face: Live small corner]
+Small camera, bottom corner.
 [Face small, top left]
-Your face moves top left.
+Same size, top left.
 [Face full]
-And the camera fills again.
-Without CamFrame, they're reminders.
+The camera fills the screen.
+No CamFrame? Preview still moves.
 
 Next: show your screen.
 Now: links open themselves.
@@ -261,71 +266,6 @@ Mark where you stumble.
 Shorten those lines.
 Smile at the lens.
 Then press record.
-`;
-
-/**
- * The camera demo ("Try the camera demo" on the start screen, or the address #camera-demo): a short
- * script whose camera lines use the two layout Scenes the page saves in CamFrame (docs/camframe/layouts.md).
- * With the CamFrame link on, scrolling past each line moves the camera; otherwise they are reminders.
- */
-export const CAMERA_DEMO_SCRIPT = `### **PREP**
-
-- CamFrame open, Prompter link on
-- Camera button on in Settings
-- Camera cues list shows layouts
-
----
-
-### **INTRO · 00:00**
-
-QL: What does the camera do?
-
-Camera lines move your camera.
-Scroll past one, it moves.
-Without CamFrame, they are reminders.
-
-Next: a branded page.
-Now: camera to the right.
-
----
-
-### **1 · BRANDED PAGE · 00:30**
-
-QL: Where does the camera go?
-
-[Face: Live right large]
-Camera moves to the right.
-Your page stays left.
-Same line, every take.
-
-Next: a plugin screen.
-Now: camera in the corner.
-
----
-
-### **2 · PLUGIN SCREEN · 01:00**
-
-QL: How small can it be?
-
-[Face: Live small corner]
-Camera shrinks to the corner.
-Your screen gets the room.
-
-Next: back to full.
-Now: full face again.
-
----
-
-### **3 · BACK TO FULL · 01:30**
-
-QL: How do you finish?
-
-[Face full]
-The camera fills the screen.
-That is the whole demo.
-
-Next: your own script.
-Now: type [Face: Live right large].
 `;
 
 /** Plain-text format guide for one preset, used by the MCP and docs. */

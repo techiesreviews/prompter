@@ -414,6 +414,7 @@ test("the demo script follows the lex preset and starts with a PREP checklist", 
   assert.ok(links.some((l) => !l.inline), "and a top link");
   const cues = parse(DEMO_SCRIPT).flatMap((s) => s.entries).filter((e) => e.cue);
   assert.deepEqual(cues.map((e) => e.cue), [
+    { size: "small", scene: "Live right large" }, { size: "small", scene: "Live small corner" },
     { size: "small", position: "top-left" }, { size: "full" },
     { size: "small", position: "bottom-right" }, { size: "full" },
   ], "and camera cues for CamFrame");
@@ -429,14 +430,6 @@ test("cueChoices: the cue lines the list offers read back as the same cues, the 
   assert.deepEqual(scenes, ["[Face: Live right large]", "[Face: Live small corner]", "[Face: Interview]", "[Face: Demo]"], "layouts first, a repeat in other case once, names that are no cue left out");
   for (const c of all) assert.ok(faceCue(c.text.slice(1, -1))?.cue, `${c.text} is a cue`);
   assert.equal(all.find((c) => c.text === "[Face: Live right large]").label, "Scene: Live right large (layout)");
-});
-
-test("the camera demo follows the lex preset and uses the two layout Scenes, then Face full", async () => {
-  const { CAMERA_DEMO_SCRIPT } = await import("../src/core.mjs");
-  const r = check(CAMERA_DEMO_SCRIPT, "lex");
-  assert.equal(r.errors + r.warnings, 0, describeProblems(r));
-  const cues = parse(CAMERA_DEMO_SCRIPT).flatMap((s) => s.entries).filter((e) => e.cue);
-  assert.deepEqual(cues.map((e) => e.cue), [{ size: "small", scene: "Live right large" }, { size: "small", scene: "Live small corner" }, { size: "full" }]);
 });
 
 test("cueInsertion: a cue goes on its own line, never splits a line, never ahead of a section's links or question line, and never where it would be skipped", async () => {
