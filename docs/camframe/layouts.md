@@ -73,12 +73,14 @@ corner]`, then `[Face small, top left]` and `[Face full]`) and in section 5 (the
 then full). A small preview at the top right of the page, a stand-in for CamFrame's output, moves to where the
 camera would be as each cue line passes the reading line, and moves back when you scroll up. It is drawn by
 the page (`previewState`, `previewBox` in `src/camframe.mjs`); no CamFrame is needed and nothing new is sent to
-CamFrame. With CamFrame connected the usual link sends the same cues, and the real camera moves too.
+CamFrame. With CamFrame connected the usual link sends the same cues; the real camera moves only if CamFrame has the Scenes
+the cues name (the preview shows what the cue asks for, not what CamFrame did).
 
 1. Open the Prompter, press "Try the demo" and scroll to section 4 (or press play).
 2. Watch the preview: right large, small corner, top left, full, then the corner again in section 5.
 3. For the real camera: open CamFrame (Prompter link on) and turn on the camera button in Settings first; the
-   two layouts are then saved in its Scenes by themselves (Open > Paste a script shows a line saying so).
+   two layouts are then saved in its Scenes by themselves when there is room for them and no Scene of your own
+   has those names (Open > Paste a script shows a line saying so, or why not).
 
 ## Still to prove on the streaming PC (CamFrame W-30)
 
