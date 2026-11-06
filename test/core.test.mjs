@@ -438,3 +438,21 @@ test("the camera demo follows the lex preset and uses the two layout Scenes, the
   const cues = parse(CAMERA_DEMO_SCRIPT).flatMap((s) => s.entries).filter((e) => e.cue);
   assert.deepEqual(cues.map((e) => e.cue), [{ size: "small", scene: "Live right large" }, { size: "small", scene: "Live small corner" }, { size: "full" }]);
 });
+
+test("cueInsertion: a cue goes on its own line, never splits a line, never ahead of a section's links or question line, and never where it would be skipped", async () => {
+  const { cueInsertion } = await import("../src/core.mjs");
+  const put = (md, from) => { const r = cueInsertion(md, from, "[Face full]"); return r && md.slice(0, r.at) + r.insert + md.slice(r.at); };
+  const text = "### **A**\n\n- Site: https://x.test/a\nQL: Why?\nHello\nWorld";
+  // from inside the title, on the blank line, at the start of the link line and of the question line: after the question line
+  for (const from of [3, text.indexOf("\n\n") + 1, text.indexOf("- Site"), text.indexOf("QL"), text.indexOf("QL") + 3]) {
+    assert.equal(put(text, from), "### **A**\n\n- Site: https://x.test/a\nQL: Why?\n[Face full]\nHello\nWorld", `caret at ${from}`);
+  }
+  assert.equal(put(text, text.indexOf("Hello") + 2), "### **A**\n\n- Site: https://x.test/a\nQL: Why?\nHello\n[Face full]\nWorld", "inside a spoken line: after it");
+  assert.equal(put("### **A**\nHello", 20), "### **A**\nHello\n[Face full]\n", "at the end of the text");
+  assert.equal(put("### **A**\nHello\n", 17), "### **A**\nHello\n[Face full]\n", "on the empty last line");
+  assert.equal(put("- Docs: https://x.test/y/z\n### **A**\nHello", 20), null, "above the first title: skipped when read, so refused");
+  assert.equal(put("", 0), null);
+  assert.equal(put("### **NOTES**\nx\n<!--SCRIPT-START-->\n### **A**\nHello", 14), null, "before the start marker");
+  assert.equal(put("### **A**\nHello\n<!--SCRIPT-END-->\nafter", 25), null, "after the end marker");
+  assert.equal(put("### **A**\nHello\n\n---\n\n### **B**\nBye", 12), "### **A**\nHello\n[Face full]\n\n---\n\n### **B**\nBye", "a section's own text: after the line");
+});

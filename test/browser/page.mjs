@@ -3220,7 +3220,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await LY.locator('#open-menu [data-action="paste"]').click();
   await LY.locator(".paste-dialog[open]").waitFor();
   const cueLabels = await LY.locator(".cue-select option").allTextContents();
-  assert.equal(cueLabels[0], "Face full (fill the screen)");
+  assert.deepEqual(cueLabels.slice(0, 2), ["Choose a cue…", "Face full (fill the screen)"]);
   assert.ok(cueLabels.includes("Scene: Live right large (layout)") && cueLabels.includes("Scene: Live small corner (layout)") && cueLabels.includes("Scene: Interview"), "the two layout Scenes and CamFrame's own");
   assert.equal(await LY.locator(".cue-off").isHidden(), true);
   await LY.locator("#paste-text").fill("### **A**\nHello\nWorld");
@@ -3278,6 +3278,14 @@ export async function run({ browser, base, mode, dist, out }) {
   await LY.locator('#open-menu [data-action="paste"]').click();
   await LY.locator(".paste-dialog[open]").waitFor();
   assert.equal(await LY.locator(".paste-status").textContent(), "", "the last insert's words are gone when the window opens again");
+  // A chosen Scene that vanishes from CamFrame never turns into another cue by itself.
+  await LY.locator(".cue-select").selectOption("[Face: Interview]");
+  cam.layouts.details = cam.layouts.details.filter((d) => d.name !== "Interview");
+  await checkNow();
+  await LY.waitForFunction(() => !document.querySelector('.cue-select option[value="[Face: Interview]"]'));
+  assert.equal(await LY.locator(".cue-select").inputValue(), "", "back on the blank choice");
+  await LY.locator('[data-action="insert-cue"]').click();
+  assert.equal(await LY.locator(".paste-status").textContent(), "Choose a camera cue first.");
   // Not connected: no list, one line instead; focus on the list goes to the text.
   await LY.locator(".cue-select").focus();
   await cam.stop();
@@ -3287,6 +3295,7 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await LY.locator(".cue-pick").isHidden(), true);
   assert.match(await LY.locator(".cue-off").textContent(), /^Camera cues show here once CamFrame answers/, "the link is on, so no advice to turn it on");
   assert.equal(await LY.evaluate(() => document.activeElement.id), "paste-text", "the list went away under the keyboard: focus is in the text");
+  assert.match(await LY.locator(".paste-status").textContent(), /^(Camera cues show here once CamFrame answers|CamFrame link: not found)/, "and the window's own status line says why the list went (the link's last word comes after)");
   await LY.keyboard.press("Escape");
   await cam.start();
   // An older CamFrame lists only its own Scenes: no layout Scenes are offered, and the link off says how to turn it on.
