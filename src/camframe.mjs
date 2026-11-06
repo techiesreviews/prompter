@@ -234,3 +234,54 @@ export function layoutsWithSaved(status, scenes) {
   }
   return { ...status, scenes: names, sceneDetails: details };
 }
+
+// ---- Camera preview (the demo) ----
+// The demo shows a small stand-in for CamFrame's output that follows the camera cues as the reading line
+// passes them. It is a simulation drawn by the page (no call to CamFrame, no new protocol): the real CamFrame
+// gets the cues through the usual link when that is on. The geometry is approximate: a small camera is
+// 288 px of a 1920 px display, the large layout 1.5 times that, centred in the right 30%.
+
+/** Where the camera is after `cue`, given where it was (`before`): { mode: full | small | large | scene, at, label }. */
+export function previewStep(before, cue) {
+  const at = (cue.position || (before.mode === "full" ? "bottom-right" : before.at) || "bottom-right");
+  if (typeof cue.scene === "string") {
+    if (sameName(cue.scene, LAYOUT_LARGE)) return { mode: "large", at: "right", label: LAYOUT_LARGE };
+    if (sameName(cue.scene, LAYOUT_SMALL)) return { mode: "small", at: "bottom-right", label: LAYOUT_SMALL };
+    return { mode: "scene", at: before.at || "bottom-right", label: cue.scene };
+  }
+  if (cue.size === "full") return { mode: "full", at: before.at || "bottom-right", label: "" };
+  return { mode: "small", at, label: "" };
+}
+
+/** The camera after the cues up to and including index `last` (-1: none yet, the camera is full). */
+export function previewState(cues, last) {
+  let state = { mode: "full", at: "bottom-right", label: "" };
+  for (let i = 0; i <= last && i < cues.length; i++) state = previewStep(state, cues[i]);
+  return state;
+}
+
+/** The camera's box in the preview, as percent of the 16:9 frame: { left, top, width, height }. */
+export function previewBox(state) {
+  if (state.mode === "full") return { left: 0, top: 0, width: 100, height: 100 };
+  const width = state.mode === "large" ? 22.5 : 15;
+  const height = width * 16 / 9; // a square camera in a 16:9 frame
+  const x = { left: 2, right: 100 - 2 - width, center: (100 - width) / 2 };
+  const y = { top: 3.5, bottom: 100 - 3.5 - height, middle: (100 - height) / 2 };
+  const [a, b] = state.at.split("-");
+  let left = x.center, top = y.middle;
+  if (state.mode === "large") left = 85 - width / 2; // centred in the right 30%
+  else if (a === "left" || b === "left") left = x.left;
+  else if (a === "right" || b === "right") left = x.right;
+  if (a === "top") top = y.top;
+  else if (a === "bottom") top = y.bottom;
+  return { left, top, width, height };
+}
+
+/** The preview's caption in plain words. */
+export function previewWords(state) {
+  const place = state.at.replace("-", " ");
+  if (state.mode === "full") return "Camera: full screen";
+  if (state.mode === "large") return `Camera: large, ${place} (Live right large)`;
+  if (state.mode === "scene") return `Camera: Scene ${state.label}`;
+  return `Camera: small, ${place}${state.label ? ` (${state.label})` : ""}`;
+}
