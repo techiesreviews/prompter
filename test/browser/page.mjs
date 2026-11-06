@@ -3230,6 +3230,21 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await LY.locator("#paste-text").inputValue(), "### **A**\nHe\n[Face: Live right large]\nllo\nWorld", "on its own line at the cursor");
   assert.equal(await LY.locator(".paste-status").textContent(), "Inserted camera cue [Face: Live right large]", "read out in the window's own status line");
   assert.equal(await LY.evaluate(() => document.activeElement.id), "paste-text", "focus back in the text");
+  // A selection stays (the cue goes after it), and Undo takes the insert back.
+  const selValue = await LY.locator("#paste-text").inputValue();
+  const llo = selValue.indexOf("llo");
+  await LY.locator("#paste-text").evaluate((el, at) => { el.focus(); el.setSelectionRange(at, at + 3); }, llo);
+  await LY.locator(".cue-select").selectOption("[Face full]");
+  await LY.locator('[data-action="insert-cue"]').click();
+  assert.equal(await LY.locator("#paste-text").inputValue(), "### **A**\nHe\n[Face: Live right large]\nllo\n[Face full]\nWorld", "the selected text stays, the cue follows it");
+  await LY.keyboard.press("Control+z");
+  assert.equal(await LY.locator("#paste-text").inputValue(), selValue, "Undo takes the insert back");
+  // No section title above the cursor: nothing is put there, and the window says why.
+  await LY.locator("#paste-text").fill("");
+  await LY.locator('[data-action="insert-cue"]').click();
+  assert.equal(await LY.locator("#paste-text").inputValue(), "");
+  assert.match(await LY.locator(".paste-error").textContent(), /^Put the cursor under a section title/);
+  await LY.locator("#paste-text").fill(selValue);
   // Opening the pasted script is read out on the page after the window closes.
   await LY.locator('[data-action="open-paste"]').click();
   await LY.waitForFunction(() => !document.querySelector(".paste-dialog").open);
