@@ -1512,8 +1512,9 @@ function showCueMenu() {
   off.textContent = camframe.on
     ? "Camera cues show here once CamFrame answers: open CamFrame with its Prompter link on."
     : "Camera cues show here when CamFrame is connected: turn on the camera button in Settings, and open CamFrame with its Prompter link on.";
-  // The row may hold the focus when the link drops: the text takes it, so the keyboard is never lost.
-  if (!live && pick.contains(document.activeElement)) $("#paste-text").focus();
+  // The row may hold the focus when the link drops: the text takes it, so the keyboard is never lost, and the
+  // window says why the list went.
+  if (!live && !pick.hidden && pasteDialog.open) { if (pick.contains(document.activeElement)) $("#paste-text").focus(); setStatus(off.textContent); }
   pick.hidden = !live;
   if (!live) return;
   // The layout Scenes first, but only those CamFrame lists: an older CamFrame, or no room, never saved them.
@@ -1524,51 +1525,36 @@ function showCueMenu() {
   if (select.dataset.key === key) return; // a check every 10 s must not reset the choice
   const chosen = select.value;
   select.dataset.key = key;
-  select.replaceChildren(...choices.map((c) => { const o = document.createElement("option"); o.value = c.text; o.textContent = c.label; return o; }));
-  if (choices.some((c) => c.text === chosen)) select.value = chosen;
+  // A blank first option: a choice that vanishes from CamFrame never turns into another cue by itself.
+  const blank = document.createElement("option");
+  blank.value = "";
+  blank.textContent = "Choose a cue…";
+  select.replaceChildren(blank, ...choices.map((c) => { const o = document.createElement("option"); o.value = c.text; o.textContent = c.label; return o; }));
+  select.value = choices.some((c) => c.text === chosen) ? chosen : "";
 }
 
-// Puts the chosen cue on its own line at the cursor and says so. Never over a selection, and never inside a
-// line (a link, a title, a reminder or a spoken line is not split): a cursor inside a line puts the cue after
-// that line, and after a section title also past the blank lines, links and question line that follow it. If the
-// script, read by the format's own parse (core.mjs), would not hold the cue afterwards (above the first title,
-// outside the start and end markers), nothing is put there and the window says so.
+// Puts the chosen cue on its own line at the cursor and says so (`cueInsertion` in core.mjs decides where, by
+// the format's own reading: never over a selection, never inside a line, never ahead of a section's links or
+// question line). Where the cue would be skipped when the script is read (above the first title, outside the
+// start and end markers) nothing is put in and the window says so.
 function insertCue() {
   const text = $("#paste-text");
   const cue = pasteDialog.querySelector(".cue-select").value;
-  if (!cue) return;
-  const value = text.value;
-  let at = text.selectionEnd;
-  const lineStart = value.lastIndexOf("\n", at - 1) + 1;
-  if (at > lineStart) { // inside or at the end of a line: after that line
-    const next = value.indexOf("\n", at);
-    at = next < 0 ? value.length : next;
-    if (/^\s*#{2,3}\s/.test(value.slice(lineStart, at))) {
-      // After a title: past what belongs to its top (blank lines, links, the question line).
-      for (;;) {
-        const from = at + 1;
-        if (from >= value.length) break;
-        const end = value.indexOf("\n", from) < 0 ? value.length : value.indexOf("\n", from);
-        if (!/^\s*$|^\s*-\s|^\s*QL:/i.test(value.slice(from, end))) break;
-        at = end;
-      }
-    }
-  }
-  const before = value.slice(0, at), after = value.slice(at);
-  const insert = `${before && !before.endsWith("\n") ? "\n" : ""}${cue}${after.startsWith("\n") ? "" : "\n"}`;
-  const cues = (md) => parse(md).flatMap((sec) => sec.entries).filter((e) => e.cue).length;
   const error = $(".paste-error");
-  if (cues(before + insert + after) <= cues(value)) {
+  if (!cue) { setStatus("Choose a camera cue first."); return; }
+  const place = cueInsertion(text.value, text.selectionEnd, cue);
+  if (!place) {
     error.hidden = false;
     error.textContent = "Put the cursor under a section title (a line like ### **INTRO · 00:00**) first: a camera cue above the first title, or outside the script's start and end markers, is skipped.";
     text.focus();
+    setStatus(error.textContent);
     return;
   }
   error.hidden = true;
   text.focus();
-  text.setSelectionRange(at, at);
+  text.setSelectionRange(place.at, place.at);
   // As typed text, so Undo (Ctrl+Z) takes it back; setRangeText is the fallback.
-  if (!document.execCommand("insertText", false, insert)) { text.setRangeText(insert, at, at, "end"); text.dispatchEvent(new Event("input", { bubbles: true })); }
+  if (!document.execCommand("insertText", false, place.insert)) { text.setRangeText(place.insert, place.at, place.at, "end"); text.dispatchEvent(new Event("input", { bubbles: true })); }
   setStatus(`Inserted camera cue ${cue}`);
 }
 
