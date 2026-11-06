@@ -67,14 +67,18 @@ goes to the text if the list disappears under it.
 
 ## The demo
 
-The one demo on the start screen ("Try the demo", or `/#demo`; the old `/#camera-demo` opens it too) has
-camera cue lines in section 4 (the two layout Scenes `[Face: Live right large]` and `[Face: Live small
-corner]`, then `[Face small, top left]` and `[Face full]`) and in section 5 (the corner for a screen share,
-then full). With the CamFrame link on, scrolling past each cue line moves the real camera, if CamFrame holds
-the Scenes the cues name (an older CamFrame, a full one or a same-named Scene of Lex's own may not).
-Without CamFrame the cue lines are reminders.
+The one demo on the start screen ("Try the demo", or `/#demo`; the old `/#camera-demo` opens it too) shows
+the prompter text, camera cue lines and links on the main screen together. Sections 2, 4 and 5 each have a
+page that opens on the main screen (a link under the title opens when the section starts; section 5 has two
+links on their lines) and camera cue lines: section 2 the corner while the page is up, then full; section 4 the
+two layout Scenes `[Face: Live right large]` and `[Face: Live small corner]`, then `[Face small, top left]` and
+`[Face full]`; section 5 the corner and full again. With the CamFrame link on, scrolling past each cue line moves
+the real camera, if CamFrame holds the Scenes the cues name (an older CamFrame, a full one or a same-named Scene
+of Lex's own may not). With no main screen connected the links show the "would open on your main screen" hint;
+without CamFrame the cue lines are reminders.
 
-1. Open the Prompter, press "Try the demo" and scroll to section 4 (or press play).
+1. Open the Prompter, press "Try the demo", and for the pages connect a main screen in Settings first.
+   Scroll from section 2 on (or press play).
 2. For the real camera: open CamFrame (Prompter link on) and turn on the camera button in Settings first; the
    two layouts are then saved in its Scenes by themselves when there is room for them and no Scene of your own
    has those names (Open > Paste a script shows a line saying so, or why not).
