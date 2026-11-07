@@ -188,6 +188,7 @@ Now: keep eye contact.
 
 QL: Where should your eyes be?
 
+[Turn on the CamFrame link.]
 [Face small, bottom right]
 Put text under the camera.
 Choose a narrow column.
@@ -221,8 +222,6 @@ Now: camera lines explained.
 - Webcam: https://en.wikipedia.org/wiki/Webcam
 
 QL: How does the camera follow?
-
-[Turn on the CamFrame link.]
 
 Camera lines switch your view.
 [Face: Live right large]
