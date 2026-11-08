@@ -1056,7 +1056,7 @@ function setWidth(name) {
 }
 
 // Line spacing: more room between the lines; the row at the reading line stays there.
-// Only while Follow my voice's own move is in progress (until its scrollend, or 2 s if none comes)
+// Only while Follow my voice's own move is in progress (until its scrollend, the reader's wheel or touch, or 2 s if none comes)
 // does the line being read go to the reading line instead.
 function setSpacing(name) {
   const v = SPACINGS.includes(name) ? name : "normal";
@@ -1112,7 +1112,7 @@ function voiceFromReadingLine() {
 }
 
 // The line being read is bright; the lines after it a little dimmer (CSS).
-// The prompter's own scroll is over at its "scrollend" (or after 2 s if none comes).
+// The prompter's own scroll is over at its "scrollend", the reader's wheel or touch, or after 2 s if none comes.
 let voiceScrolling = false;
 let voiceScrollTimer = 0;
 function markLine(k, scroll = true) {
