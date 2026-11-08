@@ -879,6 +879,42 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(gapAfter[0], gapBefore[0], "in a gap: the same line is next below the reading line");
   assert.ok(Math.abs(gapAfter[1] - gapBefore[1]) < 4, `in a gap: it is no further away (${gapBefore[1]} → ${gapAfter[1]})`);
   await page.locator('#settings .spacing .seg label:has-text("Normal")').click();
+  // The reading line on a section's title (a heading does not grow): the title stays under it.
+  await page.evaluate(() => {
+    const h = document.querySelectorAll(".script .title")[1];
+    window.scrollBy(0, h.getBoundingClientRect().top + h.getBoundingClientRect().height / 2 - document.querySelector(".reading-line").getBoundingClientRect().top);
+  });
+  const titleUnder = () => page.evaluate(() => {
+    const y = document.querySelector(".reading-line").getBoundingClientRect().top;
+    return [...document.querySelectorAll(".script .title")].map((h) => h.getBoundingClientRect()).some((r) => r.top <= y && r.bottom > y);
+  });
+  assert.equal(await titleUnder(), true, "the reading line starts on a section title");
+  for (const name of ["Spacious", "Roomy", "Normal"]) {
+    await page.locator(`#settings .spacing .seg label:has-text("${name}")`).click();
+    assert.equal(await titleUnder(), true, `title: still under the reading line (${name})`);
+  }
+  // Scrolled below the last line (into the bottom padding): the last line keeps its distance from the reading line.
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  const lastDist = () => page.evaluate(() => {
+    const lines = [...document.querySelectorAll(".script p")];
+    return Math.round(lines.at(-1).getBoundingClientRect().top - document.querySelector(".reading-line").getBoundingClientRect().top);
+  });
+  const lastBefore = await lastDist();
+  for (const name of ["Spacious", "Roomy", "Normal"]) {
+    await page.locator(`#settings .spacing .seg label:has-text("${name}")`).click();
+    assert.ok(Math.abs(await lastDist() - lastBefore) <= 4, `below the last line: it keeps its distance from the reading line (${name}: ${lastBefore} → ${await lastDist()})`);
+  }
+  // Arrow keys in the line spacing choices (a radio group) change it like a click, and it is remembered.
+  await page.locator('input[name="spacing"]:checked').focus();
+  const spacingNow = () => page.evaluate(() => [document.querySelector('input[name="spacing"]:checked').value, document.documentElement.dataset.spacing, localStorage.getItem("prompter-spacing")]);
+  await page.keyboard.press("ArrowRight");
+  assert.deepEqual(await spacingNow(), ["roomy", "roomy", "roomy"], "→ goes to Roomy");
+  await page.keyboard.press("ArrowRight");
+  assert.deepEqual(await spacingNow(), ["spacious", "spacious", "spacious"], "→ again goes to Spacious");
+  await page.keyboard.press("ArrowLeft");
+  assert.deepEqual(await spacingNow(), ["roomy", "roomy", "roomy"], "← goes back to Roomy");
+  await page.keyboard.press("ArrowLeft");
+  assert.deepEqual((await spacingNow()).slice(0, 2), ["normal", "normal"], "← again goes to Normal");
   // An unknown remembered value falls back to normal.
   await page.evaluate(() => localStorage.setItem("prompter-spacing", "huge"));
   await page.reload();
@@ -1088,6 +1124,53 @@ export async function run({ browser, base, mode, dist, out }) {
   const voiceSecAfter = await voiceSec();
   assert.equal(voiceSecAfter[0], voiceSecBefore[0], "voice on, after Next: the same section stays active");
   assert.ok(Math.abs(voiceSecAfter[1] - voiceSecBefore[1]) <= 4, `voice on, after Next: it stays in place (${voiceSecBefore[1]} → ${voiceSecAfter[1]})`);
+  await v.evaluate(() => document.querySelector('input[name="spacing"][value="normal"]').click());
+  // Voice on, the reading line on a section's row of links: that row stays under it.
+  await v.mouse.wheel(0, 1); // the reader's hand: no voice move is under way
+  await v.evaluate(() => {
+    const l = document.querySelector(".links");
+    window.scrollBy(0, l.getBoundingClientRect().top + l.getBoundingClientRect().height / 2 - document.querySelector(".reading-line").getBoundingClientRect().top);
+  });
+  const voiceLinksUnder = () => v.evaluate(() => {
+    const y = document.querySelector(".reading-line").getBoundingClientRect().top;
+    const r = document.querySelector(".links").getBoundingClientRect();
+    return r.top <= y && r.bottom > y;
+  });
+  assert.equal(await voiceLinksUnder(), true, "voice on: the links row starts under the reading line");
+  for (const name of ["spacious", "roomy", "normal"]) {
+    await v.evaluate((n) => document.querySelector(`input[name="spacing"][value="${n}"]`).click(), name);
+    await v.waitForTimeout(150);
+    assert.equal(await voiceLinksUnder(), true, `voice on, links row: still under the reading line (${name})`);
+  }
+  // Hand-scrolling just after a voice move, in a browser that sends no scrollend: a spacing change keeps
+  // what the reader moved to (the wheel ends the voice move), it does not snap back to the voiced line.
+  await v.evaluate(() => window.addEventListener("scrollend", (e) => e.stopImmediatePropagation(), true));
+  await v.evaluate(() => {
+    const el = [...document.querySelectorAll("p[data-k]")].find((p) => p.textContent === "One question keeps you focused.");
+    window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - document.querySelector(".reading-line").getBoundingClientRect().top + 2);
+  });
+  await v.mouse.wheel(0, 1);
+  await v.waitForFunction(() => document.querySelector("p.cur")?.textContent === "One question keeps you focused.");
+  const [spokenNow, spokenNext] = await v.evaluate(() => {
+    const cur = document.querySelector("p.cur");
+    const all = [...document.querySelectorAll("p[data-k]")];
+    return [cur.textContent, all[all.indexOf(cur) + 1].textContent];
+  });
+  await v.evaluate((t) => window.__speech.say(t.toLowerCase().replace(/[^a-z' ]/g, "")), spokenNow);
+  await v.waitForFunction((t) => document.querySelector("p.cur")?.textContent === t, spokenNext);
+  const voicedLine = await v.evaluate(() => document.querySelector("p.cur").textContent);
+  await v.waitForTimeout(700); // the voice's smooth scroll has arrived; the 2 s guard is still running
+  await v.mouse.wheel(0, 700);
+  await v.waitForTimeout(500);
+  const handLine = () => v.evaluate(() => {
+    const y = document.querySelector(".reading-line").getBoundingClientRect().top;
+    return [...document.querySelectorAll(".script p")].find((el) => el.getBoundingClientRect().bottom > y).textContent;
+  });
+  const handBefore = await handLine();
+  assert.notEqual(handBefore, voicedLine, "the wheel moved the page away from the voiced line");
+  await v.evaluate(() => document.querySelector('input[name="spacing"][value="spacious"]').click());
+  await v.waitForTimeout(300);
+  assert.equal(await handLine(), handBefore, "a spacing change after hand-scrolling keeps the line the reader moved to");
   await v.evaluate(() => document.querySelector('input[name="spacing"][value="normal"]').click());
   await v.evaluate(() => window.__speech.fail("not-allowed"));
   await v.locator(".note-row.alert:not([hidden])").waitFor();
@@ -2220,6 +2303,25 @@ export async function run({ browser, base, mode, dist, out }) {
   await voiceTo("copper trains whistle beyond rivers", "Silver foxes nap beside lanterns.");
   await V.waitForTimeout(900);
   assert.deepEqual(cam.cues().slice(sentBeforeVoice), [{ size: "small", position: "bottom-right" }], "Follow my voice sends the cue it passes, once");
+  // Changing the line spacing with the reading line on a cue line sends no cue (nothing crossed the line).
+  await V.evaluate(() => {
+    const el = document.querySelector("[data-cue]");
+    window.scrollBy(0, el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2 - document.querySelector(".reading-line").getBoundingClientRect().top);
+  });
+  await V.mouse.wheel(0, 1);
+  await V.waitForTimeout(500);
+  const sentBeforeSpacing = cam.cues().length;
+  const cueUnder = () => V.evaluate(() => {
+    const y = document.querySelector(".reading-line").getBoundingClientRect().top;
+    const r = document.querySelector("[data-cue]").getBoundingClientRect();
+    return r.top <= y + 4 && r.bottom > y - 4;
+  });
+  for (const name of ["spacious", "roomy", "normal"]) {
+    await V.evaluate((n) => document.querySelector(`input[name="spacing"][value="${n}"]`).click(), name);
+    await V.waitForTimeout(900);
+    assert.equal(cam.cues().length, sentBeforeSpacing, `a spacing change (${name}) sends no CamFrame cue`);
+    assert.equal(await cueUnder(), true, `voice on, cue line: still at the reading line (${name})`);
+  }
   await voiceCtx.close();
   // CamFrame gone: the button says so (a quiet crossed-out camera), with the permission help in its title.
   await C.evaluate(() => {
