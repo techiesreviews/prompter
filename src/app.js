@@ -1431,10 +1431,12 @@ dockEl.addEventListener("focusin", () => { if (dockEl.querySelector(":focus-visi
 window.addEventListener("resize", () => { setLine(lineFrac); updateActive(); });
 // Scrolling by hand while following the voice: continue from where the reader looks.
 // Keyboard and scrollbar scrolling end in "scrollend"; the prompter's own voice
-// scrolling is ignored.
+// scrolling is ignored. A wheel or touch move ends the voice move at once.
 for (const type of ["wheel", "touchmove", "scrollend"]) {
   window.addEventListener(type, () => {
     if (type === "scrollend" && voiceScrolling) { voiceScrolling = false; clearTimeout(voiceScrollTimer); return; }
+    // The reader's own hand takes over: the voice move is over, even if the browser sends no scrollend.
+    if (type !== "scrollend") { voiceScrolling = false; clearTimeout(voiceScrollTimer); }
     if (voiceOn && !voiceScrolling) requestAnimationFrame(voiceFromReadingLine);
   }, { passive: true });
 }
