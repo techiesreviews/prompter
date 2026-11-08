@@ -1437,7 +1437,7 @@ for (const type of ["wheel", "touchmove", "scrollend"]) {
     if (type === "scrollend" && voiceScrolling) { voiceScrolling = false; clearTimeout(voiceScrollTimer); return; }
     // The reader's own hand takes over: the voice move is over, even if the browser sends no scrollend.
     if (type !== "scrollend") { voiceScrolling = false; clearTimeout(voiceScrollTimer); }
-    if (voiceOn && !voiceScrolling) requestAnimationFrame(voiceFromReadingLine);
+    if (voiceOn && !voiceScrolling) requestAnimationFrame(() => { if (voiceOn && !voiceScrolling) voiceFromReadingLine(); });
   }, { passive: true });
 }
 clockBtn.addEventListener("click", startClock);
