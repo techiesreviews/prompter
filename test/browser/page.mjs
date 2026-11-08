@@ -1144,7 +1144,7 @@ export async function run({ browser, base, mode, dist, out }) {
   }
   // Hand-scrolling just after a voice move, in a browser that sends no scrollend: a spacing change keeps
   // what the reader moved to (the wheel ends the voice move), it does not snap back to the voiced line.
-  await v.evaluate(() => window.addEventListener("scrollend", (e) => e.stopImmediatePropagation(), true));
+  await v.evaluate(() => { window.__blockScrollend = (e) => e.stopImmediatePropagation(); window.addEventListener("scrollend", window.__blockScrollend, true); });
   await v.evaluate(() => {
     const el = [...document.querySelectorAll("p[data-k]")].find((p) => p.textContent === "One question keeps you focused.");
     window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - document.querySelector(".reading-line").getBoundingClientRect().top + 2);
@@ -1156,9 +1156,9 @@ export async function run({ browser, base, mode, dist, out }) {
     const all = [...document.querySelectorAll("p[data-k]")];
     return [cur.textContent, all[all.indexOf(cur) + 1].textContent];
   });
+  const voiceMoveAt = Date.now();
   await v.evaluate((t) => window.__speech.say(t.toLowerCase().replace(/[^a-z' ]/g, "")), spokenNow);
   await v.waitForFunction((t) => document.querySelector("p.cur")?.textContent === t, spokenNext);
-  const voiceMoveAt = Date.now();
   const voicedLine = await v.evaluate(() => document.querySelector("p.cur").textContent);
   await v.waitForTimeout(700); // the voice's smooth scroll has arrived; the 2 s guard is still running
   assert.ok(Date.now() - voiceMoveAt < 1500, "the wheel comes well inside the 2 s guard, so only the wheel can end the voice move");
@@ -1173,6 +1173,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await v.evaluate(() => document.querySelector('input[name="spacing"][value="spacious"]').click());
   await v.waitForTimeout(300);
   assert.equal(await handLine(), handBefore, "a spacing change after hand-scrolling keeps the line the reader moved to");
+  assert.notEqual(await v.evaluate(() => document.querySelector("p.cur")?.textContent), voicedLine, "after the wheel the line being read follows the reader, not the old voiced line");
   await v.evaluate(() => { window.removeEventListener("scrollend", window.__blockScrollend, true); document.querySelector('input[name="spacing"][value="normal"]').click(); });
   await v.evaluate(() => window.__speech.fail("not-allowed"));
   await v.locator(".note-row.alert:not([hidden])").waitFor();
