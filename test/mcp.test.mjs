@@ -104,6 +104,25 @@ test("make_prompter_link returns a #s= link that decodes to the script", async (
   assert.ok(warn.structuredContent.warnings >= 1);
 });
 
+test("make_prompter_link can put the script's save date in the link", async () => {
+  const r = await call("make_prompter_link", { markdown: EXAMPLE_SCRIPT, preset: "lex", saved: "2026-11-10" });
+  assert.equal(r.isError, undefined);
+  const { link } = r.structuredContent;
+  assert.equal(readHash(new URL(link).hash).saved, "2026-11-10");
+  assert.equal(readHash(new URL((await call("make_prompter_link", { markdown: EXAMPLE_SCRIPT })).structuredContent.link).hash).saved, null, "no date given, none in the link");
+  for (const bad of ["yesterday", "2026-02-30", 20261110]) {
+    const refused = await call("make_prompter_link", { markdown: EXAMPLE_SCRIPT, saved: bad });
+    assert.equal(refused.isError, true, String(bad));
+    assert.match(refused.content[0].text, /"saved" must be a date like 2026-11-10/);
+  }
+  const { result } = await rpc("tools/list");
+  for (const name of ["make_prompter_link"]) {
+    const tool = result.tools.find((t) => t.name === name);
+    assert.equal(tool.inputSchema.properties.saved.type, "string", `${name} lists saved`);
+    assert.deepEqual(tool.inputSchema.required, ["markdown"], "saved is optional");
+  }
+});
+
 test("tool argument errors are tool results with isError", async () => {
   assert.equal((await call("check_script", {})).isError, true);
   assert.equal((await call("check_script", { markdown: "   " })).isError, true);
@@ -313,6 +332,14 @@ test("token: show_script checks the script, then sends it with its preset to the
   const plain = fakeRelay();
   await liveCall("show_script", { markdown: EXAMPLE_SCRIPT }, { relay: plain });
   assert.equal(plain.ops.find((o) => o.op === "call").args.preset, "default");
+  assert.equal("saved" in plain.ops.find((o) => o.op === "call").args, false, "no date given, none sent to the tab");
+  const dated = fakeRelay();
+  await liveCall("show_script", { markdown: EXAMPLE_SCRIPT, saved: "2026-11-10" }, { relay: dated });
+  assert.deepEqual(dated.ops.find((o) => o.op === "call").args, { markdown: EXAMPLE_SCRIPT, preset: "default", saved: "2026-11-10" });
+  const undated = fakeRelay();
+  const badDate = await liveCall("show_script", { markdown: EXAMPLE_SCRIPT, saved: "yesterday" }, { relay: undated });
+  assert.equal(badDate.body.result.isError, true);
+  assert.equal(undated.ops.some((o) => o.op === "call"), false, "a bad date never reaches the tab");
   for (const bad of [{}, { markdown: "  " }, { markdown: "x".repeat(100_001) }, { markdown: EXAMPLE_SCRIPT, preset: "loud" }]) {
     const refused = fakeRelay();
     const res = await liveCall("show_script", bad, { relay: refused });
