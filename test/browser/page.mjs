@@ -2,11 +2,11 @@
 // (wrangler dev or a static server) and against dist/index.html via file://.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { utimesSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { DEMO_SCRIPT, EXAMPLE_SCRIPT, formatSavedDate, makeLink, parse } from "../../src/core.mjs";
+import { DEMO_SCRIPT, EXAMPLE_SCRIPT, makeLink, parse } from "../../src/core.mjs";
 
 const DESKTOP = { viewport: { width: 1366, height: 900 } };
 const MOBILE = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 };
@@ -393,7 +393,11 @@ export async function run({ browser, base, mode, dist, out }) {
   // Open a script file is a real button: Enter on it opens the file picker.
   await card.locator('[data-action="open-file"]').focus();
   const [chooser] = await Promise.all([page.waitForEvent("filechooser"), page.keyboard.press("Enter")]);
-  await chooser.setFiles({ name: "talk.md", mimeType: "text/markdown", buffer: Buffer.from("### **PREP**\n\n- Water\n\n### **MY TALK · 00:00**\n\nQL: Is this my file?\n\nYes, my file.") });
+  // A real file on disk, last saved on a known day: the page shows that day, not today.
+  const talkFile = join(out, "talk.md");
+  writeFileSync(talkFile, "### **PREP**\n\n- Water\n\n### **MY TALK · 00:00**\n\nQL: Is this my file?\n\nYes, my file.");
+  utimesSync(talkFile, new Date(2026, 10, 2, 12, 0), new Date(2026, 10, 2, 12, 0));
+  await chooser.setFiles(talkFile);
   await page.locator(".section").first().waitFor();
   assert.equal(await page.locator(".section").count(), 2);
   assert.match(await page.locator(".status").textContent(), /Loaded talk\.md/);
@@ -402,9 +406,9 @@ export async function run({ browser, base, mode, dist, out }) {
   await showsStart(page);
   assert.equal(await card.locator(".continue-title").textContent(), "Continue: MY TALK", "the last script is offered by its first section after PREP");
   // A file brings its own save date (the file's last-saved time): the button says it, on the button itself.
-  const today = await page.evaluate(() => { const d = new Date(); return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, "0"), String(d.getDate()).padStart(2, "0")].join("-"); });
-  assert.equal(await card.locator(".continue-saved").textContent(), `Saved ${formatSavedDate(today)}`, "an opened file shows its save date on Continue");
-  assert.equal(await card.locator(".continue-saved").getAttribute("datetime"), today);
+  assert.equal(await card.locator(".continue-saved").textContent(), "Saved 2 Nov 2026", "an opened file shows the day it was last saved on Continue");
+  assert.equal(await card.locator(".continue-saved").getAttribute("datetime"), "2026-11-02");
+  await card.getByRole("button", { name: /^Continue: MY TALK\s+Saved 2 Nov 2026$/ }).waitFor(); // the title and the date are read as two words
   assert.deepEqual(await card.locator(".choices .btn:not([hidden])").evaluateAll((els) => els.map((el) => (el.querySelector(".continue-title") || el).textContent)), ["Continue: MY TALK", "Open a script file", "Paste a script", "Wait for MCP", "Try the demo"]);
   await shot(page, "start-continue-desktop");
   await page.reload();

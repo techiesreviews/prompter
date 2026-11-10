@@ -685,7 +685,8 @@ export async function decodeScript(data) {
 }
 
 /**
- * The day a script was saved, as YYYY-MM-DD. Only a real calendar date counts: anything else is null.
+ * The day a script was saved, as YYYY-MM-DD. Only a real calendar date counts: anything else is null
+ * (years before 0100 too, which Date.UTC would read as 19xx).
  * A link may carry it (`&d=`) so the start screen can say how old the copy is.
  */
 export function savedDate(value) {
