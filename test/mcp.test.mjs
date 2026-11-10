@@ -318,6 +318,8 @@ test("token: tools/list adds show_script and get_open_script to the open tools",
   const show = r.body.result.tools[3];
   assert.deepEqual([show.inputSchema.required, show.annotations.readOnlyHint, show.annotations.destructiveHint], [["markdown"], false, false]);
   for (const name of ["get_format", "check_script", "make_prompter_link"]) assert.equal((await liveCall(name, { markdown: EXAMPLE_SCRIPT, preset: "lex", ...(name === "get_format" ? { markdown: undefined } : {}) })).body.result.isError, undefined, name);
+  assert.equal(show.inputSchema.properties.saved.type, "string", "show_script lists the optional saved date");
+  assert.ok(!show.inputSchema.required.includes("saved"));
 });
 
 test("token: show_script checks the script, then sends it with its preset to the tab", async () => {

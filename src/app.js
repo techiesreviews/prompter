@@ -1399,10 +1399,11 @@ async function submitPaste() {
   setStatus("Opened pasted script"); // after the window: its own status line goes away with it
 }
 
-// A file's last-saved time as the day on this device (YYYY-MM-DD); null when the browser gives none.
+// A file's last-saved time as the day on this device (YYYY-MM-DD). Null when the browser gives none, or only
+// "now" (some pickers and cloud files do when they do not know), because the date is never guessed.
 function localDay(ms) {
   const d = new Date(ms);
-  if (!ms || Number.isNaN(d.getTime())) return null;
+  if (!ms || Number.isNaN(d.getTime()) || Math.abs(Date.now() - ms) < 5000) return null;
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
