@@ -1273,7 +1273,8 @@ async function copyText(text, ask) {
 // Copy link confirms on its own menu item, like Wait for MCP: Copied and a check for 2 seconds.
 let linkCopiedTimer = 0;
 async function copyLink(button) {
-  const link = `${publicBase()}#s=${await encodeScript(scriptText)}${linkExtras(preset, scriptSaved)}`;
+  const [text, saved, name] = [scriptText, scriptSaved, preset]; // the script may change while it is packed
+  const link = `${publicBase()}#s=${await encodeScript(text)}${linkExtras(name, saved)}`;
   if (!(await copyText(link, "Copy this link. The script is inside it:"))) return;
   const label = button.querySelector(".share-label");
   button.setAttribute("data-copied", "");
@@ -1410,7 +1411,8 @@ function localDay(ms) {
 async function loadFile(file) {
   if (!file) return;
   if (file.size > MAX_DECODED_BYTES) { showAlert("That file is too large for a script."); return; }
-  if (await openScript(await file.text(), { label: `Loaded ${file.name}`, saved: localDay(file.lastModified) })) showAlert("");
+  const saved = localDay(file.lastModified); // read now: a slow file (cloud) can take a while to read
+  if (await openScript(await file.text(), { label: `Loaded ${file.name}`, saved })) showAlert("");
   else showAlert(`No sections found in ${file.name}. Each section starts with a title line like: ### **INTRO · 00:00**`);
 }
 
