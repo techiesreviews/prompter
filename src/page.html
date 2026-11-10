@@ -108,7 +108,8 @@
   .choices { display: grid; gap: 8px; }
   .choices .btn { inline-size: 100%; justify-content: flex-start; text-align: start; padding: 12px 16px; }
   .choices .btn.primary { padding-block: 13px; }
-  .continue { overflow-wrap: anywhere; box-shadow: inset 0 0 0 1px var(--accent); }
+  .continue { flex-direction: column; align-items: flex-start; gap: 2px; overflow-wrap: anywhere; box-shadow: inset 0 0 0 1px var(--accent); }
+  .continue-saved { color: var(--muted); font-size: 13px; font-weight: 500; }
   .card-foot { margin: 16px 0 0; font-size: 13px; color: var(--muted); }
   .card-foot p { margin: 0 0 4px; }
 
@@ -439,7 +440,7 @@
     <h1 id="empty-title"><svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#2f2c64"/><path d="M8 11h16M8 16h11M8 21h14" stroke="#fb401f" stroke-width="3" stroke-linecap="round"/></svg>Your teleprompter</h1>
     <p class="card-lead">Open your script and read it in big text that scrolls while you talk to camera.</p>
     <div class="choices">
-      <button class="btn continue" type="button" data-action="continue" hidden></button>
+      <button class="btn continue" type="button" data-action="continue" hidden><span class="continue-title"></span><time class="continue-saved" hidden></time></button>
       <button class="btn primary" type="button" data-action="open-file">Open a script file</button>
       <button class="btn" type="button" data-action="paste">Paste a script</button>
       <button class="btn mcp-action" type="button" data-action="mcp" data-state="off"><span class="status-dot"></span><span class="mcp-label" aria-live="polite">Wait for MCP</span><svg class="i-copy" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><svg class="i-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button>

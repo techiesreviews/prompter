@@ -684,15 +684,42 @@ export async function decodeScript(data) {
   return new TextDecoder().decode(all);
 }
 
-/** Build a prompter link; the script travels only in the fragment. */
-export async function makeLink(text, presetName, origin = SITE) {
-  const preset = PRESETS[presetName] ? presetName : "default";
-  return `${origin.replace(/\/+$/, "")}/#s=${await encodeScript(text)}${preset === "default" ? "" : `&p=${preset}`}`;
+/**
+ * The day a script was saved, as YYYY-MM-DD. Only a real calendar date counts: anything else is null
+ * (years before 0100 too, which Date.UTC would read as 19xx).
+ * A link may carry it (`&d=`) so the start screen can say how old the copy is.
+ */
+export function savedDate(value) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [y, m, d] = value.split("-").map(Number);
+  const day = new Date(Date.UTC(y, m - 1, d));
+  return day.getUTCFullYear() === y && day.getUTCMonth() === m - 1 && day.getUTCDate() === d ? value : null;
 }
 
-/** Read { data, preset } from a location hash like "#s=…&p=lex". */
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "2026-11-10" as "10 Nov 2026" (English month names on every device); "" when it is not a date. */
+export function formatSavedDate(value) {
+  const day = savedDate(value);
+  if (!day) return "";
+  const [y, m, d] = day.split("-").map(Number);
+  return `${d} ${MONTHS[m - 1]} ${y}`;
+}
+
+/** The part of a link after the script: `&p=lex` and `&d=2026-11-10`, each only when it is not the default or unknown. */
+export function linkExtras(presetName, saved) {
+  const day = savedDate(saved);
+  return `${presetName === "default" || !PRESETS[presetName] ? "" : `&p=${presetName}`}${day ? `&d=${day}` : ""}`;
+}
+
+/** Build a prompter link; the script travels only in the fragment. `saved` (YYYY-MM-DD) is the day the script was saved. */
+export async function makeLink(text, presetName, origin = SITE, saved = null) {
+  return `${origin.replace(/\/+$/, "")}/#s=${await encodeScript(text)}${linkExtras(presetName, saved)}`;
+}
+
+/** Read { data, preset, saved } from a location hash like "#s=…&p=lex&d=2026-11-10". */
 export function readHash(hash) {
   const q = new URLSearchParams(String(hash || "").replace(/^#/, ""));
   const p = q.get("p");
-  return { data: q.get("s"), preset: PRESETS[p] ? p : null };
+  return { data: q.get("s"), preset: PRESETS[p] ? p : null, saved: savedDate(q.get("d")) };
 }

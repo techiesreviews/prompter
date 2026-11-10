@@ -5,7 +5,7 @@
 // two more tools reach the person's open prompter tab through their relay
 // (see relay.mjs): show_script and get_open_script. Their scripts pass
 // through memory only. Without a token /mcp stays open and stateless.
-import { check, describeProblems, formatGuide, makeLink, MAX_SCRIPT_CHARS, PRESETS } from "./core.mjs";
+import { check, describeProblems, formatGuide, makeLink, MAX_SCRIPT_CHARS, PRESETS, savedDate } from "./core.mjs";
 import { RATE_LIMIT } from "./limiter.mjs";
 import { checkToken } from "./token.mjs";
 
@@ -26,6 +26,7 @@ const CORS = {
 
 const presetSchema = { type: "string", enum: Object.keys(PRESETS), description: "Style rules: \"lex\" (strict, five-word lines) or \"default\" (softer). Default: \"default\"." };
 const markdownSchema = { type: "string", description: `The prompter script in Markdown (at most ${MAX_SCRIPT_CHARS} characters).` };
+const savedSchema = { type: "string", description: "The day the script was last saved, as YYYY-MM-DD (for example the script file's own date). The prompter's start screen shows it, so an old copy is easy to spot. Optional; without it no date is shown." };
 const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
 export const TOOLS = [
@@ -46,8 +47,8 @@ export const TOOLS = [
   {
     name: "make_prompter_link",
     title: "Make a prompter link",
-    description: "Checks the script, then returns a https://prompter.techies.tools/#s=… link that opens it in the prompter. The script is packed into the link itself; nothing is stored on any server. Give the link to the user.",
-    inputSchema: { type: "object", properties: { markdown: markdownSchema, preset: presetSchema }, required: ["markdown"], additionalProperties: false },
+    description: "Checks the script, then returns a https://prompter.techies.tools/#s=… link that opens it in the prompter. The script is packed into the link itself; nothing is stored on any server. Pass \"saved\" (the day the script was saved) to have the prompter show how old the copy is. Give the link to the user.",
+    inputSchema: { type: "object", properties: { markdown: markdownSchema, preset: presetSchema, saved: savedSchema }, required: ["markdown"], additionalProperties: false },
     annotations: readOnly,
   },
 ];
@@ -57,8 +58,8 @@ export const TAB_TOOLS = [
   {
     name: "show_script",
     title: "Show a script in the prompter",
-    description: "Checks the script, then opens it in the person's open prompter tab (the one that gave you the token), as a prompter link would, and keeps it there as their last script. Returns the checker's report. Nothing is stored on any server.",
-    inputSchema: { type: "object", properties: { markdown: markdownSchema, preset: presetSchema }, required: ["markdown"], additionalProperties: false },
+    description: "Checks the script, then opens it in the person's open prompter tab (the one that gave you the token), as a prompter link would, and keeps it there as their last script. Returns the checker's report. Pass \"saved\" (the day the script was saved) to have the start screen show how old the copy is. Nothing is stored on any server.",
+    inputSchema: { type: "object", properties: { markdown: markdownSchema, preset: presetSchema, saved: savedSchema }, required: ["markdown"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
@@ -116,7 +117,8 @@ function scriptArg(args) {
   if (typeof args.markdown !== "string" || !args.markdown.trim()) return { error: "\"markdown\" must be the script text." };
   if (args.markdown.length > MAX_SCRIPT_CHARS) return { error: `The script is longer than ${MAX_SCRIPT_CHARS} characters.` };
   if (args.preset !== undefined && !PRESETS[args.preset]) return { error: `Unknown preset "${args.preset}". Use ${Object.keys(PRESETS).join(" or ")}.` };
-  return { markdown: args.markdown, preset: args.preset || "default" };
+  if (args.saved !== undefined && savedDate(args.saved) === null) return { error: "\"saved\" must be a date like 2026-11-10 (year-month-day), the day the script was saved." };
+  return { markdown: args.markdown, preset: args.preset || "default", saved: args.saved };
 }
 
 const UNAUTHORIZED = Symbol("unauthorized");
@@ -155,7 +157,7 @@ async function callTool(name, args, { origin, relay }) {
     return { content: [text(describeProblems(report))], structuredContent: report };
   }
   if (name === "show_script") {
-    const r = await callTab(relay, name, { markdown: input.markdown, preset: input.preset });
+    const r = await callTab(relay, name, { markdown: input.markdown, preset: input.preset, ...(input.saved ? { saved: input.saved } : {}) });
     if (r.error) return toolError(r.error);
     return {
       content: [text(`Opened in the prompter (preset "${input.preset}").\n\n${describeProblems(report)}`)],
@@ -163,7 +165,7 @@ async function callTool(name, args, { origin, relay }) {
     };
   }
   // make_prompter_link
-  const link = await makeLink(input.markdown, input.preset, origin);
+  const link = await makeLink(input.markdown, input.preset, origin, input.saved);
   const notes = [describeProblems(report)];
   if (link.length > LONG_LINK) notes.push(`The link is long (${link.length} characters); some chat apps may cut it. Shorter scripts make shorter links.`);
   return {
