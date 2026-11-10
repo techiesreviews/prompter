@@ -1028,6 +1028,15 @@ export async function run({ browser, base, mode, dist, out }) {
   // A link made with the script's save date (&d=) shows it on Continue; one without shows none.
   await page.goto(`${base}/`);
   await showsStart(page);
+  // A file the browser only dates "just now" (it does not know) shows no date: the day is never guessed.
+  const [freshChooser] = await Promise.all([page.waitForEvent("filechooser"), card.locator('[data-action="open-file"]').click()]);
+  await freshChooser.setFiles({ name: "fresh.md", mimeType: "text/markdown", buffer: Buffer.from("### **FRESH TALK · 00:00**\n\nQL: Is this new?\n\nYes, new.") });
+  await page.locator(".section").first().waitFor();
+  await page.waitForFunction(() => location.hash.startsWith("#s="));
+  assert.doesNotMatch(await page.evaluate(() => location.hash), /&d=/);
+  await page.goBack();
+  await showsStart(page);
+  assert.equal(await card.locator(".continue").textContent(), "Continue: FRESH TALK", "a file dated just now shows no save date");
   await page.goto(await makeLink(EXAMPLE_SCRIPT, "lex", base, "2026-11-03"));
   await page.waitForFunction(() => document.querySelectorAll(".section").length === 5);
   assert.match(await page.evaluate(() => location.hash), /&p=lex&d=2026-11-03$/, "the address keeps the link as made");
