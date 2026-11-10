@@ -55,6 +55,8 @@ const hintEl = $(".screen-hint");
 const pasteDialog = $(".paste-dialog");
 const fileInput = $(".file-input");
 const continueBtn = $(".continue");
+const continueTitle = $(".continue-title");
+const continueSaved = $(".continue-saved");
 const widthInputs = document.querySelectorAll('input[name="width"]');
 const spacingInputs = document.querySelectorAll('input[name="spacing"]');
 const toastEl = $(".toast");
@@ -64,6 +66,7 @@ const pasteStatus = $(".paste-status"); // the same for the paste window, which 
 const WINDOW_NAME = "prompter-main-screen";
 const SETTLE_MS = 700; // wait this long on a section before changing the main screen
 const LAST_KEY = "prompter-last-script";
+const LAST_SAVED_KEY = "prompter-last-saved"; // the day the last script was saved (YYYY-MM-DD), "" when not known
 const PRESET_KEY = "prompter-preset";
 const VOICE_OK_KEY = "prompter-voice-ok";
 const CAMFRAME_KEY = "prompter-camframe";
@@ -86,6 +89,7 @@ const store = {
 };
 
 let scriptText = "";
+let scriptSaved = null; // the open script's save date, when known; it goes into links made from it
 let preset = PRESETS[store.get(PRESET_KEY)] ? store.get(PRESET_KEY) : "default";
 let sections = [];
 let active = -1;
@@ -136,16 +140,18 @@ const plainAddress = () => location.pathname + location.search;
  * Show a script. `fromLink` keeps the current address (a #s= link, #demo or
  * an embedded copy); otherwise the address gets the script's #s= link, as a
  * new history entry when it replaces the start screen (so Back returns there).
- * `remember` keeps it as this browser's last script. Returns false if empty.
+ * `remember` keeps it as this browser's last script, with the day it was saved (`saved`, YYYY-MM-DD: from the
+ * link, the file or the agent; null when not known) for the start screen. Returns false if empty.
  */
-async function openScript(text, { fromLink = false, remember = true, label = "" } = {}) {
+async function openScript(text, { fromLink = false, remember = true, label = "", saved = null } = {}) {
   const parsed = parse(text);
   if (!parsed.length) return false;
   if (voiceOn) stopVoice();
   const fromStart = isEmpty();
   scriptText = text;
+  scriptSaved = savedDate(saved);
   sections = parsed;
-  if (remember) store.set(LAST_KEY, text);
+  if (remember) { store.set(LAST_KEY, text); store.set(LAST_SAVED_KEY, scriptSaved || ""); }
   root.dataset.view = "script";
   $(".empty").hidden = true;
   window.scrollTo(0, 0);
@@ -154,7 +160,7 @@ async function openScript(text, { fromLink = false, remember = true, label = "" 
   if (!fromLink) {
     try {
       const data = await encodeScript(text);
-      const url = `#s=${data}${preset === "default" ? "" : `&p=${preset}`}`;
+      const url = `#s=${data}${linkExtras(preset, scriptSaved)}`;
       if (fromStart) history.pushState(null, "", url); else history.replaceState(null, "", url);
     } catch { /* the link is a convenience; the prompter works without it */ }
   }
@@ -181,6 +187,7 @@ function showStart() {
   // A drag of the reading line ends here; the line goes back to where it was.
   if (lineDrag && handle.hasPointerCapture(lineDrag.id)) handle.releasePointerCapture(lineDrag.id);
   scriptText = "";
+  scriptSaved = null;
   sections = [];
   main.innerHTML = "";
   active = -1;
@@ -194,8 +201,12 @@ function showStart() {
   setStatus("");
   if (location.hash) history.replaceState(null, "", plainAddress());
   const title = rememberedTitle(store.get(LAST_KEY));
+  const saved = savedDate(store.get(LAST_SAVED_KEY));
   continueBtn.hidden = !title;
-  continueBtn.textContent = `Continue: ${title}`;
+  continueTitle.textContent = `Continue: ${title}`;
+  continueSaved.hidden = !saved;
+  continueSaved.textContent = saved ? `Saved ${formatSavedDate(saved)}` : "";
+  if (saved) continueSaved.dateTime = saved; else continueSaved.removeAttribute("datetime");
   root.dataset.view = "empty";
   $(".empty").hidden = false;
   window.scrollTo(0, 0);
@@ -205,7 +216,7 @@ async function route() {
   showAlert("");
   const hash = location.hash;
   if (hash.startsWith("#s=") || hash.includes("&s=")) {
-    const { data, preset: p } = readHash(hash);
+    const { data, preset: p, saved } = readHash(hash);
     preset = p || "default"; // a link without &p= was made for the default preset
     store.set(PRESET_KEY, preset);
     let text;
@@ -214,7 +225,7 @@ async function route() {
       showAlert(`This link could not be opened: ${error.message}`);
       return;
     }
-    if (!(await openScript(text, { fromLink: true, label: "Opened from link" }))) {
+    if (!(await openScript(text, { fromLink: true, label: "Opened from link", saved }))) {
       showStart();
       showAlert("This link has no sections. Each section starts with a title line like: ### **INTRO · 00:00**");
     }
@@ -455,7 +466,7 @@ async function handleCall({ id, tool, args = {} }) {
       preset = PRESETS[args.preset] ? args.preset : "default";
       store.set(PRESET_KEY, preset);
       showAlert("");
-      await openScript(text, { label: `Opened from ${agentName(agent.info?.name)}` });
+      await openScript(text, { label: `Opened from ${agentName(agent.info?.name)}`, saved: args.saved });
       return send({ result: { opened: true, sections: sections.length } });
     }
     send({ error: `Unknown tool: ${tool}` });
@@ -1262,7 +1273,7 @@ async function copyText(text, ask) {
 // Copy link confirms on its own menu item, like Wait for MCP: Copied and a check for 2 seconds.
 let linkCopiedTimer = 0;
 async function copyLink(button) {
-  const link = `${publicBase()}#s=${await encodeScript(scriptText)}${preset === "default" ? "" : `&p=${preset}`}`;
+  const link = `${publicBase()}#s=${await encodeScript(scriptText)}${linkExtras(preset, scriptSaved)}`;
   if (!(await copyText(link, "Copy this link. The script is inside it:"))) return;
   const label = button.querySelector(".share-label");
   button.setAttribute("data-copied", "");
@@ -1388,10 +1399,17 @@ async function submitPaste() {
   setStatus("Opened pasted script"); // after the window: its own status line goes away with it
 }
 
+// A file's last-saved time as the day on this device (YYYY-MM-DD); null when the browser gives none.
+function localDay(ms) {
+  const d = new Date(ms);
+  if (!ms || Number.isNaN(d.getTime())) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 async function loadFile(file) {
   if (!file) return;
   if (file.size > MAX_DECODED_BYTES) { showAlert("That file is too large for a script."); return; }
-  if (await openScript(await file.text(), { label: `Loaded ${file.name}` })) showAlert("");
+  if (await openScript(await file.text(), { label: `Loaded ${file.name}`, saved: localDay(file.lastModified) })) showAlert("");
   else showAlert(`No sections found in ${file.name}. Each section starts with a title line like: ### **INTRO · 00:00**`);
 }
 
@@ -1474,7 +1492,7 @@ document.addEventListener("click", (e) => {
   else if (action === "copy-link") copyLink(button);
   else if (action === "start") { showAlert(""); history.pushState(null, "", plainAddress()); showStart(); }
   else if (action === "demo") { showAlert(""); openDemo(); }
-  else if (action === "continue") { showAlert(""); openScript(store.get(LAST_KEY) || "", { label: "Your last script" }); }
+  else if (action === "continue") { showAlert(""); openScript(store.get(LAST_KEY) || "", { label: "Your last script", saved: store.get(LAST_SAVED_KEY) }); }
   else if (action === "mcp") pressMcp(button);
   else if (action === "dismiss") showAlert("");
   else if (action === "connect") connect();

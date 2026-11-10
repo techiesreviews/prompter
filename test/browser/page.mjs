@@ -6,7 +6,7 @@ import { writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { DEMO_SCRIPT, EXAMPLE_SCRIPT, makeLink, parse } from "../../src/core.mjs";
+import { DEMO_SCRIPT, EXAMPLE_SCRIPT, formatSavedDate, makeLink, parse } from "../../src/core.mjs";
 
 const DESKTOP = { viewport: { width: 1366, height: 900 } };
 const MOBILE = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 };
@@ -400,8 +400,12 @@ export async function run({ browser, base, mode, dist, out }) {
   await page.waitForFunction(() => location.hash.startsWith("#s="));
   await page.goBack();
   await showsStart(page);
-  assert.equal(await card.locator(".continue").textContent(), "Continue: MY TALK", "the last script is offered by its first section after PREP");
-  assert.deepEqual(await card.locator(".choices .btn:not([hidden])").allTextContents(), ["Continue: MY TALK", "Open a script file", "Paste a script", "Wait for MCP", "Try the demo"]);
+  assert.equal(await card.locator(".continue-title").textContent(), "Continue: MY TALK", "the last script is offered by its first section after PREP");
+  // A file brings its own save date (the file's last-saved time): the button says it, on the button itself.
+  const today = await page.evaluate(() => { const d = new Date(); return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, "0"), String(d.getDate()).padStart(2, "0")].join("-"); });
+  assert.equal(await card.locator(".continue-saved").textContent(), `Saved ${formatSavedDate(today)}`, "an opened file shows its save date on Continue");
+  assert.equal(await card.locator(".continue-saved").getAttribute("datetime"), today);
+  assert.deepEqual(await card.locator(".choices .btn:not([hidden])").evaluateAll((els) => els.map((el) => (el.querySelector(".continue-title") || el).textContent)), ["Continue: MY TALK", "Open a script file", "Paste a script", "Wait for MCP", "Try the demo"]);
   await shot(page, "start-continue-desktop");
   await page.reload();
   await showsStart(page);
@@ -577,6 +581,15 @@ export async function run({ browser, base, mode, dist, out }) {
     await shot(A, "mcp-connected-desktop");
     const read = await agentCall(token, "get_open_script");
     assert.deepEqual(read.structuredContent, { open: true, preset: "lex", markdown: EXAMPLE_SCRIPT });
+    // show_script can say when the script was saved: it goes in the address and is remembered with the script.
+    const dated = await agentCall(token, "show_script", { markdown: EXAMPLE_SCRIPT, preset: "lex", saved: "2026-11-05" });
+    assert.equal(dated.isError, undefined, JSON.stringify(dated).slice(0, 300));
+    await A.waitForFunction(() => location.hash.endsWith("&p=lex&d=2026-11-05"));
+    assert.equal(await A.evaluate(() => localStorage.getItem("prompter-last-saved")), "2026-11-05");
+    assert.equal((await agentCall(token, "show_script", { markdown: EXAMPLE_SCRIPT, preset: "lex", saved: "last Tuesday" })).isError, true, "a made-up date is refused");
+    await agentCall(token, "show_script", { markdown: EXAMPLE_SCRIPT, preset: "lex" });
+    await A.waitForFunction(() => location.hash.endsWith("&p=lex"));
+    assert.equal(await A.evaluate(() => localStorage.getItem("prompter-last-saved")), "", "a script shown without a date forgets the old one");
     ok("an agent with the copied token: initialize turns the item into Disconnect MCP (no agent row, no status updates) with a green dot on Open, its name (claude-code → Claude) in Open's label and tooltip; show_script opens the example script with the lex preset in this tab (a #s= address, remembered as the last script); get_open_script reads it back");
 
     // A second tab takes over; Use this tab takes it back.
@@ -650,6 +663,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await showsStart(page);
   assert.equal(await page.evaluate(() => location.hash), "");
   assert.equal(await card.locator(".continue").textContent(), "Continue: HELLO");
+  assert.equal(await card.locator(".continue-saved").isVisible(), false, "a pasted script has no known save date, so the old one does not stay");
   await page.goBack();
   await page.locator(".section").first().waitFor();
   assert.equal(await page.locator(".section").count(), 1, "browser Back returns to the script");
@@ -1006,6 +1020,37 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await page.evaluate(() => location.hash), "");
   assert.equal(await card.locator(".continue").textContent(), "Continue: 1 · ONE QUESTION", "the link's script is offered by its first section after PREP and INTRO");
   ok("Back from a link to the plain address returns to the start screen");
+
+  // A link made with the script's save date (&d=) shows it on Continue; one without shows none.
+  await page.goto(`${base}/`);
+  await showsStart(page);
+  await page.goto(await makeLink(EXAMPLE_SCRIPT, "lex", base, "2026-11-03"));
+  await page.waitForFunction(() => document.querySelectorAll(".section").length === 5);
+  assert.match(await page.evaluate(() => location.hash), /&p=lex&d=2026-11-03$/, "the address keeps the link as made");
+  await page.goBack();
+  await showsStart(page);
+  assert.equal(await card.locator(".continue-title").textContent(), "Continue: 1 · ONE QUESTION");
+  assert.equal(await card.locator(".continue-saved").textContent(), "Saved 3 Nov 2026");
+  assert.equal(await card.locator(".continue-saved").getAttribute("datetime"), "2026-11-03");
+  const [titleBox, savedBox, buttonBox] = await Promise.all([".continue-title", ".continue-saved", ".continue"].map((sel) => card.locator(sel).boundingBox()));
+  assert.ok(savedBox.y >= titleBox.y + titleBox.height - 1 && savedBox.x === titleBox.x && savedBox.y + savedBox.height <= buttonBox.y + buttonBox.height, "the date sits under the title, inside the button");
+  assert.equal(await card.locator(".continue-saved").evaluate((el) => getComputedStyle(el).fontSize), "13px");
+  await shot(page, "start-continue-saved-desktop");
+  await page.reload();
+  await showsStart(page);
+  assert.equal(await card.locator(".continue-saved").textContent(), "Saved 3 Nov 2026", "the date is remembered with the script");
+  await card.locator(".continue").click();
+  await page.waitForFunction(() => document.querySelectorAll(".section").length === 5);
+  assert.match(await page.evaluate(() => location.hash), /&p=lex&d=2026-11-03$/, "Continue opens the script with its date in the address");
+  await page.goto(`${base}/`);
+  await showsStart(page);
+  await page.goto(await makeLink(EXAMPLE_SCRIPT, "lex", base));
+  await page.waitForFunction(() => document.querySelectorAll(".section").length === 5);
+  await page.goBack();
+  await showsStart(page);
+  assert.equal(await card.locator(".continue-saved").isVisible(), false, "a link without a date shows no date");
+  assert.equal(await card.locator(".continue").textContent(), "Continue: 1 · ONE QUESTION");
+  ok("a link's save date (&d=) shows on Continue as “Saved 3 Nov 2026”, stays with the remembered script and its address, and a script without a date shows none");
 
   await page.goto(`${base}/#s=@@@`);
   await page.locator(".note-row.alert:not([hidden])").waitFor();
@@ -2382,7 +2427,9 @@ export async function run({ browser, base, mode, dist, out }) {
     const refusedSave = /status of (409|503)/.test(m.text()) && m.location()?.url?.startsWith("http://127.0.0.1:47833/camframe/scenes");
     // This block reloads the page many times, which can reach the site's limit on its own /api calls.
     const siteLimit = /status of 429/.test(m.text()) && new URL(m.location()?.url || "http://x").pathname.startsWith("/api/");
-    if (m.type() === "error" && !refusedSave && !siteLimit && !/ERR_CONNECTION_REFUSED/.test(m.text())) errors.push(`layouts console: ${m.text()}`);
+    // A static server has no Worker, so Wait for MCP's token request gets a 404 (as in watch above).
+    const noWorker = mode === "static" && m.location()?.url?.includes("/api/");
+    if (m.type() === "error" && !refusedSave && !siteLimit && !noWorker && !/ERR_CONNECTION_REFUSED/.test(m.text())) errors.push(`layouts console: ${m.text()}`);
   });
   const layoutsLink = await makeLink(CUE_SCRIPT, "lex", base);
   // A fresh load each time (the link differs only after #, so going to it again would not reload).
