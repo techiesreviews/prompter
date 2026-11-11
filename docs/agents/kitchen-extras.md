@@ -63,7 +63,8 @@ file wins.
 ## Reviews
 
 - Claude Opus stays the main reviewer (`kit review`, and `kit pr`'s review), then the kit's second look.
-  GPT may review since 2026-11-09; the kit's `second-look.json` decides the order of models.
+  GPT, through Codex, may review since 2026-11-09 (Lex). The second look's models and their order are
+  in `second-look.json` in the kit's own folder (`scripts/agents/kit --home` prints it).
 
 ## Other
 
