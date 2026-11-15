@@ -91,7 +91,7 @@ const store = {
 
 let scriptText = "";
 let scriptSaved = null; // the open script's save date, when known; it goes into links made from it
-let lastNotKept = false; // the last script opened could not be kept on this device: the start screen says so by Continue
+let notKept = null; // the title of the last script opened when it could not be kept on this device ("" if none), else null
 let preset = PRESETS[store.get(PRESET_KEY)] ? store.get(PRESET_KEY) : "default";
 let sections = [];
 let active = -1;
@@ -154,9 +154,14 @@ async function openScript(text, { fromLink = false, remember = true, label = "",
   scriptSaved = savedDate(saved);
   sections = parsed;
   if (remember) {
-    // Not kept: Continue stays with the script (and date) it had.
-    lastNotKept = !store.set(LAST_KEY, text);
-    if (!lastNotKept) store.set(LAST_SAVED_KEY, scriptSaved || "");
+    // The date goes first, so Continue never shows one script with another's date: not kept, Continue stays with
+    // the script and date it had; kept but its date not, Continue shows no date.
+    const oldDate = store.get(LAST_SAVED_KEY);
+    store.del(LAST_SAVED_KEY);
+    const kept = store.set(LAST_KEY, text);
+    notKept = kept ? null : rememberedTitle(text);
+    if (kept) store.set(LAST_SAVED_KEY, scriptSaved || "");
+    else if (oldDate !== null) store.set(LAST_SAVED_KEY, oldDate);
   }
   root.dataset.view = "script";
   $(".empty").hidden = true;
@@ -216,8 +221,11 @@ function showStart() {
   continueSaved.hidden = !saved;
   continueSaved.textContent = saved ? `Saved ${formatSavedDate(saved)}` : "";
   if (saved) continueSaved.dateTime = saved; else continueSaved.removeAttribute("datetime");
-  saveNote.hidden = !lastNotKept;
-  if (lastNotKept) setStatus(saveNote.textContent);
+  // Named, so it is never taken for the script Continue offers.
+  saveNote.hidden = notKept === null;
+  saveNote.textContent = notKept ? `Couldn’t save “${notKept}” on this device` : "Couldn’t save this script on this device";
+  if (notKept === null) continueBtn.removeAttribute("aria-describedby");
+  else { continueBtn.setAttribute("aria-describedby", "save-note"); setStatus(saveNote.textContent); }
   root.dataset.view = "empty";
   $(".empty").hidden = false;
   window.scrollTo(0, 0);
