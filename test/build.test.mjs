@@ -42,6 +42,7 @@ test("the CSP pins the hash of the inline script", () => {
 test("connect-src names each address in full: no wildcard, no bare scheme, no other port", () => {
   const sources = headers.match(/connect-src ([^;]*);/)[1].split(" ");
   assert.deepEqual(sources, ["'self'", "wss://prompter.techies.tools", "http://127.0.0.1:47833", "ws://127.0.0.1:4455", "ws://localhost:4455"]);
+  // The exact list above pins today's sources; this loop guards whatever is added to it later.
   for (const source of sources) {
     assert.ok(!source.includes("*"), `no wildcard in ${source}`);
     assert.ok(!/^[a-z]+:$/.test(source), `no bare scheme in ${source}`);
