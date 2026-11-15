@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Builds dist/: one self-contained index.html (core, follow, agent, camframe, the reading line, the range field + app
+// Builds dist/: one self-contained index.html (core, follow, speech, agent, camframe, the reading line, the range field + app
 // inlined, and the range field's styles), the _headers file whose
 // Content-Security-Policy pins that inline script's hash, and the two font files
 // (the page falls back to system fonts without them).
