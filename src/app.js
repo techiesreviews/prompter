@@ -57,6 +57,7 @@ const fileInput = $(".file-input");
 const continueBtn = $(".continue");
 const continueTitle = $(".continue-title");
 const continueSaved = $(".continue-saved");
+const saveNote = $(".save-note");
 const widthInputs = document.querySelectorAll('input[name="width"]');
 const spacingInputs = document.querySelectorAll('input[name="spacing"]');
 const toastEl = $(".toast");
@@ -84,12 +85,13 @@ const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 // Some viewers (for example a sandboxed file preview) refuse storage; never let that stop the page.
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
-  set(k, v) { try { localStorage.setItem(k, v); } catch { /* not available */ } },
+  set(k, v) { try { localStorage.setItem(k, v); return true; } catch { return false; } }, // false: not kept (full or blocked)
   del(k) { try { localStorage.removeItem(k); } catch { /* not available */ } },
 };
 
 let scriptText = "";
 let scriptSaved = null; // the open script's save date, when known; it goes into links made from it
+let lastNotKept = false; // the last script opened could not be kept on this device: the start screen says so by Continue
 let preset = PRESETS[store.get(PRESET_KEY)] ? store.get(PRESET_KEY) : "default";
 let sections = [];
 let active = -1;
@@ -151,7 +153,11 @@ async function openScript(text, { fromLink = false, remember = true, label = "",
   scriptText = text;
   scriptSaved = savedDate(saved);
   sections = parsed;
-  if (remember) { store.set(LAST_KEY, text); store.set(LAST_SAVED_KEY, scriptSaved || ""); }
+  if (remember) {
+    // Not kept: Continue stays with the script (and date) it had.
+    lastNotKept = !store.set(LAST_KEY, text);
+    if (!lastNotKept) store.set(LAST_SAVED_KEY, scriptSaved || "");
+  }
   root.dataset.view = "script";
   $(".empty").hidden = true;
   window.scrollTo(0, 0);
@@ -162,7 +168,10 @@ async function openScript(text, { fromLink = false, remember = true, label = "",
       const data = await encodeScript(text);
       const url = `#s=${data}${linkExtras(preset, scriptSaved)}`;
       if (fromStart) history.pushState(null, "", url); else history.replaceState(null, "", url);
-    } catch { /* the link is a convenience; the prompter works without it */ }
+    } catch {
+      // The link is a convenience; the prompter works without it. But the address must not keep another script's link.
+      if (fromStart) history.pushState(null, "", plainAddress()); else history.replaceState(null, "", plainAddress());
+    }
   }
   return true;
 }
@@ -207,6 +216,8 @@ function showStart() {
   continueSaved.hidden = !saved;
   continueSaved.textContent = saved ? `Saved ${formatSavedDate(saved)}` : "";
   if (saved) continueSaved.dateTime = saved; else continueSaved.removeAttribute("datetime");
+  saveNote.hidden = !lastNotKept;
+  if (lastNotKept) setStatus(saveNote.textContent);
   root.dataset.view = "empty";
   $(".empty").hidden = false;
   window.scrollTo(0, 0);
@@ -217,13 +228,16 @@ async function route() {
   const hash = location.hash;
   if (hash.startsWith("#s=") || hash.includes("&s=")) {
     const { data, preset: p, saved } = readHash(hash);
-    preset = p || "default"; // a link without &p= was made for the default preset
-    store.set(PRESET_KEY, preset);
     let text;
     try { text = await decodeScript(data || ""); } catch (error) {
       showStart();
       showAlert(`This link could not be opened: ${error.message}`);
       return;
+    }
+    // Only a link that opens a script brings its preset; a link without &p= was made for the default one.
+    if (parse(text).length) {
+      preset = p || "default";
+      store.set(PRESET_KEY, preset);
     }
     if (!(await openScript(text, { fromLink: true, label: "Opened from link", saved }))) {
       showStart();

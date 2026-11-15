@@ -1071,6 +1071,76 @@ export async function run({ browser, base, mode, dist, out }) {
   await showsStart(page);
   assert.equal(await page.locator(".section").count(), 0);
   ok("a damaged link shows a plain error over the start screen");
+
+  // A link that opens nothing leaves the saved style preset alone: damaged, or without sections.
+  await page.evaluate(() => localStorage.setItem("prompter-preset", "lex"));
+  await page.goto(`${base}/#s=@@@`);
+  await page.locator(".note-row.alert:not([hidden])").waitFor();
+  assert.equal(await page.evaluate(() => localStorage.getItem("prompter-preset")), "lex", "a damaged link (made for the default preset) does not change the saved preset");
+  await page.goto(await makeLink("No sections in here.", "default", base));
+  await page.waitForFunction(() => /no sections/.test(document.querySelector(".alert-text").textContent));
+  assert.equal(await page.evaluate(() => localStorage.getItem("prompter-preset")), "lex", "a link without sections does not change the saved preset");
+  ok("a damaged link, or one without sections, keeps the saved style preset");
+
+  // Opened from the paste window on the start screen.
+  const pasteOpen = async (text) => {
+    await page.goto(`${base}/`);
+    await showsStart(page);
+    await card.locator('[data-action="paste"]').click();
+    await page.locator("#paste-text").fill(text);
+    await page.locator('[data-action="open-paste"]').click();
+    await page.locator(".paste-dialog:not([open])").waitFor({ state: "attached" });
+  };
+  // When the script cannot be packed into a link, the address shows no script at all, never the one before.
+  await pasteOpen("### **FIRST · 00:00**\n\nThe first script.");
+  await page.waitForFunction(() => location.hash.startsWith("#s="));
+  await page.evaluate(() => {
+    window.CompressionStream = class { constructor() { throw new Error("no compression here"); } };
+    document.querySelector('[data-action="paste"]').click();
+  });
+  await page.locator("#paste-text").fill("### **SECOND · 00:00**\n\nThe second script.");
+  await page.locator('[data-action="open-paste"]').click();
+  await page.locator(".paste-dialog:not([open])").waitFor({ state: "attached" });
+  assert.equal(await page.locator(".section .title span").first().textContent(), "SECOND");
+  assert.equal(await page.evaluate(() => location.hash), "", "the first script's link does not stay in the address");
+  ok("a script that cannot be packed into a link leaves no older script's link in the address");
+
+  // Browser storage that cannot keep the last script: a short note in the start screen's list, by Continue.
+  await page.reload();
+  await showsStart(page);
+  assert.equal(await card.locator(".save-note").isVisible(), false, "no note while saving works");
+  await page.evaluate(() => {
+    const set = window.__setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key === "prompter-last-script") throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+      return set.call(this, key, value);
+    };
+  });
+  await card.locator('[data-action="paste"]').click();
+  await page.locator("#paste-text").fill("### **THIRD · 00:00**\n\nThe third script.");
+  await page.locator('[data-action="open-paste"]').click();
+  await page.locator(".section").first().waitFor();
+  assert.equal(await page.locator(".save-note").isVisible(), false, "nothing shows over the script");
+  await (await dock(page, ".open-btn")).click();
+  await page.locator('#open-menu [data-action="start"]').click();
+  await showsStart(page);
+  assert.equal(await card.locator(".save-note").textContent(), "Couldn’t save this script on this device");
+  assert.equal(await card.locator(".save-note").isVisible(), true);
+  assert.equal(await card.locator(".continue-title").textContent(), "Continue: SECOND", "Continue still offers the script that was saved, with its own date");
+  const [noteBox, continueBox] = await Promise.all([card.locator(".save-note").boundingBox(), card.locator(".continue").boundingBox()]);
+  assert.ok(noteBox.y >= continueBox.y + continueBox.height && noteBox.y - (continueBox.y + continueBox.height) < 24, `the note sits just under Continue: ${JSON.stringify([continueBox, noteBox])}`);
+  await closeUp(page, ".empty .card", "save-note-close-up-desktop");
+  await page.evaluate(() => { Storage.prototype.setItem = window.__setItem; });
+  await card.locator('[data-action="paste"]').click();
+  await page.locator("#paste-text").fill("### **FOURTH · 00:00**\n\nThe fourth script.");
+  await page.locator('[data-action="open-paste"]').click();
+  await page.locator(".section").first().waitFor();
+  await (await dock(page, ".open-btn")).click();
+  await page.locator('#open-menu [data-action="start"]').click();
+  await showsStart(page);
+  assert.equal(await card.locator(".save-note").isVisible(), false, "the note goes once a script is saved again");
+  assert.equal(await card.locator(".continue-title").textContent(), "Continue: FOURTH");
+  ok("when the browser cannot keep the last script, the start screen says “Couldn’t save this script on this device” just under Continue, only then, and Continue keeps the script it has");
   await desktop.close();
 
   // Reduced motion: no colour fade between sections.
