@@ -56,8 +56,9 @@ export function build(dir = join(root, "dist"), { host = LIVE_HOST } = {}) {
     "img-src data:",
     "font-src 'self'",
     // Only the page's own calls: a token for Wait for MCP and the relay's WebSocket (wss: spelled out for
-    // browsers whose 'self' does not cover it), plus CamFrame on this computer once the user turns on its link.
-    `connect-src 'self' wss://${host} http://127.0.0.1:47833`,
+    // browsers whose 'self' does not cover it), plus CamFrame on this computer once the user turns on its link,
+    // and OBS's WebSocket on this computer (its default port 4455).
+    `connect-src 'self' wss://${host} http://127.0.0.1:47833 ws://127.0.0.1:4455 ws://localhost:4455`,
     "frame-src https://www.youtube.com",
     "base-uri 'none'",
     "form-action 'none'",
