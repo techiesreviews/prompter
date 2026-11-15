@@ -36,13 +36,23 @@ test("the CSP pins the hash of the inline script", () => {
   assert.match(headers, /frame-src https:\/\/www\.youtube\.com;/);
   assert.doesNotMatch(headers, /nocookie/);
   assert.match(headers, /font-src 'self';/);
-  assert.match(headers, /connect-src 'self' wss:\/\/prompter\.techies\.tools http:\/\/127\.0\.0\.1:47833;/, "calls only to this site and CamFrame on this computer");
+  assert.match(headers, /connect-src 'self' wss:\/\/prompter\.techies\.tools http:\/\/127\.0\.0\.1:47833 ws:\/\/127\.0\.0\.1:4455 ws:\/\/localhost:4455;/, "calls only to this site, CamFrame and OBS on this computer");
+});
+
+test("connect-src names each address in full: no wildcard, no bare scheme, no other port", () => {
+  const sources = headers.match(/connect-src ([^;]*);/)[1].split(" ");
+  assert.deepEqual(sources, ["'self'", "wss://prompter.techies.tools", "http://127.0.0.1:47833", "ws://127.0.0.1:4455", "ws://localhost:4455"]);
+  // The exact list above pins today's sources; this loop guards whatever is added to it later.
+  for (const source of sources) {
+    assert.ok(!source.includes("*"), `no wildcard in ${source}`);
+    assert.ok(!/^[a-z]+:$/.test(source), `no bare scheme in ${source}`);
+  }
 });
 
 test("the live build lets search engines in; a preview build allows its own relay and keeps them out", () => {
   assert.equal(readFileSync(join(dist, "robots.txt"), "utf8"), "User-agent: *\nAllow: /\nDisallow: /mcp\n");
   const preview = build(resolve(import.meta.dirname, "../.scratch/test-dist-preview"), { host: "preview.prompter.techies.tools" });
-  assert.match(preview.headers, /connect-src 'self' wss:\/\/preview\.prompter\.techies\.tools http:\/\/127\.0\.0\.1:47833;/);
+  assert.match(preview.headers, /connect-src 'self' wss:\/\/preview\.prompter\.techies\.tools http:\/\/127\.0\.0\.1:47833 ws:\/\/127\.0\.0\.1:4455 ws:\/\/localhost:4455;/);
   assert.equal(preview.html, html, "the page itself is the same");
   assert.equal(readFileSync(join(preview.dir, "robots.txt"), "utf8"), "User-agent: *\nDisallow: /\n");
   assert.equal(build(resolve(import.meta.dirname, "../.scratch/test-dist-live"), { host: LIVE_HOST }).headers, headers);

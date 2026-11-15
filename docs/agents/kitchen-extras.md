@@ -62,8 +62,10 @@ file wins.
 
 ## Reviews
 
-- Claude reviews (`kit review`, and `kit pr`'s review), then the kit's second look (Grok, else the
-  free OpenCode model). Never GPT or Codex reviews (Lex: his GPT budget), whatever the agent.
+- Claude Opus stays the main reviewer (`kit review`, and `kit pr`'s review), then the kit's second look.
+  Since 2026-11-09 (Lex) GPT, through Codex, may take the second look or a review asked on purpose
+  (`kit review --second gpt`). The second look's models and their order are in `second-look.json` in
+  the kit's own folder (`scripts/agents/kit --home` prints it).
 
 ## Other
 
