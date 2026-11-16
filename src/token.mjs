@@ -7,9 +7,10 @@
 // needs no signature: the relay object is picked by the hash of the whole
 // token, so a changed birth time is another token with an empty relay, one in
 // the past only lives shorter, and one from the future is refused.
-// No imports: the Worker, the relay and the tests share this file.
+// The Worker, the relay and the tests share this file; its only import is the wire list (its age).
+import { TOKEN_MAX_AGE_MS } from "./wire.mjs";
 
-export const MAX_AGE_MS = 8 * 60 * 60 * 1000;
+export const MAX_AGE_MS = TOKEN_MAX_AGE_MS;
 export const FUTURE_SLACK_MS = 60_000;
 export const TOKEN_RE = /^tp1-([0-9a-z]{8,10})-([A-Za-z0-9_-]{43})$/;
 const SALT = "techies-prompter/relay/v1";

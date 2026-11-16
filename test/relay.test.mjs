@@ -4,7 +4,8 @@ import { pairs, FakeSocket } from "./runtime.mjs";
 import { checkToken, FUTURE_SLACK_MS, MAX_AGE_MS, newToken, relayName, TOKEN_RE } from "../src/token.mjs";
 
 const { default: worker } = await import("../src/worker.mjs");
-const { Relay, ALARM_SLACK_MS, PROTOCOL } = await import("../src/relay.mjs");
+const { Relay, ALARM_SLACK_MS } = await import("../src/relay.mjs");
+const { RELAY_PROTOCOL: PROTOCOL } = await import("../src/wire.mjs");
 const lastServer = () => pairs.at(-1)[1];
 const T0 = Date.UTC(2026, 9, 28, 20);
 const SCRIPT = "### **INTRO · 00:00**\n\nQL: Why?\n\nA secret line nobody may store.";

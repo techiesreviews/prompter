@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Builds dist/: one self-contained index.html (core, follow, speech, agent, camframe, the reading line, the range field + app
-// inlined, and the range field's styles), the _headers file whose
+// Builds dist/: one self-contained index.html (core, follow, speech, agent, the relay's wire list and tab
+// link, camframe, the reading line, the range field + app inlined, and the range field's styles), the _headers file whose
 // Content-Security-Policy pins that inline script's hash, and the two font files
 // (the page falls back to system fonts without them).
 // Usage: node scripts/build.mjs [outDir=dist] [--host <host> | --host=<host>]
@@ -8,7 +8,7 @@
 // WebSocket is allowed there, and any other address (the preview) asks search engines to stay away.
 import { createHash } from "node:crypto";
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, posix, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const read = (file) => readFileSync(join(root, file), "utf8");
@@ -16,22 +16,29 @@ const read = (file) => readFileSync(join(root, file), "utf8");
 /** Font files served from /fonts/ (SIL OFL 1.1; the licence travels with them). */
 export const FONTS = ["inter-latin.woff2", "roboto-mono-latin.woff2", "OFL.txt"];
 
-/** Shared modules inlined into the page, in this order, without `export`. */
-export const INLINED = ["src/core.mjs", "src/follow.mjs", "src/speech.mjs", "src/agent.mjs", "src/camframe.mjs", "src/reading-line.mjs", "src/ui/range-field.mjs"];
+/**
+ * Shared modules inlined into the page, in this order, without `export`. A module may import names from
+ * one inlined before it (`import { … } from "./wire.mjs";`): they share the page's scope, so that line is dropped.
+ */
+export const INLINED = ["src/core.mjs", "src/follow.mjs", "src/speech.mjs", "src/agent.mjs", "src/wire.mjs", "src/relay-link.mjs", "src/camframe.mjs", "src/reading-line.mjs", "src/ui/range-field.mjs"];
 
 /** Shared component styles inlined into the page's style at its marker. */
 export const UI_CSS = ["src/ui/range-field.css"];
 
 /** Inline the page script: the shared modules, then the app, in one function scope. */
-export function pageScript() {
-  const modules = INLINED.map((file) => {
-    const source = read(file);
-    if (/^\s*import\s/m.test(source)) throw new Error(`${file} must not import anything`);
-    const stripped = source.replace(/^export (?=(async )?function |const |let |class )/gm, "");
+export function pageScript(files = INLINED, source = read) {
+  const modules = files.map((file, i) => {
+    const code = source(file).replace(/^import \{([^}]*)\} from "(\.\.?\/[^"]+)";[ \t]*\n/gm, (line, names, spec) => {
+      if (/\bas\b/.test(names)) throw new Error(`${file}: an aliased import (${line.trim()}) cannot be inlined`);
+      if (!files.slice(0, i).includes(posix.join(posix.dirname(file), spec))) throw new Error(`${file} imports ${spec}, which is not inlined before it`);
+      return "";
+    });
+    if (/^\s*import\s/m.test(code)) throw new Error(`${file} must not import anything`);
+    const stripped = code.replace(/^export (?=(async )?function |const |let |class )/gm, "");
     if (/^export\b/m.test(stripped)) throw new Error(`${file} has an export form the build cannot strip`);
     return stripped;
   });
-  return `\n(() => {\n${modules.join("\n")}\n${read("src/app.js")}\n})();\n`;
+  return `\n(() => {\n${modules.join("\n")}\n${source("src/app.js")}\n})();\n`;
 }
 
 /** The live address; a build for any other host (the preview) is kept out of search engines. */
