@@ -762,14 +762,6 @@ function drawCamframe() {
   if (was !== camframe.state && ((camframe.state === "on" && was !== "reconnecting") || camframe.state === "lost")) setStatus(`${name}.`);
 }
 
-// Camera layouts (CamFrame API 2): the two layout Scenes for Lex's cue lines (layoutPlan in src/camframe.mjs).
-// Approved by Lex (2026-11-04, no window since 2026-11-06): when a CamFrame that can save layouts connects, the
-// link saves the missing ones by itself, once per link session, small first, unless that would leave CamFrame
-// no spare slot or no room at all (then nothing is saved and the Camera cues list says so); it never replaces a
-// Scene of Lex's own, never moves the camera and never changes CamFrame's small size. The one line under the
-// Camera cues list (layoutsLine in src/camframe.mjs) says where the layouts stand. A save made by itself is
-// never read out.
-
 // ---------- Main screen ----------
 function connected() { return mainWin && !mainWin.closed; }
 

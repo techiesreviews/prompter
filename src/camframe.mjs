@@ -339,8 +339,11 @@ export function camframeLink({ fetch = globalThis.fetch, clock = globalThis, vis
     set({ misses: 0 });
   }
 
-  // When a CamFrame that can save layouts connects, the missing layouts are saved by themselves, once per
-  // session (layoutPlan says which may go).
+  // Approved by Lex (2026-11-04, no window since 2026-11-06): when a CamFrame that can save layouts connects,
+  // the missing layouts are saved by themselves, once per link session, small first, unless that would leave
+  // CamFrame no spare slot or no room at all (layoutPlan says which may go; the Camera cues list says why
+  // not); never replacing a Scene of Lex's own, moving the camera or changing CamFrame's small size. A save
+  // made by itself is never read out.
   function seeLayouts(body) {
     layouts.status = layoutsSupported(body) ? body : null;
     // A problem from an earlier save goes once nothing is missing, or for an older CamFrame.

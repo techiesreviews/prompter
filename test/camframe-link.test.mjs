@@ -59,6 +59,7 @@ function fakeCamFrame(status = { app: "camframe", version: "test", scenes: ["Dem
       if (custom?.body) return new Response(JSON.stringify(custom.body), { status: custom.status ?? 200 });
       if (path === "status") return new Response(JSON.stringify(cam.status));
       if (path === "scenes") {
+        if (cam.status.scenes.includes(body.name)) return new Response(JSON.stringify({ ok: false, code: "scene-exists", error: "Exists." }), { status: 409 });
         const scene = { kind: "layout", ...body, followsSmallSize: body.size === "small" || undefined, size: body.size === "small" ? cam.status.smallSize : body.size };
         cam.status = { ...cam.status, scenes: [...cam.status.scenes, body.name], sceneDetails: [...cam.status.sceneDetails, scene] };
         return new Response(JSON.stringify({ ok: true, scene }));
@@ -184,8 +185,9 @@ test("stale session: an answer from before the link was turned off and on again 
 
   // A newer check wins over an older one still on its way, in the same session.
   let releaseOld;
+  let used = false;
   const old = new Promise((done) => { releaseOld = done; });
-  cam.reply = (path) => (path === "status" && !releaseOld.used ? (releaseOld.used = true, { hold: old, body: { app: "camframe", version: "old", scenes: ["Old"] } }) : null);
+  cam.reply = (path) => (path === "status" && !used ? (used = true, { hold: old, body: { app: "camframe", version: "old", scenes: ["Old"] } }) : null);
   link.check();
   link.check();
   await time.advance(0);
@@ -200,7 +202,6 @@ test("stale session: a cue's second try is not sent once the link was turned off
   const { link, time } = linkWith(cam);
   link.turn(true);
   await time.advance(0);
-  cam.reply = (path) => (path === "cue" ? { body: null } : null);
   cam.down = true;
   link.sendCue({ size: "full" });
   await time.advance(0);
@@ -208,7 +209,7 @@ test("stale session: a cue's second try is not sent once the link was turned off
   link.turn(true);
   cam.down = false;
   await time.advance(CUE_RETRY_MS);
-  assert.deepEqual(cam.paths().filter((p) => p === "cue").length, 1, "the old cue's retry was dropped");
+  assert.equal(cam.paths().filter((p) => p === "cue").length, 1, "the old cue's retry was dropped");
 });
 
 test("cue resend: a cue that does not get through goes once more after 400 ms; two misses count as a missed check", async () => {
@@ -285,8 +286,9 @@ test("layout save: a CamFrame with API 2 gets the two missing layouts once per s
   const cam = fakeCamFrame(api2([{ name: "Demo", kind: "scene" }]));
   const { link, time } = linkWith(cam);
   let release;
+  let used = false;
   const held = new Promise((done) => { release = done; });
-  cam.reply = (path) => (path === "scenes" && !release.used ? (release.used = true, { hold: held }) : null);
+  cam.reply = (path) => (path === "scenes" && !used ? (used = true, { hold: held }) : null);
   link.turn(true);
   await time.advance(0);
   assert.equal(link.saving, true, "saving while CamFrame has not answered the first save");
@@ -346,4 +348,55 @@ test("layout save: when the status read after the saves misses, CamFrame's yes c
   assert.equal(link.problem, "");
   await time.advance(1000);
   assert.equal(link.state, "on");
+});
+
+test("layout save: a save left from before the link was turned off and on never holds up the new session's", async () => {
+  const cam = fakeCamFrame(api2([]));
+  let release;
+  let used = false;
+  const held = new Promise((done) => { release = done; });
+  cam.reply = (path) => (path === "scenes" && !used ? (used = true, { hold: held }) : null);
+  const { link, time } = linkWith(cam);
+  link.turn(true);
+  await time.advance(0);
+  assert.equal(link.saving, true);
+  link.turn(false);
+  assert.equal(link.saving, false, "the old session's save is not this session's");
+  link.turn(true);
+  await time.advance(0);
+  assert.deepEqual(cam.calls.map((c) => [c.path, c.body?.name]), [["status", undefined], ["scenes", LAYOUT_SMALL], ["status", undefined], ["scenes", LAYOUT_SMALL], ["scenes", LAYOUT_LARGE], ["status", undefined]], "the new session saves both by itself");
+  assert.equal(link.saving, false);
+  assert.deepEqual(link.layouts.scenes, [LAYOUT_SMALL, LAYOUT_LARGE]);
+  release();
+  await time.advance(0);
+  assert.equal(link.saving, false);
+  assert.equal(link.problem, "", "the old save's late answer changes nothing");
+  assert.deepEqual(link.layouts.scenes, [LAYOUT_SMALL, LAYOUT_LARGE]);
+});
+
+test("layout save: a status check sent while the layouts are saved says nothing about after the save", async () => {
+  const cam = fakeCamFrame(api2([]));
+  const before = cam.status;
+  let releaseSave;
+  let releaseCheck;
+  const save = new Promise((done) => { releaseSave = done; });
+  const check = new Promise((done) => { releaseCheck = done; });
+  let saves = 0;
+  let checks = 0;
+  cam.reply = (path) => {
+    if (path === "scenes" && ++saves === 1) return { hold: save };
+    if (path === "status" && ++checks === 2) return { hold: check, body: before };
+    return null;
+  };
+  const { link, time } = linkWith(cam);
+  link.turn(true);
+  await time.advance(CAMFRAME_CHECK_MS); // the usual check goes while the first save waits for its answer
+  assert.deepEqual(cam.paths(), ["status", "scenes", "status"]);
+  releaseSave();
+  await time.advance(0);
+  assert.deepEqual(link.layouts.scenes, [LAYOUT_SMALL, LAYOUT_LARGE]);
+  releaseCheck();
+  await time.advance(0);
+  assert.deepEqual(link.layouts.scenes, [LAYOUT_SMALL, LAYOUT_LARGE], "the older check's answer, without the layouts, is dropped");
+  assert.equal(link.problem, "");
 });
