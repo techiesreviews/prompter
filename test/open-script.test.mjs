@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { followStart } from "../src/follow.mjs";
+import { voiceStart } from "../src/follow.mjs";
 import { openScripts, scriptState } from "../src/open-script.mjs";
 
 /** Timers that run only when the test calls `run()`. */
@@ -32,9 +32,7 @@ function dirty(s) {
   s.anchorKey = "0:0";
   s.shownUrl = "https://a.test/";
   s.voiceLines.push(["hello", "world"]);
-  s.voiceState = { ...s.voiceState, line: 4, word: 2, moved: true };
-  s.voiceLinkKey = "0:0";
-  s.voiceLinkAt = 7;
+  s.voice = { follow: { ...s.voice.follow, line: 4, word: 2, moved: true }, final: 3, linkKey: "0:0", linkAt: 7 };
   s.cues.push({ size: "small" });
   s.cueAbove = new Set([0]);
   s.pushOwed = true;
@@ -47,9 +45,7 @@ function assertClean(s) {
   assert.equal(s.settleTimer, 0, "no link waiting to go on the main screen");
   assert.equal(s.shownUrl, "", "the main screen's page is not this script's yet");
   assert.deepEqual(s.voiceLines, []);
-  assert.deepEqual(s.voiceState, followStart(-1), "the voice starts from the top");
-  assert.equal(s.voiceLinkKey, "", "no link opened by voice");
-  assert.equal(s.voiceLinkAt, -1);
+  assert.deepEqual(s.voice, voiceStart(-1), "the voice starts from the top, with no result followed and no link opened by voice");
   assert.deepEqual(s.cues, []);
   assert.equal(s.cueAbove, null, "the first look after opening sends no cue");
   assert.equal(s.pushOwed, false, "no history entry owed");
@@ -154,7 +150,7 @@ test("app.js keeps no per-script state loose", () => {
   // Each of these lives in the open script's state; a loose copy in app.js is one a reset can forget.
   const app = readFileSync(resolve(import.meta.dirname, "../src/app.js"), "utf8");
   const loose = ["scriptText", "scriptSaved", "sections", "active", "shownUrl", "settleTimer", "anchor", "anchorKey",
-    "voiceLinkKey", "voiceLinkAt", "voiceLines", "voiceState", "cues", "cueAbove"]
+    "voiceLinkKey", "voiceLinkAt", "voiceLines", "voiceState", "voice", "voiceFinal", "cues", "cueAbove"]
     .filter((name) => new RegExp(`^(let|var|const)\\s(.*[,\\s])?${name}\\s*(=|;|,|$)`, "m").test(app));
   assert.deepEqual(loose, []);
 });

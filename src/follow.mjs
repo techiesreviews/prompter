@@ -188,3 +188,66 @@ export function heardLink(links, heard, { tailWords = 8 } = {}) {
   }
   return pick;
 }
+
+/**
+ * Follow my voice for one open script, fresh, at `line` (the line at the reading line; -1 before the
+ * first): `follow` is where the voice is (followStart, then followWords), `final` how many of this speech
+ * session's results are final and already followed, `linkKey` and `linkAt` the link the voice last opened
+ * by its label ("s:l") and the session's result it was heard in.
+ */
+export function voiceStart(line) {
+  return { follow: followStart(line), final: 0, linkKey: "", linkAt: -1 };
+}
+
+/** A new speech session numbers its results from 0 again: the place and the opened link stay. */
+export function voiceSession(voice) {
+  return { ...voice, final: 0, linkAt: -1 };
+}
+
+/**
+ * Scrolled by hand, a section jump or the line moved: follow on from `line`, the line at the reading
+ * line. Still on the followed line, the place in it is kept (the same state comes back).
+ */
+export function voiceAt(voice, line) {
+  return Math.max(0, line) === voice.follow.line ? voice : { ...voice, follow: followStart(line) };
+}
+
+/**
+ * One speech recognition event, followed. `lines` are the spoken lines' speechWords (as for
+ * followWords), `voice` the open script's state (voiceStart or an earlier step), `results` all of this
+ * session's results so far, each `{ transcript, isFinal }`. `links` are the link candidates whose label
+ * opens them when said ({ label, key, url }, url as the main screen would show it; in priority order, as
+ * for heardLink) and `shownUrl` the page the main screen shows now. Returns `{ voice, line, link }`:
+ * the new state (`voice` is not changed), the line being read now, interim words included (-1 while
+ * nothing has been followed), and the candidate to open now, or null.
+ *
+ * Each final result is followed once, in order; the interim words after them are tried from there and
+ * dropped, so no word counts twice. A label counts when it is heard in the last 3 results (from the
+ * result it starts in: the speech service can end a result in the middle of a label). That echo of
+ * a label never opens its link again: only the label heard in a later result does, and only when the
+ * main screen shows something else (heard while it is already there, its echo stays quiet too).
+ */
+export function voiceStep(lines, voice, results, { links = [], shownUrl = "" } = {}) {
+  const words = (i) => speechWords(results[i].transcript);
+  let { follow, final, linkKey, linkAt } = voice;
+  for (; final < results.length && results[final].isFinal; final++) follow = followWords(lines, follow, words(final));
+  let now = follow;
+  for (let i = final; i < results.length; i++) now = followWords(lines, now, words(i));
+  const line = now.moved ? now.line : -1;
+  // The words heard from result `i` to the newest.
+  const from = (i) => results.slice(i).map((r) => ` ${r.transcript}`).join("");
+  const said = heardLink(links, from(Math.max(0, results.length - 3)));
+  const next = (link = null) => ({ voice: { follow, final, linkKey, linkAt }, line, link });
+  if (!said) return next();
+  // Heard in the result the label starts in, also when the speech service split it over two results.
+  let at = results.length - 1;
+  while (at > 0 && !heardLink([said], from(at))) at--;
+  const fresh = said.key !== linkKey || (at > linkAt && said.url !== shownUrl);
+  if (!fresh) {
+    if (said.key === linkKey) linkAt = Math.max(linkAt, at);
+    return next();
+  }
+  linkKey = said.key;
+  linkAt = at;
+  return next(said);
+}
