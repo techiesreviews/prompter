@@ -1,7 +1,7 @@
 // Page logic. scripts/build.mjs inlines src/core.mjs, src/follow.mjs,
 // src/open-script.mjs, src/speech.mjs, src/agent.mjs, src/wire.mjs, src/relay-link.mjs, src/camframe.mjs,
 // src/reading-line.mjs and src/ui/range-field.mjs above this file inside one function, so parse, PRESETS,
-// DEMO_SCRIPT, encodeScript, followWords, heardLink, linkAt, openScripts, speechWords, speechKeeper,
+// DEMO_SCRIPT, encodeScript, voiceStep, voiceStart, linkAt, openScripts, speechWords, speechKeeper,
 // connectionPrompt, agentName, RELAY_PATH, relayLink, camframeLink, cueCrossing, readingLine,
 // rangeField … are in scope here.
 
@@ -101,7 +101,6 @@ let autoOn = false;
 let speed = Number(store.get("prompter-speed")) || 40;
 let lastFrame = 0;
 let voiceOn = false;
-let voiceFinal = 0; // speech results already final and followed
 let voiceLocal = false; // this browser recognises speech on this device (no network needed)
 let voiceAsking = null; // the question whether it can, while it is asked
 let resumeAuto = false;
@@ -867,8 +866,7 @@ function goSection(delta) {
 // at the reading line (`k`, from the look), marked there without scrolling. Still on
 // the followed line, the place in it is kept.
 function voiceFromReadingLine(k) {
-  const script = scripts.now;
-  if (Math.max(0, k) !== script.voiceState.line) script.voiceState = followStart(k);
+  scripts.now.voice = voiceAt(scripts.now.voice, k);
   markLine(k, false);
 }
 
@@ -917,7 +915,7 @@ function newRecognition(local) {
 }
 const voiceKeeper = Recognition && speechKeeper({
   make: newRecognition,
-  onSession() { scripts.now.voiceLinkAt = -1; voiceFinal = 0; }, // a new session numbers its results from 0 again
+  onSession() { scripts.now.voice = voiceSession(scripts.now.voice); }, // a new session numbers its results from 0 again
   onResult: onVoiceResult,
   onReconnecting(on) { if (on) showToast(RECONNECTING); else hideToast(); },
   onLocalFailed() { voiceLocal = false; }, // its language pack went away: ask again next time
@@ -937,11 +935,7 @@ function startVoice() {
     voiceAsking ||= speechOnDevice(Recognition, voiceLang()).finally(() => { voiceAsking = null; });
     voiceAsking.then((local) => { voiceLocal = local; if (voiceOn) voiceKeeper.useLocal(local); });
   }
-  const script = scripts.now;
-  script.voiceLinkKey = "";
-  script.voiceLinkAt = -1;
-  voiceFinal = 0;
-  script.voiceState = followStart(reading.look().line);
+  scripts.now.voice = voiceStart(reading.look().line);
   resumeAuto = autoOn;
   setAuto(false);
   setVoiceButton();
@@ -958,36 +952,18 @@ function stopVoice(message = "") {
   if (resumeAuto) { resumeAuto = false; setAuto(true); }
 }
 
-// Each final result is followed once, in order; the interim words after them
-// are tried from there each time and dropped, so no word counts twice.
+// Each speech result event goes to voiceStep (src/follow.mjs), which decides where the voice is and
+// which link its label opens; the page marks that line and opens that link.
 function onVoiceResult(e) {
   const script = scripts.now;
-  const words = (i) => speechWords(e.results[i][0].transcript);
-  for (; voiceFinal < e.results.length && e.results[voiceFinal].isFinal; voiceFinal++) {
-    script.voiceState = followWords(script.voiceLines, script.voiceState, words(voiceFinal));
-  }
-  let now = script.voiceState;
-  for (let i = voiceFinal; i < e.results.length; i++) now = followWords(script.voiceLines, now, words(i));
+  const results = Array.from(e.results, (r) => ({ transcript: r[0].transcript, isFinal: r.isFinal }));
+  const { voice, line, link } = voiceStep(script.voiceLines, script.voice, results, { links: voiceLinkCandidates(), shownUrl: script.shownUrl });
+  script.voice = voice;
   const cur = main.querySelector("p.cur");
-  if (now.moved && (!cur || Number(cur.dataset.k) !== now.line)) markLine(now.line);
-  let heard = "";
-  for (let i = Math.max(0, e.results.length - 3); i < e.results.length; i++) heard += ` ${e.results[i][0].transcript}`;
-  // Saying a link's label (this section or the next) opens it at once. The
-  // heard words keep a label for a few more results; that echo never reopens
-  // it. Only a label heard in a later result does, and only when the main
-  // screen shows something else.
-  const said = heardLink(voiceLinkCandidates(), heard);
-  if (!said) return;
-  let at = e.results.length - 1;
-  while (at > 0 && !heardLink([said], e.results[at][0].transcript)) at--;
-  const fresh = said.key !== script.voiceLinkKey
-    || (at > script.voiceLinkAt && screenUrl(script.sections[said.s].links[said.l].url) !== script.shownUrl);
-  // Heard while already on screen: remember where, so its echo stays quiet too.
-  if (!fresh) { if (said.key === script.voiceLinkKey) script.voiceLinkAt = Math.max(script.voiceLinkAt, at); return; }
-  script.voiceLinkKey = said.key;
-  script.voiceLinkAt = at;
+  if (line >= 0 && (!cur || Number(cur.dataset.k) !== line)) markLine(line);
+  if (!link) return;
   scripts.unsettle();
-  showLink(said.s, said.l, false);
+  showLink(link.s, link.l, false);
 }
 
 // Links inside a line are left out: their words are ordinary spoken words, so
@@ -995,7 +971,7 @@ function onVoiceResult(e) {
 function voiceLinkCandidates() {
   const { sections, active } = scripts.now;
   return [active, active + 1].flatMap((si) => (sections[si]?.links || [])
-    .flatMap((l, li) => (l.inText ? [] : [{ label: l.label, s: si, l: li, key: `${si}:${li}` }])));
+    .flatMap((l, li) => (l.inText ? [] : [{ label: l.label, s: si, l: li, key: `${si}:${li}`, url: screenUrl(l.url) }])));
 }
 
 const VOICE_ERRORS = {
