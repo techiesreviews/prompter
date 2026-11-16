@@ -1,8 +1,10 @@
 // The request guard (src/guard.mjs): every route of the Worker gets the same
-// checks, in the same order. A route that skips one fails here.
+// checks, in the same order (open /mcp without a token answers any website on
+// purpose). A route that skips one fails here.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import "./runtime.mjs";
+import { hashClient } from "../src/limiter.mjs";
 import { newToken } from "../src/token.mjs";
 
 const { default: worker } = await import("../src/worker.mjs");
@@ -12,8 +14,9 @@ const { relayProtocols } = await import("../src/wire.mjs");
 const SITE = "https://prompter.techies.tools";
 const EVIL = "https://evil.example";
 
-function env() {
+function env(extra = {}) {
   return {
+    ...extra,
     ASSETS: { fetch: () => new Response("asset") },
     RELAY: {
       idFromName: (name) => ({ name }),
@@ -116,6 +119,20 @@ for (const route of ROUTES) {
     assert.equal((await call(route, { ip: `::ffff:${ip}` })).status, 429);
   });
 }
+
+test("/mcp: the Durable Object limiter still gets one object per client (the same hash as from the raw address)", async () => {
+  const names = [];
+  const MCP_LIMITER = {
+    idFromName: (name) => { names.push(name); return { name }; },
+    get: () => ({ fetch: async () => new Response(null, { status: 204 }) }),
+  };
+  const addresses = ["2001:db8:5:7::1", "::ffff:cb00:7109", "203.0.113.9", "::ffff:203.0.113.10"];
+  for (const ip of addresses) {
+    const res = await worker.fetch(ROUTES[3].request({ "cf-connecting-ip": ip }), env({ MCP_LIMITER }));
+    assert.equal(res.status, 200);
+  }
+  assert.deepEqual(names, await Promise.all(addresses.map(hashClient)));
+});
 
 test("clientOf: the limiters' client key from cf-connecting-ip, grouped as limiter.mjs does", () => {
   const req = (ip) => new Request(SITE, ip ? { headers: { "cf-connecting-ip": ip } } : {});

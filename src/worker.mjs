@@ -52,15 +52,15 @@ export default {
     if (pathname === TOKEN_PATH) {
       // A new agent token with the Worker's own time inside (see token.mjs). It touches no relay object.
       if (request.method !== "POST") return reply({ error: "Method not allowed" }, 405, { Allow: "POST" });
-      const no = await refused(request, tokenGuard);
-      if (no) return no;
+      const refusal = await refused(request, tokenGuard);
+      if (refusal) return refusal;
       const { token, born } = newToken();
       return reply({ token, createdAt: born });
     }
     if (pathname === RELAY_PATH) {
       if (request.headers.get("Upgrade") !== "websocket") return reply({ error: "Expected a WebSocket" }, 426);
-      const no = await refused(request, relayGuard);
-      if (no) return no;
+      const refusal = await refused(request, relayGuard);
+      if (refusal) return refusal;
       // The token travels as a subprotocol, never in the URL: relayProtocols(token) in wire.mjs.
       const protocols = (request.headers.get("Sec-WebSocket-Protocol") || "").split(",").map((p) => p.trim());
       const token = protocols.find((p) => p.startsWith(RELAY_TOKEN_PREFIX))?.slice(RELAY_TOKEN_PREFIX.length) ?? "";

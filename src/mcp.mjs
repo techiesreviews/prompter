@@ -268,7 +268,8 @@ function unauthorized() {
 }
 
 /**
- * Handle one HTTP request to /mcp. The per-isolate guard runs first and stops
+ * Handle one HTTP request to /mcp. A token request from another website is
+ * refused first; then the per-isolate guard stops
  * bursts that land on one instance without any extra call. `limiter` is the
  * per-client Durable Object limiter (see limiter.mjs), the one that holds
  * across instances; both use the `limit({ key })` shape and a request must
