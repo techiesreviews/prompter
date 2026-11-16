@@ -3,12 +3,12 @@
 // The agent then reaches the tab through its relay to open a script (show_script) or read the open one
 // (get_open_script); the relay keeps no script. Disconnect MCP revokes the token, so the agent's calls get
 // 401. Everything it says on the wire comes from src/wire.mjs. scripts/build.mjs inlines this file into
-// the page after src/wire.mjs and drops the import line below, so keep it free of any other import and use
-// only `export function`/`export const` forms.
+// the page after src/settings.mjs and src/wire.mjs and drops the import lines below, so keep it free of any
+// other import and use only `export function`/`export const` forms. This device keeps the token and its
+// age under STORED.agent (src/settings.mjs), so a reload reconnects.
+import { STORED } from "./settings.mjs";
 import { RELAY_CLOSE, TOKEN_MAX_AGE_MS, TOKEN_PATH, readRelayMessage, relayMessage, relayProtocols } from "./wire.mjs";
 
-/** Where this device keeps the token and its age, so a reload reconnects. */
-export const AGENT_KEY = "prompter-agent";
 /** A spare token fetched ahead (a clipboard write needs the click itself) is used while younger than this. */
 export const SPARE_TOKEN_MS = 10 * 60 * 1000;
 /** A keepalive ping the relay answers without waking up. */
@@ -117,7 +117,7 @@ export function relayLink({
     link.createdAt = 0;
     link.info = null;
     link.state = "off";
-    store.del(AGENT_KEY);
+    store.del(STORED.agent);
     changed();
   }
 
@@ -162,7 +162,7 @@ export function relayLink({
       link.failed = false;
       link.token = t.token;
       link.createdAt = t.at;
-      store.set(AGENT_KEY, JSON.stringify({ token: link.token, createdAt: link.createdAt }));
+      store.set(STORED.agent, JSON.stringify({ token: link.token, createdAt: link.createdAt }));
       connect();
     } else if (!link.ws) connect();
     if (link.state !== "on") link.state = "waiting";
@@ -181,13 +181,13 @@ export function relayLink({
     every(() => { try { if (link.ws?.readyState === WebSocket.OPEN) send(link.ws, "ping"); } catch { /* closed */ } }, RELAY_KEEPALIVE_MS);
     every(() => { if (link.token && !hasToken()) disconnect(); }, RELAY_EXPIRY_CHECK_MS);
     let saved = null;
-    try { saved = JSON.parse(store.get(AGENT_KEY) || "null"); } catch { /* damaged: dropped below */ }
+    try { saved = JSON.parse(store.get(STORED.agent) || "null"); } catch { /* damaged: dropped below */ }
     if (typeof saved?.token === "string" && now() - saved.createdAt < TOKEN_MAX_AGE_MS) {
       link.token = saved.token;
       link.createdAt = saved.createdAt;
       link.state = "waiting";
       connect();
-    } else if (store.get(AGENT_KEY)) store.del(AGENT_KEY);
+    } else if (store.get(STORED.agent)) store.del(STORED.agent);
   }
 
   return {
