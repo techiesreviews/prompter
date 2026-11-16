@@ -1,7 +1,7 @@
-// Page logic. scripts/build.mjs inlines src/core.mjs, src/follow.mjs,
+// Page logic. scripts/build.mjs inlines src/core.mjs, src/settings.mjs, src/follow.mjs,
 // src/open-script.mjs, src/speech.mjs, src/agent.mjs, src/wire.mjs, src/relay-link.mjs, src/camframe.mjs,
 // src/reading-line.mjs and src/ui/range-field.mjs above this file inside one function, so parse, PRESETS,
-// DEMO_SCRIPT, encodeScript, voiceStep, voiceStart, voiceSession, voiceAt, linkAt, openScripts, speechWords,
+// DEMO_SCRIPT, SETTINGS, STORED, settingValue, settingsStore, encodeScript, voiceStep, voiceStart, voiceSession, voiceAt, linkAt, openScripts, speechWords,
 // speechKeeper, connectionPrompt, agentName, RELAY_PATH, relayLink, camframeLink, cueCrossing, readingLine,
 // rangeField … are in scope here.
 
@@ -66,17 +66,9 @@ const camframeBtn = $(".big-toggle.camframe"); // in Settings
 const pasteStatus = $(".paste-status"); // the same for the paste window, which is modal too
 const WINDOW_NAME = "prompter-main-screen";
 const SETTLE_MS = 700; // wait this long on a section before changing the main screen
-const LAST_KEY = "prompter-last-script";
-const LAST_SAVED_KEY = "prompter-last-saved"; // the day the last script was saved (YYYY-MM-DD), "" when not known
-const PRESET_KEY = "prompter-preset";
-const VOICE_OK_KEY = "prompter-voice-ok";
-const CAMFRAME_KEY = "prompter-camframe";
-const LINE_KEY = "prompter-line";
-const LINE_DEFAULT = 0.34; // the reading line, as a share of the window height from the top
-const LINE_MIN = 0.08;
-const LINE_MAX = 0.75; // clear of the control bar and its notices
-const WIDTHS = ["narrow", "medium", "full"];
-const SPACINGS = ["normal", "roomy", "spacious"];
+const LAST_KEY = STORED.lastScript;
+const LAST_SAVED_KEY = STORED.lastSaved; // the day the last script was saved (YYYY-MM-DD), "" when not known
+const LINE = SETTINGS.line; // the reading line, as a share of the window height from the top
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -86,19 +78,21 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, v); return true; } catch { return false; } }, // false: not kept (full or blocked)
   del(k) { try { localStorage.removeItem(k); } catch { /* not available */ } },
 };
+// The settings (SETTINGS in src/settings.mjs): read and saved through their one table.
+const prefs = settingsStore(store, { phone: window.innerWidth < 640 });
 
 // The open script's own state (openScripts in src/open-script.mjs): its text and save date, sections, the
 // section and link at the reading line, the voice's place, the cues. Made fresh on each open, so nothing
 // from the script before carries over; the start screen holds an empty one.
 const scripts = openScripts({ clock: window });
 let notKept = null; // the title of the last script opened when it could not be kept on this device ("" if none), else null
-let preset = PRESETS[store.get(PRESET_KEY)] ? store.get(PRESET_KEY) : "default";
+let preset = prefs.read("preset");
 let mainWin = null;
 let hintShown = false;
 let hintTimer = 0;
 let clockStart = 0;
 let autoOn = false;
-let speed = Number(store.get("prompter-speed")) || 40;
+let speed = prefs.read("speed");
 let lastFrame = 0;
 let voiceOn = false;
 let voiceLocal = false; // this browser recognises speech on this device (no network needed)
@@ -221,8 +215,7 @@ async function route() {
     }
     // Only a link that opens a script brings its preset; a link without &p= was made for the default one.
     if (parse(text).length) {
-      preset = p || "default";
-      store.set(PRESET_KEY, preset);
+      preset = prefs.save("preset", p);
     }
     if (!(await openScript(text, { fromLink: true, label: "Opened from link", saved }))) {
       showStart();
@@ -363,8 +356,7 @@ const liveLink = relayLink({
       if (text.length > MAX_SCRIPT_CHARS) return { error: `The script is longer than ${MAX_SCRIPT_CHARS} characters.` };
       const found = parse(text).length;
       if (!found) return { error: "No sections found. Each section starts with a title line like: ### **INTRO · 00:00**" };
-      preset = PRESETS[args.preset] ? args.preset : "default";
-      store.set(PRESET_KEY, preset);
+      preset = prefs.save("preset", args.preset);
       showAlert("");
       await openScript(text, { label: `Opened from ${agentName(liveLink.info?.name)}`, saved: args.saved });
       return { result: { opened: true, sections: found } }; // this script's, even if another opened while it was packed
@@ -447,7 +439,7 @@ const LINE_STEPS = { ArrowUp: -1, ArrowDown: 1, PageUp: -10, PageDown: 10 }; // 
 const TAP_SLOP = 8; // px a finger or pen may drift and still tap
 const CLICK_SLOP = 2; // the same for a mouse, so it can still move the line a few px
 const LINE_KEYS = [...Object.keys(LINE_STEPS), "Home", "End"];
-let lineFrac = LINE_DEFAULT;
+let lineFrac = LINE.fallback;
 // Scrolling asks for a look; the frame's one look moves the section, its link and the cues, and
 // Follow my voice when a wheel, touch or scroll end asked for it.
 const reading = readingLine({
@@ -475,7 +467,7 @@ const viewHeight = () => document.documentElement.clientHeight || window.innerHe
  * the page cannot scroll further and the text follows the line.
  */
 function setLine(frac, keepText = false) {
-  lineFrac = Math.min(LINE_MAX, Math.max(LINE_MIN, Number(frac) || LINE_DEFAULT));
+  lineFrac = settingValue("line", frac);
   const y = Math.round(viewHeight() * lineFrac);
   const delta = reading.place(y);
   root.style.setProperty("--line", `${y}px`);
@@ -491,7 +483,7 @@ function setLine(frac, keepText = false) {
 /** Move the line for the reader: the section, its link and Follow my voice follow it. */
 function moveLine(frac, save = false) {
   setLine(frac, true);
-  if (save) store.set(LINE_KEY, lineFrac.toFixed(4));
+  if (save) prefs.save("line", lineFrac);
   followLine();
 }
 
@@ -528,7 +520,7 @@ function endLineDrag(e) {
   // a row. A cancelled touch (the system took it over) puts it back too.
   const reset = e.type === "pointerup" && e.timeStamp - lastTap < 400;
   lastTap = reset || e.type !== "pointerup" ? -Infinity : e.timeStamp;
-  moveLine(reset ? LINE_DEFAULT : start, true);
+  moveLine(reset ? LINE.fallback : start, true);
 }
 handle.addEventListener("pointerup", endLineDrag);
 handle.addEventListener("pointercancel", endLineDrag);
@@ -537,7 +529,7 @@ handle.addEventListener("keydown", (e) => {
   if (!LINE_KEYS.includes(e.key) || e.metaKey || e.ctrlKey || e.altKey) return;
   e.preventDefault();
   const pct = Math.round(lineFrac * 100);
-  moveLine(e.key === "Home" ? LINE_MIN : e.key === "End" ? LINE_MAX : (pct + LINE_STEPS[e.key]) / 100, true);
+  moveLine(e.key === "Home" ? LINE.min : e.key === "End" ? LINE.max : (pct + LINE_STEPS[e.key]) / 100, true);
 });
 
 // ---------- Active section ----------
@@ -584,8 +576,7 @@ function updateCues(look) {
 }
 
 function setCamframeOn(on) {
-  if (on) store.set(CAMFRAME_KEY, "on"); else store.del(CAMFRAME_KEY);
-  camframe.turn(on);
+  camframe.turn(prefs.save("camframe", on));
 }
 
 // The CamFrame button says how the link is doing in its name and hover title (no status
@@ -797,38 +788,34 @@ function toggleAuto() {
 }
 
 // The sliders in Settings: drag them, or type an exact value into their box,
-// also past the slider's ends, within the box's own min and max (both boxes set them).
+// also past the slider's ends, within the setting's own min and max (the boxes in page.html carry the same).
 const showSpeed = rangeField($(".speed-field"), (v) => setSpeed(v));
 const showSize = rangeField($(".size-field"), (v) => setSize(v));
-const limit = (box, v, fallback) => Math.min(Number(box.max), Math.max(Number(box.min), Math.round(v) || fallback));
 
 function setSpeed(v) {
-  speed = limit($(".speed-val"), v, 40);
+  speed = prefs.save("speed", v);
   showSpeed(speed);
-  store.set("prompter-speed", speed);
 }
 
 // ---------- Text size and column ----------
 function setSize(px) {
-  px = limit($(".size-val"), px, 52);
+  px = prefs.save("size", px);
   root.style.setProperty("--size", px + "px");
   showSize(px);
-  store.set("prompter-size", px);
 }
 const curSize = () => parseInt(getComputedStyle(root).getPropertyValue("--size"), 10);
 
 function setWidth(name) {
-  const w = WIDTHS.includes(name) ? name : "medium";
+  const w = prefs.save("width", name);
   root.dataset.width = w;
   widthInputs.forEach((input) => { input.checked = input.value === w; });
-  store.set("prompter-width", w);
 }
 
 // Line spacing: more room between the lines; the row at the reading line stays there.
 // Only while Follow my voice's own move is in progress (until its scrollend, the reader's wheel or touch, or 2 s if none comes)
 // does the line being read go to the reading line instead.
 function setSpacing(name) {
-  const v = SPACINGS.includes(name) ? name : "normal";
+  const v = settingValue("spacing", name);
   // With no voice move in progress, keep what is under the reading line, as with Follow my voice off.
   const y = reading.y;
   const cur = voiceOn && voiceScrolling ? main.querySelector("p.cur") : null;
@@ -843,7 +830,7 @@ function setSpacing(name) {
   const frac = inside ? dist / kr.height : 0;
   root.dataset.spacing = v;
   spacingInputs.forEach((input) => { input.checked = input.value === v; });
-  if (store.get("prompter-spacing") || v !== "normal") store.set("prompter-spacing", v); // nothing is stored until the default is left
+  prefs.save("spacing", v); // nothing is stored until the default is left
   // (The voice path scrolls at once, not smoothly: this is a settings change, not a move on.)
   if (cur) reading.bring(cur);
   else if (keep) reading.bring(keep, { at: inside ? frac * keep.getBoundingClientRect().height : dist });
@@ -894,7 +881,7 @@ function setVoiceButton() {
 
 function toggleVoice() {
   if (voiceOn) { stopVoice(); setStatus("Follow my voice is off."); return; }
-  if (store.get(VOICE_OK_KEY) !== "yes") {
+  if (!prefs.read("voiceOk")) {
     hidePopovers(); // the notice shows above the bar, where Settings was
     voiceNotice.hidden = false;
     voiceNotice.querySelector('[data-action="voice-ok"]').focus();
@@ -1229,7 +1216,7 @@ document.addEventListener("click", (e) => {
   else if (action === "dismiss") showAlert("");
   else if (action === "connect") connect();
   else if (action === "hint-ok") hideHint();
-  else if (action === "voice-ok") { store.set(VOICE_OK_KEY, "yes"); startVoice(); }
+  else if (action === "voice-ok") { prefs.save("voiceOk", true); startVoice(); }
   else if (action === "voice-cancel") { voiceNotice.hidden = true; }
 });
 // One file input for the start screen and the Open menu.
@@ -1277,10 +1264,10 @@ document.addEventListener("keydown", (e) => {
 
 // ---------- Start ----------
 voiceBtn.hidden = !Recognition;
-setLine(store.get(LINE_KEY));
+setLine(prefs.read("line"));
 setSpeed(speed);
-setSize(Number(store.get("prompter-size")) || (window.innerWidth < 640 ? 32 : 52));
-setWidth(store.get("prompter-width") || "medium");
-setSpacing(store.get("prompter-spacing"));
-camframe.turn(store.get(CAMFRAME_KEY) === "on");
+setSize(prefs.read("size"));
+setWidth(prefs.read("width"));
+setSpacing(prefs.read("spacing"));
+camframe.turn(prefs.read("camframe"));
 route();

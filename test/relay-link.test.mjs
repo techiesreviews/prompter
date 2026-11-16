@@ -4,9 +4,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  AGENT_KEY, RELAY_EXPIRY_CHECK_MS, RELAY_KEEPALIVE_MS, SPARE_TOKEN_MS, relayBackoff, relayLink,
+  RELAY_EXPIRY_CHECK_MS, RELAY_KEEPALIVE_MS, SPARE_TOKEN_MS, relayBackoff, relayLink,
 } from "../src/relay-link.mjs";
 import { RELAY_CLOSE, TOKEN_MAX_AGE_MS, TOKEN_PATH } from "../src/wire.mjs";
+import { STORED } from "../src/settings.mjs";
 
 const URL_ = "wss://prompter.test/api/relay";
 const flush = async () => { for (let i = 0; i < 20; i++) await new Promise((done) => { setImmediate(done); }); };
@@ -120,7 +121,7 @@ test("Wait for MCP: a token from the Worker, kept on this device, and a socket t
   assert.deepEqual(tokens.calls.map((c) => [c.url, c.init.method, c.init.cache]), [[TOKEN_PATH, "POST", "no-store"]]);
   assert.equal(link.state, "waiting");
   assert.equal(link.token, "tp1-tok-1");
-  assert.deepEqual(JSON.parse(store.get(AGENT_KEY)), { token: "tp1-tok-1", createdAt: time.now() });
+  assert.deepEqual(JSON.parse(store.get(STORED.agent)), { token: "tp1-tok-1", createdAt: time.now() });
   assert.equal(ws.sockets.length, 1);
   assert.equal(ws.last().url, URL_);
   assert.deepEqual(ws.last().protocols, ["prompter", "t.tp1-tok-1"]);
@@ -273,7 +274,7 @@ test("4001: open in another tab, no reconnect until Use this tab", async () => {
   assert.equal(link.state, "elsewhere");
   await time.advance(60_000);
   assert.equal(ws.sockets.length, 1, "no reconnect");
-  assert.ok(store.get(AGENT_KEY), "the token is kept");
+  assert.ok(store.get(STORED.agent), "the token is kept");
   link.useHere();
   assert.equal(link.state, "waiting");
   assert.equal(ws.sockets.length, 2);
@@ -284,7 +285,7 @@ test("4003: the relay refused the token (revoked or expired), so it is forgotten
   const { link, ws, time, store } = setup();
   await link.waitForAgent();
   ws.last().drop(RELAY_CLOSE.forget);
-  assert.deepEqual([link.state, link.token, link.info, store.get(AGENT_KEY)], ["off", null, null, null]);
+  assert.deepEqual([link.state, link.token, link.info, store.get(STORED.agent)], ["off", null, null, null]);
   await time.advance(60_000);
   assert.equal(ws.sockets.length, 1, "no reconnect");
 });
@@ -310,21 +311,21 @@ test("a token lives eight hours, then it is dropped like Disconnect MCP", async 
   await time.advance(TOKEN_MAX_AGE_MS - RELAY_EXPIRY_CHECK_MS);
   assert.equal(link.state, "waiting");
   await time.advance(RELAY_EXPIRY_CHECK_MS);
-  assert.deepEqual([link.state, link.token, store.get(AGENT_KEY)], ["off", null, null]);
+  assert.deepEqual([link.state, link.token, store.get(STORED.agent)], ["off", null, null]);
   assert.deepEqual(ws.sockets[0].sent.at(-1), { type: "revoke" }, "the relay is told");
 });
 
 test("a reload picks up the kept token and reconnects; an old or damaged one is dropped", async () => {
   const time = fakeClock();
-  const kept = setup({ store: fakeStore({ [AGENT_KEY]: JSON.stringify({ token: "tp1-kept", createdAt: time.now() }) }) });
+  const kept = setup({ store: fakeStore({ [STORED.agent]: JSON.stringify({ token: "tp1-kept", createdAt: time.now() }) }) });
   kept.link.start();
   assert.deepEqual([kept.link.state, kept.link.token, kept.ws.sockets.length], ["waiting", "tp1-kept", 1]);
   assert.deepEqual(kept.ws.last().protocols, ["prompter", "t.tp1-kept"]);
 
   for (const value of [JSON.stringify({ token: "tp1-old", createdAt: time.now() - TOKEN_MAX_AGE_MS }), "{damaged", JSON.stringify({ token: 5 })]) {
-    const s = setup({ store: fakeStore({ [AGENT_KEY]: value }) });
+    const s = setup({ store: fakeStore({ [STORED.agent]: value }) });
     s.link.start();
-    assert.deepEqual([s.link.state, s.link.token, s.ws.sockets.length, s.store.get(AGENT_KEY)], ["off", null, 0, null], value);
+    assert.deepEqual([s.link.state, s.link.token, s.ws.sockets.length, s.store.get(STORED.agent)], ["off", null, 0, null], value);
   }
 });
 
@@ -335,7 +336,7 @@ test("Disconnect MCP: off at once, then the revoke goes over the open socket", a
   sock.open();
   sock.receive({ type: "agent", name: "Claude" });
   link.disconnect();
-  assert.deepEqual([link.state, link.token, link.info, store.get(AGENT_KEY)], ["off", null, null, null]);
+  assert.deepEqual([link.state, link.token, link.info, store.get(STORED.agent)], ["off", null, null, null]);
   assert.deepEqual(sock.sent, [{ type: "revoke" }]);
   assert.equal(sock.closedWith, null, "it stays open a moment so the revoke gets out");
   sock.drop(RELAY_CLOSE.forget);
@@ -391,7 +392,7 @@ test("Use this tab after the token's eight hours drops it like Disconnect MCP", 
   ws.last().drop(RELAY_CLOSE.elsewhere);
   await time.advance(TOKEN_MAX_AGE_MS);
   link.useHere();
-  assert.deepEqual([link.state, link.token, store.get(AGENT_KEY)], ["off", null, null]);
+  assert.deepEqual([link.state, link.token, store.get(STORED.agent)], ["off", null, null]);
   assert.equal(ws.sockets.length, 2, "the only new socket carries the revoke");
   ws.last().open();
   assert.deepEqual(ws.last().sent, [{ type: "revoke" }]);
