@@ -2,7 +2,7 @@
 // src/speech.mjs, src/agent.mjs, src/camframe.mjs, src/reading-line.mjs and src/ui/range-field.mjs
 // above this file inside one function, so parse, PRESETS, DEMO_SCRIPT,
 // encodeScript, followWords, heardLink, linkAt, speechWords, speechKeeper,
-// connectionPrompt, agentName, camframeCall, cueCrossing, readingLine,
+// connectionPrompt, agentName, camframeLink, cueCrossing, readingLine,
 // rangeField … are in scope here.
 
 // ---------- Player view ----------
@@ -71,8 +71,6 @@ const LAST_SAVED_KEY = "prompter-last-saved"; // the day the last script was sav
 const PRESET_KEY = "prompter-preset";
 const VOICE_OK_KEY = "prompter-voice-ok";
 const CAMFRAME_KEY = "prompter-camframe";
-const CUE_SETTLE_MS = 250; // a cue waits this long at the reading line, so scrolling fast past cues sends only the last
-const CAMFRAME_CHECK_MS = 10_000;
 const LINE_KEY = "prompter-line";
 const LINE_DEFAULT = 0.34; // the reading line, as a share of the window height from the top
 const LINE_MIN = 0.08;
@@ -122,17 +120,10 @@ let cueAbove = null; // cue numbers above the reading line; null until the first
 // the starting point and sends nothing. Only a page load resets it, so a script opened later
 // (by the agent, say, while auto-scroll runs) sends its cues as usual.
 let cueArmed = false;
-let cueTimer = 0;
-// CamFrame link: off unless turned on in Settings. state: off, looking, on (CamFrame answered),
-// reconnecting (a check or two missed after it answered) or lost (several missed in a row).
-// session counts turns on and off, so a cue sent before that is not news after it.
-const camframe = { on: store.get(CAMFRAME_KEY) === "on", state: "off", timer: 0, retry: 0, seq: 0, misses: 0, session: 0, scenes: [] };
-// Camera layouts: CamFrame's last status when it can save layouts (API 2), the link session the layouts were
-// last saved for by themselves (once per session), a save under way (`busy` is the session it runs for, -1: none,
-// so a save left from before the link was turned off and on never holds up the new session's) and the problem
-// it ended with ("" when none).
-const layouts = { status: null, busy: -1, auto: -1, problem: "", said: "", sayTimer: 0 };
-const layoutsSaving = () => layouts.busy === camframe.session;
+// CamFrame link (camframeLink in src/camframe.mjs): off unless turned on in Settings; the page only draws it.
+const camframe = camframeLink({ fetch, clock: window, visible: () => document.visibilityState === "visible", changed: () => drawCamframe() });
+// The line under the Camera cues list: the words last read out, and the read-out still due.
+const layoutsSay = { said: "", timer: 0 };
 
 // ---------- Opening scripts ----------
 const isEmpty = () => root.dataset.view === "empty";
@@ -209,7 +200,7 @@ function showStart() {
   anchorKey = "";
   clearTimeout(settleTimer);
   cueAbove = null;
-  clearTimeout(cueTimer);
+  camframe.dropCue();
   hideToast();
   hideHint();
   setStatus("");
@@ -335,7 +326,7 @@ function render() {
   clearTimeout(settleTimer);
   voiceState = followStart(-1);
   cueAbove = null;
-  clearTimeout(cueTimer);
+  camframe.dropCue();
   updateActive();
 }
 
@@ -738,73 +729,12 @@ function updateCues(look) {
   if (!cueAbove || !cueArmed) { cueAbove = new Set(now); return; }
   const { above, send } = cueCrossing(cueAbove, now);
   cueAbove = above;
-  if (send < 0 || !camframe.on) return;
-  clearTimeout(cueTimer);
-  cueTimer = setTimeout(() => { if (cueAbove?.has(send)) sendCue(cues[send]); }, CUE_SETTLE_MS);
-}
-
-// A cue that does not get through is sent once more; then it counts as a missed check.
-async function sendCue(cue) {
-  const session = camframe.session;
-  const current = () => camframe.on && camframe.session === session;
-  let answer = null;
-  for (let tries = 0; tries < 2 && !answer; tries++) {
-    if (tries) await new Promise((done) => { setTimeout(done, CUE_RETRY_MS); });
-    if (!current()) return;
-    try { answer = await camframeCall("cue", cue); } catch { /* not through: once more, then a miss */ }
-  }
-  if (!current()) return;
-  if (!answer) {
-    // A miss like a status check's, news whatever check is still running.
-    camframe.seq++;
-    afterCheck(null);
-    return;
-  }
-  // CamFrame answered (switched, or refused with its reason): it is there.
-  if (camframe.state !== "on") { checkCamframe(); return; }
-  setCamframe({ misses: 0 });
-}
-
-// Only the newest check counts: an older answer (from before the box was
-// turned off and on again, say) landing late is dropped.
-async function checkCamframe() {
-  if (!camframe.on) return;
-  clearTimeout(camframe.retry);
-  const n = ++camframe.seq;
-  let body = null;
-  try { ({ body } = await camframeCall("status")); } catch { /* a miss */ }
-  if (camframe.on && n === camframe.seq) {
-    afterCheck(body);
-    if (body) {
-      camframe.scenes = Array.isArray(body.scenes) ? body.scenes.filter((n) => typeof n === "string") : [];
-      seeLayouts(body);
-    }
-  }
-}
-
-// A missed check or two only say reconnecting and check again soon; several in a row say not found.
-function afterCheck(body) {
-  clearTimeout(camframe.retry);
-  const next = camframeAfterCheck(camframe.state, camframe.misses, Boolean(body));
-  setCamframe({ state: next.state, misses: next.misses });
-  // Like the usual checks, only while the page is in view; those pick it up again after.
-  if (next.retry >= 0) camframe.retry = setTimeout(() => { if (document.visibilityState === "visible") checkCamframe(); }, next.retry);
+  if (send >= 0) camframe.cue(cues[send], () => Boolean(cueAbove?.has(send)));
 }
 
 function setCamframeOn(on) {
-  camframe.on = on;
-  camframe.seq++;
-  camframe.session++;
   if (on) store.set(CAMFRAME_KEY, "on"); else store.del(CAMFRAME_KEY);
-  clearInterval(camframe.timer);
-  clearTimeout(camframe.retry);
-  layouts.status = null;
-  layouts.problem = "";
-  camframe.scenes = [];
-  if (!on) { setCamframe({ state: "off", misses: 0 }); return; }
-  setCamframe({ state: "looking", misses: 0 });
-  checkCamframe();
-  camframe.timer = setInterval(() => { if (document.visibilityState === "visible") checkCamframe(); }, CAMFRAME_CHECK_MS);
+  camframe.turn(on);
 }
 
 // The CamFrame button says how the link is doing in its name and hover title (no status
@@ -819,9 +749,8 @@ const CAMFRAME_SAYS = {
   lost: "CamFrame link: not found",
 };
 const CAMFRAME_LOST_HELP = ". Open CamFrame and turn on Prompter link in its Scenes settings. Chrome may ask once to let this page reach apps on this device: allow it.";
-function setCamframe(patch) {
+function drawCamframe() {
   const was = camframeBtn.dataset.state;
-  Object.assign(camframe, patch);
   const name = CAMFRAME_SAYS[camframe.state];
   camframeBtn.dataset.state = camframe.state;
   camframeBtn.setAttribute("aria-pressed", String(camframe.on));
@@ -831,63 +760,6 @@ function setCamframe(patch) {
   showCueMenu();
   // Not again when it comes back from a missed check or two (reconnecting).
   if (was !== camframe.state && ((camframe.state === "on" && was !== "reconnecting") || camframe.state === "lost")) setStatus(`${name}.`);
-}
-
-// ---------- Camera layouts (CamFrame API 2) ----------
-// The two layout Scenes for Lex's cue lines (layoutPlan in src/camframe.mjs). Approved by Lex (2026-11-04,
-// no window since 2026-11-06): when a CamFrame that can save layouts connects, the page saves the missing
-// ones by itself, once per link session, small first, unless that would leave CamFrame no spare slot or no
-// room at all (then nothing is saved and the Camera cues list says so); it never replaces a Scene of Lex's own,
-// never moves the camera and never changes CamFrame's small size. The one line under the Camera cues list
-// (layoutsLine in src/camframe.mjs) says where the layouts stand. A save made by itself is never read out.
-function seeLayouts(body) {
-  layouts.status = layoutsSupported(body) ? body : null;
-  // The line follows the status: a problem from an earlier save goes once nothing is missing, or for an older CamFrame.
-  if (!layouts.status || (!layoutsSaving() && !layoutPlan(layouts.status).rows.some((r) => r.state === "missing"))) layouts.problem = "";
-  if (layouts.status && layouts.auto !== camframe.session) saveLayouts();
-  showCueMenu();
-}
-
-// Saves the missing layouts (what layoutPlan says may go by itself). No automatic second try: a save whose
-// answer was lost may have worked, so the status is read again instead.
-async function saveLayouts() {
-  if (layoutsSaving() || !layouts.status) return;
-  const session = camframe.session;
-  const current = () => camframe.on && camframe.session === session;
-  const plan = layoutPlan(layouts.status);
-  layouts.auto = session;
-  if (!plan.auto.length) { showCueMenu(); return; }
-  layouts.busy = session;
-  layouts.problem = "";
-  camframe.seq++; // a status check sent before this save says nothing about after it
-  showCueMenu();
-  let problem = "";
-  const yes = []; // what CamFrame said it saved
-  for (const scene of plan.auto) {
-    let answer = null;
-    try { answer = await camframeCall("scenes", scene); } catch { /* lost: the status says */ }
-    if (!current()) { if (layouts.busy === session) layouts.busy = -1; showCueMenu(); return; }
-    if (answer?.ok && answer.body?.scene) yes.push(answer.body.scene);
-    if (answer?.ok || answer?.body?.code === "scene-exists") continue; // saved meanwhile: the status says what it holds
-    problem = layoutProblem(answer);
-    if (answer) break;
-  }
-  camframe.seq++; // this status read is the news: a check still on its way is older
-  let body = null;
-  try { ({ body } = await camframeCall("status")); } catch { /* not there */ }
-  if (layouts.busy === session) layouts.busy = -1;
-  if (!current()) { showCueMenu(); return; }
-  if (body) { layouts.status = layoutsSupported(body) ? body : null; camframe.scenes = Array.isArray(body.scenes) ? body.scenes.filter((n) => typeof n === "string") : camframe.scenes; }
-  // The read missed: CamFrame's yes to a save counts for now (unless it answers as an older one by now).
-  else if (layouts.status) layouts.status = layoutsWithSaved(layouts.status, yes);
-  afterCheck(body); // this read is a check like any other: a miss checks again soon, an answer ends reconnecting
-  const after = layouts.status && layoutPlan(layouts.status);
-  // Nothing is claimed that the status does not show: a layout still missing after the saves says so.
-  const stillMissing = after?.rows.some((r) => plan.auto.some((w) => w.name === r.name) && r.state === "missing");
-  if (!stillMissing) problem = "";
-  else if (!problem) problem = body ? "" : layoutProblem(null); // an answered status that still lacks it is shown by the line itself
-  layouts.problem = after ? problem : "";
-  showCueMenu();
 }
 
 // ---------- Main screen ----------
@@ -1329,21 +1201,21 @@ function showCueMenu() {
   // (so it comes after a link message, though whether a screen reader finishes that one first is untried);
   // with the window closed the Prompter says nothing (a save by itself is quiet).
   // While reconnecting the old words keep their room but cannot be read (the text box below must not jump).
-  const words = layoutsLine(layouts.status && layoutPlan(layouts.status), { saving: layoutsSaving(), problem: layouts.problem });
+  const words = layoutsLine(camframe.layouts && layoutPlan(camframe.layouts), { saving: camframe.saving, problem: camframe.problem });
   line.textContent = camframe.state === "on" || (camframe.state === "reconnecting" && line.textContent) ? words : "";
   line.style.visibility = camframe.state === "on" ? "" : "hidden";
   line.classList.toggle("error-text", Boolean(line.textContent) && !/^(Camera layouts are saved|Saving)/.test(line.textContent));
   line.hidden = !line.textContent;
-  clearTimeout(layouts.sayTimer);
-  if (pasteDialog.open && !line.hidden && camframe.state === "on" && !layoutsSaving() && line.textContent !== layouts.said) {
-    layouts.sayTimer = setTimeout(() => {
-      if (!pasteDialog.open || line.hidden || camframe.state !== "on" || line.textContent === layouts.said) return;
-      layouts.said = line.textContent;
+  clearTimeout(layoutsSay.timer);
+  if (pasteDialog.open && !line.hidden && camframe.state === "on" && !camframe.saving && line.textContent !== layoutsSay.said) {
+    layoutsSay.timer = setTimeout(() => {
+      if (!pasteDialog.open || line.hidden || camframe.state !== "on" || line.textContent === layoutsSay.said) return;
+      layoutsSay.said = line.textContent;
       setStatus(line.textContent);
     }, 600);
   }
   // The layout Scenes first, but only those CamFrame lists: an older CamFrame, or no room, never saved them.
-  const scenes = (layouts.status ? layouts.status.scenes : camframe.scenes).filter((n) => typeof n === "string");
+  const scenes = (camframe.layouts ? camframe.layouts.scenes : camframe.scenes).filter((n) => typeof n === "string");
   const choices = cueChoices(scenes, [LAYOUT_LARGE, LAYOUT_SMALL].filter((n) => scenes.some((s) => s.toLowerCase() === n.toLowerCase())));
   const select = pasteDialog.querySelector(".cue-select");
   const key = choices.map((c) => c.text).join("\n");
@@ -1387,7 +1259,7 @@ function insertCue() {
   text.setSelectionRange(place.at, place.at);
   // As typed text, so Undo (Ctrl+Z) takes it back; setRangeText is the fallback.
   if (!document.execCommand("insertText", false, place.insert)) { text.setRangeText(place.insert, place.at, place.at, "end"); text.dispatchEvent(new Event("input", { bubbles: true })); }
-  clearTimeout(layouts.sayTimer); // the insert's words must not be overwritten by a line read-out that is due
+  clearTimeout(layoutsSay.timer); // the insert's words must not be overwritten by a line read-out that is due
   setStatus(`Inserted camera cue ${cue}`);
 }
 
@@ -1403,7 +1275,7 @@ function openPaste() {
   showCueMenu();
   showDialog(pasteDialog);
   $("#paste-text").focus();
-  layouts.said = ""; // opening the window reads the line once (showCueMenu, after the window has settled)
+  layoutsSay.said = ""; // opening the window reads the line once (showCueMenu, after the window has settled)
   showCueMenu();
 }
 
@@ -1491,7 +1363,7 @@ $(".next").addEventListener("click", () => goSection(1));
 widthInputs.forEach((input) => input.addEventListener("change", () => setWidth(input.value)));
 spacingInputs.forEach((input) => input.addEventListener("change", () => setSpacing(input.value)));
 camframeBtn.addEventListener("click", () => setCamframeOn(!camframe.on));
-$("#settings").addEventListener("toggle", (e) => { if (e.newState === "open") checkCamframe(); });
+$("#settings").addEventListener("toggle", (e) => { if (e.newState === "open") camframe.check(); });
 main.addEventListener("click", (e) => {
   const b = e.target.closest(".link, .mark, .inlink");
   if (!b) return;
@@ -1574,5 +1446,5 @@ setSpeed(speed);
 setSize(Number(store.get("prompter-size")) || (window.innerWidth < 640 ? 32 : 52));
 setWidth(store.get("prompter-width") || "medium");
 setSpacing(store.get("prompter-spacing"));
-setCamframeOn(camframe.on);
+camframe.turn(store.get(CAMFRAME_KEY) === "on");
 route();
