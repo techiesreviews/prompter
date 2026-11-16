@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Builds dist/: one self-contained index.html (core, follow, speech, agent, the relay's wire list and tab
+// Builds dist/: one self-contained index.html (core, follow, the open script's state, speech, agent, the relay's wire list and tab
 // link, camframe, the reading line, the range field + app inlined, and the range field's styles), the _headers file whose
 // Content-Security-Policy pins that inline script's hash, and the two font files
 // (the page falls back to system fonts without them).
@@ -20,7 +20,7 @@ export const FONTS = ["inter-latin.woff2", "roboto-mono-latin.woff2", "OFL.txt"]
  * Shared modules inlined into the page, in this order, without `export`. A module may import names from
  * one inlined before it (`import { … } from "./wire.mjs";`): they share the page's scope, so that line is dropped.
  */
-export const INLINED = ["src/core.mjs", "src/follow.mjs", "src/speech.mjs", "src/agent.mjs", "src/wire.mjs", "src/relay-link.mjs", "src/camframe.mjs", "src/reading-line.mjs", "src/ui/range-field.mjs"];
+export const INLINED = ["src/core.mjs", "src/follow.mjs", "src/open-script.mjs", "src/speech.mjs", "src/agent.mjs", "src/wire.mjs", "src/relay-link.mjs", "src/camframe.mjs", "src/reading-line.mjs", "src/ui/range-field.mjs"];
 
 /** Shared component styles inlined into the page's style at its marker. */
 export const UI_CSS = ["src/ui/range-field.css"];
