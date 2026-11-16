@@ -1,7 +1,7 @@
 // Page logic. scripts/build.mjs inlines src/core.mjs, src/follow.mjs,
-// src/speech.mjs, src/agent.mjs, src/wire.mjs, src/relay-link.mjs, src/camframe.mjs, src/reading-line.mjs
-// and src/ui/range-field.mjs above this file inside one function, so parse, PRESETS, DEMO_SCRIPT,
-// encodeScript, followWords, heardLink, linkAt, speechWords, speechKeeper,
+// src/open-script.mjs, src/speech.mjs, src/agent.mjs, src/wire.mjs, src/relay-link.mjs, src/camframe.mjs,
+// src/reading-line.mjs and src/ui/range-field.mjs above this file inside one function, so parse, PRESETS,
+// DEMO_SCRIPT, encodeScript, followWords, heardLink, linkAt, openScripts, speechWords, speechKeeper,
 // connectionPrompt, agentName, RELAY_PATH, relayLink, camframeLink, cueCrossing, readingLine,
 // rangeField … are in scope here.
 
@@ -87,34 +87,24 @@ const store = {
   del(k) { try { localStorage.removeItem(k); } catch { /* not available */ } },
 };
 
-let scriptText = "";
-let scriptSaved = null; // the open script's save date, when known; it goes into links made from it
+// The open script's own state (openScripts in src/open-script.mjs): its text and save date, sections, the
+// section and link at the reading line, the voice's place, the cues. Made fresh on each open, so nothing
+// from the script before carries over; the start screen holds an empty one.
+const scripts = openScripts({ clock: window });
 let notKept = null; // the title of the last script opened when it could not be kept on this device ("" if none), else null
 let preset = PRESETS[store.get(PRESET_KEY)] ? store.get(PRESET_KEY) : "default";
-let sections = [];
-let active = -1;
 let mainWin = null;
-let shownUrl = "";
-let settleTimer = 0;
-let anchor = null; // the link above the reading line: { s, l } or null (see linkAt)
-let anchorKey = "";
 let hintShown = false;
 let hintTimer = 0;
-let voiceLinkKey = ""; // the link Follow my voice opened last by hearing its label
-let voiceLinkAt = -1; // index of the speech result that label was heard in
 let clockStart = 0;
 let autoOn = false;
 let speed = Number(store.get("prompter-speed")) || 40;
 let lastFrame = 0;
-let voiceLines = []; // speechWords of each spoken line, by data-k
 let voiceOn = false;
-let voiceState = followStart(-1); // where the voice is, after the final results so far (followWords)
 let voiceFinal = 0; // speech results already final and followed
 let voiceLocal = false; // this browser recognises speech on this device (no network needed)
 let voiceAsking = null; // the question whether it can, while it is asked
 let resumeAuto = false;
-let cues = []; // camera cues ({ size, position?, scene? }) by data-cue
-let cueAbove = null; // cue numbers above the reading line; null until the first look after render
 // False until the person first does something on the page after it loads: until then a scroll
 // (the browser putting a reloaded page back where it was, maybe after the first look) only moves
 // the starting point and sends nothing. Only a page load resets it, so a script opened later
@@ -140,10 +130,9 @@ async function openScript(text, { fromLink = false, remember = true, label = "",
   const parsed = parse(text);
   if (!parsed.length) return false;
   if (voiceOn) stopVoice();
-  const fromStart = isEmpty();
-  scriptText = text;
-  scriptSaved = savedDate(saved);
-  sections = parsed;
+  // Opened from the start screen, or over a script whose link (and its new history entry) is still being packed.
+  const fromStart = isEmpty() || scripts.now.pushOwed;
+  const script = scripts.open({ text, saved: savedDate(saved), sections: parsed });
   if (remember) {
     // The date goes first, so Continue never shows one script with another's date: not kept, Continue stays with
     // the script and date it had; kept but its date not, Continue shows no date.
@@ -151,7 +140,7 @@ async function openScript(text, { fromLink = false, remember = true, label = "",
     store.del(LAST_SAVED_KEY);
     const kept = store.set(LAST_KEY, text);
     notKept = kept ? null : rememberedTitle(text);
-    if (kept) store.set(LAST_SAVED_KEY, scriptSaved || "");
+    if (kept) store.set(LAST_SAVED_KEY, script.saved || "");
     else if (oldDate !== null) store.set(LAST_SAVED_KEY, oldDate);
   }
   root.dataset.view = "script";
@@ -160,14 +149,18 @@ async function openScript(text, { fromLink = false, remember = true, label = "",
   render();
   setStatus(label);
   if (!fromLink) {
+    script.pushOwed = fromStart;
+    let url;
     try {
-      const data = await encodeScript(text);
-      const url = `#s=${data}${linkExtras(preset, scriptSaved)}`;
-      if (fromStart) history.pushState(null, "", url); else history.replaceState(null, "", url);
+      url = `#s=${await encodeScript(text)}${linkExtras(preset, script.saved)}`;
     } catch {
       // The link is a convenience; the prompter works without it. But the address must not keep another script's link.
-      if (fromStart) history.pushState(null, "", plainAddress()); else history.replaceState(null, "", plainAddress());
+      url = plainAddress();
     }
+    // Packing takes a moment: a script (or the start screen) that came in the meantime keeps the address.
+    if (!scripts.current(script)) return true;
+    script.pushOwed = false;
+    if (fromStart) history.pushState(null, "", url); else history.replaceState(null, "", url);
   }
   return true;
 }
@@ -191,15 +184,8 @@ function showStart() {
   hidePopovers();
   // A drag of the reading line ends here; the line goes back to where it was.
   if (lineDrag && handle.hasPointerCapture(lineDrag.id)) handle.releasePointerCapture(lineDrag.id);
-  scriptText = "";
-  scriptSaved = null;
-  sections = [];
+  scripts.close();
   main.innerHTML = "";
-  active = -1;
-  anchor = null;
-  anchorKey = "";
-  clearTimeout(settleTimer);
-  cueAbove = null;
   camframe.dropCue();
   hideToast();
   hideHint();
@@ -276,7 +262,7 @@ function lineHtml(it, i) {
   let html = bold ? `<b>${esc(t.slice(0, bold))}</b>` : "";
   let at = bold;
   for (const span of it.spans || []) {
-    html += esc(t.slice(at, span.from)) + textLink(sections[i].links[span.l], i, span.l);
+    html += esc(t.slice(at, span.from)) + textLink(scripts.now.sections[i].links[span.l], i, span.l);
     at = span.to;
   }
   return html + esc(t.slice(at));
@@ -287,12 +273,12 @@ function lineHtml(it, i) {
 const CAMERA_ICON = `<svg class="cue-icon" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="6" width="13" height="12" rx="2"/><path d="m15.5 10.5 6-3.5v10l-6-3.5"/></svg>`;
 function cueHtml(it) {
   const rest = cueRest(it.text);
-  return `<p class="note cue" data-cue="${cues.push(it.cue) - 1}">${CAMERA_ICON}<span class="cue-what">Camera: ${esc(cueWords(it.cue))}</span>${rest ? `<span class="cue-rest"> · ${esc(rest)}</span>` : ""}</p>`;
+  return `<p class="note cue" data-cue="${scripts.now.cues.push(it.cue) - 1}">${CAMERA_ICON}<span class="cue-what">Camera: ${esc(cueWords(it.cue))}</span>${rest ? `<span class="cue-rest"> · ${esc(rest)}</span>` : ""}</p>`;
 }
 
+/** Draws the script just opened, once: its state (scripts.now) is fresh, and gets its spoken lines and cues here. */
 function render() {
-  voiceLines = [];
-  cues = [];
+  const { sections, voiceLines } = scripts.now;
   main.innerHTML = sections.map((s, i) => {
     const links = s.links.length
       ? `<div class="links">${s.links.map((l, j) =>
@@ -317,15 +303,6 @@ function render() {
     }).join("");
     return `<section class="section" data-i="${i}"><h2 class="title"><span>${esc(s.title)}</span><span class="time">${esc(s.time)}</span></h2>${links}${qls}${items}</section>`;
   }).join("");
-  active = -1;
-  shownUrl = "";
-  anchor = null;
-  anchorKey = "";
-  voiceLinkKey = "";
-  voiceLinkAt = -1;
-  clearTimeout(settleTimer);
-  voiceState = followStart(-1);
-  cueAbove = null;
   camframe.dropCue();
   updateActive();
 }
@@ -380,17 +357,18 @@ const liveLink = relayLink({
   store,
   url: `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${RELAY_PATH}`,
   tools: {
-    get_open_script: () => ({ result: isEmpty() ? { open: false } : { open: true, markdown: scriptText, preset } }),
+    get_open_script: () => ({ result: isEmpty() ? { open: false } : { open: true, markdown: scripts.now.text, preset } }),
     async show_script(args) {
       // Opened like a #s= link: its preset, and kept as this browser's last script.
       const text = typeof args.markdown === "string" ? args.markdown : "";
       if (text.length > MAX_SCRIPT_CHARS) return { error: `The script is longer than ${MAX_SCRIPT_CHARS} characters.` };
-      if (!parse(text).length) return { error: "No sections found. Each section starts with a title line like: ### **INTRO · 00:00**" };
+      const found = parse(text).length;
+      if (!found) return { error: "No sections found. Each section starts with a title line like: ### **INTRO · 00:00**" };
       preset = PRESETS[args.preset] ? args.preset : "default";
       store.set(PRESET_KEY, preset);
       showAlert("");
       await openScript(text, { label: `Opened from ${agentName(liveLink.info?.name)}`, saved: args.saved });
-      return { result: { opened: true, sections: sections.length } };
+      return { result: { opened: true, sections: found } }; // this script's, even if another opened while it was packed
     },
   },
   changed: () => renderAgent(),
@@ -574,21 +552,21 @@ function followLine() {
 
 function updateActive(look = reading.look()) {
   updateCues(look);
+  const script = scripts.now;
   const idx = look.section;
-  if (idx !== active) {
-    active = idx;
+  if (idx !== script.active) {
+    script.active = idx;
     main.querySelectorAll(".section").forEach((el, i) => el.classList.toggle("active", i === idx));
     updateClock();
   }
   // The most recent link above the reading line goes on the main screen once
   // the reader settles there, so fast scrolling does not flash every link.
-  const at = linkAt(sections, idx, look.link);
+  const at = linkAt(script.sections, idx, look.link);
   const key = at ? `${at.s}:${at.l}` : "";
-  if (key === anchorKey) return;
-  anchor = at;
-  anchorKey = key;
-  clearTimeout(settleTimer);
-  if (at) settleTimer = setTimeout(() => showLink(at.s, at.l, false), SETTLE_MS);
+  if (key === script.anchorKey) return;
+  script.anchor = at;
+  script.anchorKey = key;
+  if (at) scripts.settle(() => showLink(at.s, at.l, false), SETTLE_MS); else scripts.unsettle();
 }
 
 // ---------- CamFrame link ----------
@@ -596,13 +574,14 @@ function updateActive(look = reading.look()) {
 // pass down (auto-scroll, scrolling by hand, Follow my voice and section jumps
 // all scroll the page). Failures only change the CamFrame button in Settings.
 function updateCues(look) {
-  if (!cues.length) return;
+  const script = scripts.now;
+  if (!script.cues.length) return;
   const now = look.cues;
   // Opening a script, or a cue already passed when the link is turned on, sends nothing.
-  if (!cueAbove || !cueArmed) { cueAbove = new Set(now); return; }
-  const { above, send } = cueCrossing(cueAbove, now);
-  cueAbove = above;
-  if (send >= 0) camframe.cue(cues[send], () => Boolean(cueAbove?.has(send)));
+  if (!script.cueAbove || !cueArmed) { script.cueAbove = new Set(now); return; }
+  const { above, send } = cueCrossing(script.cueAbove, now);
+  script.cueAbove = above;
+  if (send >= 0) camframe.cue(script.cues[send], () => scripts.current(script) && script.cueAbove.has(send));
 }
 
 function setCamframeOn(on) {
@@ -669,7 +648,8 @@ function connect() {
   setConnected(true);
   setStatus("");
   hideHint();
-  shownUrl = "";
+  const { anchor } = scripts.now;
+  scripts.now.shownUrl = "";
   if (anchor) showLink(anchor.s, anchor.l, false);
 }
 
@@ -691,7 +671,8 @@ function screenUrl(url) {
 }
 
 function showLink(si, li, fromUser) {
-  const s = sections[si];
+  const script = scripts.now;
+  const s = script.sections[si];
   if (!s || !s.links[li]) return;
   const url = screenUrl(s.links[li].url);
   if (!connected()) {
@@ -706,12 +687,12 @@ function showLink(si, li, fromUser) {
     if (!mainWin) { blocked(); return; }
     setConnected(true);
   }
-  if (url !== shownUrl || fromUser) {
+  if (url !== script.shownUrl || fromUser) {
     try { mainWin.location.href = url; } catch { mainWin = window.open(url, WINDOW_NAME); }
-    shownUrl = url;
+    script.shownUrl = url;
   }
   main.querySelectorAll(".link, .mark, .inlink").forEach((b) => {
-    b.dataset.shown = String(screenUrl(sections[b.dataset.s].links[b.dataset.l].url) === shownUrl);
+    b.dataset.shown = String(screenUrl(script.sections[b.dataset.s].links[b.dataset.l].url) === script.shownUrl);
   });
   setStatus(`On main screen: ${s.links[li].label}`);
 }
@@ -769,6 +750,7 @@ function updateClock() {
   if (!clockStart) return;
   const el = Math.floor((Date.now() - clockStart) / 1000);
   clockTime.textContent = fmt(el);
+  const { sections, active } = scripts.now;
   const next = sections.slice(active + 1).find((s) => s.time);
   clockBtn.dataset.late = String(Boolean(next && el > toSeconds(next.time)));
 }
@@ -871,7 +853,7 @@ function setSpacing(name) {
 
 function goSection(delta) {
   const els = main.querySelectorAll(".section");
-  const target = els[Math.min(els.length - 1, Math.max(0, active + delta))];
+  const target = els[Math.min(els.length - 1, Math.max(0, scripts.now.active + delta))];
   if (!target) return;
   reading.bring(target);
   followLine(); // at once, so quick repeated presses keep moving
@@ -885,7 +867,8 @@ function goSection(delta) {
 // at the reading line (`k`, from the look), marked there without scrolling. Still on
 // the followed line, the place in it is kept.
 function voiceFromReadingLine(k) {
-  if (Math.max(0, k) !== voiceState.line) voiceState = followStart(k);
+  const script = scripts.now;
+  if (Math.max(0, k) !== script.voiceState.line) script.voiceState = followStart(k);
   markLine(k, false);
 }
 
@@ -934,7 +917,7 @@ function newRecognition(local) {
 }
 const voiceKeeper = Recognition && speechKeeper({
   make: newRecognition,
-  onSession() { voiceLinkAt = -1; voiceFinal = 0; }, // a new session numbers its results from 0 again
+  onSession() { scripts.now.voiceLinkAt = -1; voiceFinal = 0; }, // a new session numbers its results from 0 again
   onResult: onVoiceResult,
   onReconnecting(on) { if (on) showToast(RECONNECTING); else hideToast(); },
   onLocalFailed() { voiceLocal = false; }, // its language pack went away: ask again next time
@@ -954,10 +937,11 @@ function startVoice() {
     voiceAsking ||= speechOnDevice(Recognition, voiceLang()).finally(() => { voiceAsking = null; });
     voiceAsking.then((local) => { voiceLocal = local; if (voiceOn) voiceKeeper.useLocal(local); });
   }
-  voiceLinkKey = "";
-  voiceLinkAt = -1;
+  const script = scripts.now;
+  script.voiceLinkKey = "";
+  script.voiceLinkAt = -1;
   voiceFinal = 0;
-  voiceState = followStart(reading.look().line);
+  script.voiceState = followStart(reading.look().line);
   resumeAuto = autoOn;
   setAuto(false);
   setVoiceButton();
@@ -977,12 +961,13 @@ function stopVoice(message = "") {
 // Each final result is followed once, in order; the interim words after them
 // are tried from there each time and dropped, so no word counts twice.
 function onVoiceResult(e) {
+  const script = scripts.now;
   const words = (i) => speechWords(e.results[i][0].transcript);
   for (; voiceFinal < e.results.length && e.results[voiceFinal].isFinal; voiceFinal++) {
-    voiceState = followWords(voiceLines, voiceState, words(voiceFinal));
+    script.voiceState = followWords(script.voiceLines, script.voiceState, words(voiceFinal));
   }
-  let now = voiceState;
-  for (let i = voiceFinal; i < e.results.length; i++) now = followWords(voiceLines, now, words(i));
+  let now = script.voiceState;
+  for (let i = voiceFinal; i < e.results.length; i++) now = followWords(script.voiceLines, now, words(i));
   const cur = main.querySelector("p.cur");
   if (now.moved && (!cur || Number(cur.dataset.k) !== now.line)) markLine(now.line);
   let heard = "";
@@ -995,19 +980,20 @@ function onVoiceResult(e) {
   if (!said) return;
   let at = e.results.length - 1;
   while (at > 0 && !heardLink([said], e.results[at][0].transcript)) at--;
-  const fresh = said.key !== voiceLinkKey
-    || (at > voiceLinkAt && screenUrl(sections[said.s].links[said.l].url) !== shownUrl);
+  const fresh = said.key !== script.voiceLinkKey
+    || (at > script.voiceLinkAt && screenUrl(script.sections[said.s].links[said.l].url) !== script.shownUrl);
   // Heard while already on screen: remember where, so its echo stays quiet too.
-  if (!fresh) { if (said.key === voiceLinkKey) voiceLinkAt = Math.max(voiceLinkAt, at); return; }
-  voiceLinkKey = said.key;
-  voiceLinkAt = at;
-  clearTimeout(settleTimer);
+  if (!fresh) { if (said.key === script.voiceLinkKey) script.voiceLinkAt = Math.max(script.voiceLinkAt, at); return; }
+  script.voiceLinkKey = said.key;
+  script.voiceLinkAt = at;
+  scripts.unsettle();
   showLink(said.s, said.l, false);
 }
 
 // Links inside a line are left out: their words are ordinary spoken words, so
 // hearing them earlier would open the link early. They open at their line.
 function voiceLinkCandidates() {
+  const { sections, active } = scripts.now;
   return [active, active + 1].flatMap((si) => (sections[si]?.links || [])
     .flatMap((l, li) => (l.inText ? [] : [{ label: l.label, s: si, l: li, key: `${si}:${li}` }])));
 }
@@ -1039,7 +1025,8 @@ async function copyText(text, ask) {
 // Copy link confirms on its own menu item, like Wait for MCP: Copied and a check for 2 seconds.
 let linkCopiedTimer = 0;
 async function copyLink(button) {
-  const [text, saved, name] = [scriptText, scriptSaved, preset]; // the script may change while it is packed
+  const { text, saved } = scripts.now; // the script may change while it is packed
+  const name = preset;
   const link = `${publicBase()}#s=${await encodeScript(text)}${linkExtras(name, saved)}`;
   if (!(await copyText(link, "Copy this link. The script is inside it:"))) return;
   const label = button.querySelector(".share-label");
@@ -1309,7 +1296,7 @@ document.addEventListener("keydown", (e) => {
   else if (k === "f" || k === "F") {
     if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen?.();
   }
-  else if (/^[1-9]$/.test(k)) showLink(active, Number(k) - 1, true);
+  else if (/^[1-9]$/.test(k)) showLink(scripts.now.active, Number(k) - 1, true);
 });
 
 // ---------- Start ----------

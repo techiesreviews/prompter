@@ -1125,6 +1125,69 @@ export async function run({ browser, base, mode, dist, out }) {
   await showsStart(page);
   ok("a script that cannot be packed into a link leaves no older script's link in the address (over a script, or from the start screen, where Back returns to the start)");
 
+  // Packing a script into its link takes a moment. A script, or the start screen, that comes first in the
+  // meantime keeps the address: the older script's link never lands late over it.
+  const slowPack = () => page.evaluate(() => {
+    const Real = window.CompressionStream;
+    const gate = new Promise((done) => { window.__releasePack = done; });
+    window.CompressionStream = class {
+      constructor(format) {
+        window.CompressionStream = Real; // only this one is slow
+        const real = new Real(format);
+        this.writable = real.writable;
+        this.readable = real.readable.pipeThrough(new TransformStream({ start: () => gate }));
+      }
+    };
+  });
+  const releasePack = () => page.evaluate(async () => {
+    window.__releasePack();
+    for (let i = 0; i < 20; i++) await new Promise((done) => { setTimeout(done, 10); });
+  });
+  const pasteOver = async (title) => {
+    await page.evaluate(() => document.querySelector('[data-action="paste"]').click());
+    await page.locator("#paste-text").fill(`### **${title} · 00:00**\n\nThe ${title.toLowerCase()} script.`);
+    await page.locator('[data-action="open-paste"]').click();
+    await page.locator(".paste-dialog:not([open])").waitFor({ state: "attached" });
+    assert.equal(await page.locator(".section .title span").first().textContent(), title);
+  };
+  await page.goto(`${base}/`); // a fresh page: the one above cannot pack at all
+  await showsStart(page);
+  // Opened from a file: nothing waits for the link, so the page can move on before it is packed.
+  const fileOpen = async (title) => {
+    await page.locator(".file-input").setInputFiles({ name: "slow.md", mimeType: "text/markdown", buffer: Buffer.from(`### **${title} · 00:00**\n\nThe ${title.toLowerCase()} script.`) });
+    await page.waitForFunction((t) => document.querySelector(".section .title span")?.textContent === t, title);
+  };
+  await pasteFromStart("SLOW ONE");
+  await page.waitForFunction(() => location.hash.startsWith("#s="));
+  const first = await page.evaluate(() => location.hash);
+  await slowPack();
+  await fileOpen("SLOW TWO"); // its link waits
+  await pasteOver("QUICK THREE");
+  await page.waitForFunction((before) => location.hash.startsWith("#s=") && location.hash !== before, first);
+  const third = await page.evaluate(() => location.hash);
+  await releasePack();
+  assert.equal(await page.evaluate(() => location.hash), third, "the newer script's link stays in the address");
+  await slowPack();
+  await fileOpen("SLOW FOUR"); // its link waits
+  await backToStart();
+  const startEntries = await page.evaluate(() => history.length);
+  await releasePack();
+  await showsStart(page);
+  assert.equal(await page.evaluate(() => location.hash), "", "the start screen keeps its clean address");
+  assert.equal(await page.evaluate(() => history.length), startEntries, "and gets no extra history entry");
+  // From the start screen, a script opened while the first one's link is packed still leaves the start
+  // screen one Back away.
+  await slowPack();
+  await fileOpen("SLOW FIVE"); // its link (and its new history entry) waits
+  await pasteOver("QUICK SIX");
+  await releasePack();
+  assert.equal(await page.locator(".section .title span").first().textContent(), "QUICK SIX");
+  await page.waitForFunction(() => location.hash.startsWith("#s="));
+  await page.goBack();
+  await showsStart(page);
+  assert.equal(await page.evaluate(() => location.hash), "", "Back from it returns to the start screen");
+  ok("a script's link that is still being packed never lands late: a newer script, or the start screen, keeps the address (no older script comes back on reload)");
+
   // Browser storage that cannot keep the last script: a short note naming it, just under Continue.
   const failSave = (failing) => page.evaluate((k) => {
     window.__setItem ||= Storage.prototype.setItem;
