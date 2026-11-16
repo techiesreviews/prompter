@@ -37,6 +37,7 @@ function dirty(s) {
   s.voiceLinkAt = 7;
   s.cues.push({ size: "small" });
   s.cueAbove = new Set([0]);
+  s.pushOwed = true;
 }
 
 function assertClean(s) {
@@ -51,6 +52,7 @@ function assertClean(s) {
   assert.equal(s.voiceLinkAt, -1);
   assert.deepEqual(s.cues, []);
   assert.equal(s.cueAbove, null, "the first look after opening sends no cue");
+  assert.equal(s.pushOwed, false, "no history entry owed");
 }
 
 test("a fresh state holds the script and nothing else", () => {
@@ -153,6 +155,6 @@ test("app.js keeps no per-script state loose", () => {
   const app = readFileSync(resolve(import.meta.dirname, "../src/app.js"), "utf8");
   const loose = ["scriptText", "scriptSaved", "sections", "active", "shownUrl", "settleTimer", "anchor", "anchorKey",
     "voiceLinkKey", "voiceLinkAt", "voiceLines", "voiceState", "cues", "cueAbove"]
-    .filter((name) => new RegExp(`^(let|var|const) ${name}\\b`, "m").test(app));
+    .filter((name) => new RegExp(`^(let|var|const)\\s(.*[,\\s])?${name}\\s*(=|;|,|$)`, "m").test(app));
   assert.deepEqual(loose, []);
 });
