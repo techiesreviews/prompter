@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { build, FONTS, LIVE_HOST, pageScript } from "../scripts/build.mjs";
+import { build, FONTS, INLINED, LIVE_HOST, pageScript } from "../scripts/build.mjs";
 
 const dist = process.env.PROMPTER_DIST || build(resolve(import.meta.dirname, "../.scratch/test-dist")).dir;
 const html = readFileSync(join(dist, "index.html"), "utf8");
@@ -16,10 +16,14 @@ test("the page is one self-contained file: no external scripts, styles or fetche
   assert.doesNotMatch(html, /@import|XMLHttpRequest|import\(|sendBeacon|EventSource/);
   // Its only calls go to its own site, for the live connection to your agent: a token and the relay,
   // and, once the CamFrame link is on, to CamFrame on this computer (127.0.0.1 only).
-  assert.deepEqual(html.match(/fetch\([^,)]*/g), ["fetch(`${CAMFRAME_ORIGIN}/camframe/${path}`", 'fetch("/api/agent-token"']);
+  assert.deepEqual(html.match(/fetch\([^,)]*/g), ["fetch(TOKEN_PATH", "fetch(`${CAMFRAME_ORIGIN}/camframe/${path}`"]);
+  assert.ok(html.includes('const TOKEN_PATH = "/api/agent-token";'), "the token comes from this site");
   assert.ok(html.includes('const CAMFRAME_ORIGIN = "http://127.0.0.1:47833";'), "CamFrame is reached on this computer only");
-  assert.deepEqual(html.match(/new WebSocket\([^,)]*/g), ["new WebSocket(relayUrl(", "new WebSocket(relayUrl("]);
-  assert.ok(html.includes('`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/relay`'), "the relay is on this site");
+  // The tab link opens its sockets on the address the page gives it: this site's relay.
+  assert.deepEqual(html.match(/new \w*WebSocket\([^,)]*/g), ["new WebSocket(url", "new WebSocket(url"]);
+  assert.equal((html.match(/= relayLink\(\{/g) || []).length, 1, "one tab link");
+  assert.ok(html.includes('url: `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${RELAY_PATH}`'), "the relay is on this site");
+  assert.ok(html.includes('const RELAY_PATH = "/api/relay";'));
   assert.doesNotMatch(html, /^export /m);
   assert.ok(html.includes("function parse(md)"));
   assert.ok(html.includes("function rangeField(field"), "the range field's script is inlined");
@@ -100,6 +104,19 @@ test("the fonts and their licence ship in dist/fonts; the page loads them only w
 
 test("the inlined script parses as JavaScript", () => {
   assert.doesNotThrow(() => new Function(pageScript()));
+});
+
+test("an inlined module may import from one inlined before it; the build drops that line", () => {
+  const files = { "src/a.mjs": "export const A = 1;\n", "src/b.mjs": 'import { A } from "./a.mjs";\nexport const B = A + 1;\n', "src/ui/c.mjs": 'import { B } from "../b.mjs";\nexport function c() { return B; }\n', "src/app.js": "return c();\n" };
+  const script = pageScript(["src/a.mjs", "src/b.mjs", "src/ui/c.mjs"], (file) => files[file]);
+  assert.doesNotMatch(script, /import/);
+  assert.equal(new Function(`return ${script.trim()}`)(), 2, "the names are in scope, in order");
+  assert.throws(() => pageScript(["src/b.mjs", "src/a.mjs"], (file) => files[file]), /src\/b\.mjs imports \.\/a\.mjs, which is not inlined before it/);
+  assert.throws(() => pageScript(["src/b.mjs"], () => 'import { X } from "./x.mjs";\n'), /not inlined before it/);
+  assert.throws(() => pageScript(["src/b.mjs"], () => 'import X from "./x.mjs";\n'), /must not import anything/, "only named imports of an inlined module");
+  assert.throws(() => pageScript(["src/b.mjs"], () => 'import { X } from "node:fs";\n'), /must not import anything/);
+  // The page's tab link reads the wire list this way.
+  assert.ok(INLINED.indexOf("src/wire.mjs") >= 0 && INLINED.indexOf("src/wire.mjs") < INLINED.indexOf("src/relay-link.mjs"));
 });
 
 test("lex preset lives in one place and reaches the page", () => {

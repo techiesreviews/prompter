@@ -3,11 +3,11 @@
 // One Durable Object per hashed token. It stores only
 // { createdAt, expiresAt, revoked, agent: { name, version } }, never script
 // text: tool calls and their results pass through memory. An alarm just after
-// expiresAt erases the note. Nothing is logged.
+// expiresAt erases the note. Nothing is logged. What it says on the wire comes from wire.mjs.
 import { DurableObject } from "cloudflare:workers";
 import { MAX_AGE_MS } from "./token.mjs";
+import { RELAY_CLOSE, RELAY_PROTOCOL, readRelayMessage, relayMessage } from "./wire.mjs";
 
-export const PROTOCOL = "prompter";
 export const ALARM_SLACK_MS = 60_000;
 const MAX_CALL_MS = 35_000;
 const dueOf = (meta) => meta.expiresAt + ALARM_SLACK_MS;
@@ -18,7 +18,7 @@ export class Relay extends DurableObject {
     this.pending = new Map();
     this.earlyAgent = null; // an agent that said hello before any tab: kept in memory until one connects
     // Keepalive pings from the tab are answered without waking the object.
-    this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('{"type":"ping"}', '{"type":"pong"}'));
+    this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(JSON.stringify(relayMessage("ping")), JSON.stringify(relayMessage("pong"))));
   }
 
   now() { return Date.now(); }
@@ -37,8 +37,8 @@ export class Relay extends DurableObject {
   tab() {
     return this.ctx.getWebSockets("tab").at(-1) ?? null;
   }
-  send(ws, message) {
-    try { ws.send(JSON.stringify(message)); return true; } catch { return false; }
+  send(ws, type, fields) {
+    try { ws.send(JSON.stringify(relayMessage(type, fields))); return true; } catch { return false; }
   }
 
   // The tab connects here. The Worker has already checked the token and passes its birth time.
@@ -50,33 +50,32 @@ export class Relay extends DurableObject {
     const [client, server] = Object.values(new WebSocketPair());
     const late = !meta && !(born > 0 && now - born < MAX_AGE_MS);
     if (late || (meta && !this.valid(meta))) {
-      // Not kept: accepted only to say why (4003 makes the tab forget the token), then closed.
+      // Not kept: accepted only to say why (`forget` makes the tab forget the token), then closed.
       server.accept();
-      server.close(4003, meta?.revoked ? "revoked" : "expired");
+      server.close(RELAY_CLOSE.forget, meta?.revoked ? "revoked" : "expired");
     } else {
       if (!meta) {
         meta = { createdAt: born, expiresAt: born + MAX_AGE_MS, revoked: false, agent: this.earlyAgent ?? null };
         this.earlyAgent = null;
         await this.save(meta);
       }
-      // Only the newest tab receives calls; the others hear 4001 and offer "Use this tab".
+      // Only the newest tab receives calls; the others hear `elsewhere` and offer "Use this tab".
       for (const old of this.ctx.getWebSockets("tab")) {
-        try { old.close(4001, "Open in another tab"); } catch { /* already closed */ }
+        try { old.close(RELAY_CLOSE.elsewhere, "Open in another tab"); } catch { /* already closed */ }
       }
       this.ctx.acceptWebSocket(server, ["tab"]);
-      this.send(server, { type: "ready", createdAt: meta.createdAt });
-      if (meta.agent) this.send(server, { type: "agent", ...meta.agent });
+      this.send(server, "ready", { createdAt: meta.createdAt });
+      if (meta.agent) this.send(server, "agent", meta.agent);
     }
-    return new Response(null, { status: 101, webSocket: client, headers: { "Sec-WebSocket-Protocol": PROTOCOL } });
+    return new Response(null, { status: 101, webSocket: client, headers: { "Sec-WebSocket-Protocol": RELAY_PROTOCOL } });
   }
 
   async webSocketMessage(ws, data) {
-    let msg;
-    try { msg = JSON.parse(typeof data === "string" ? data : new TextDecoder().decode(data)); } catch { return; }
+    const msg = readRelayMessage(typeof data === "string" ? data : new TextDecoder().decode(data));
     if (msg?.type === "result" && typeof msg.id === "string") {
       this.pending.get(msg.id)?.done({ status: "ok", result: msg.result, error: msg.error });
     } else if (msg?.type === "ping") {
-      this.send(ws, { type: "pong" });
+      this.send(ws, "pong");
     } else if (msg?.type === "revoke") {
       // Disconnect MCP. The revoked note stays until its alarm, so the token is refused until it
       // would have expired anyway. Without a note (rare) it is kept as long as any token could live.
@@ -84,7 +83,7 @@ export class Relay extends DurableObject {
       const meta = (await this.meta()) ?? { createdAt: now, expiresAt: now + MAX_AGE_MS };
       await this.save({ ...meta, revoked: true, agent: null });
       for (const p of this.pending.values()) p.done({ status: "unauthorized" });
-      for (const s of this.ctx.getWebSockets()) { try { s.close(4003, "revoked"); } catch { /* closed */ } }
+      for (const s of this.ctx.getWebSockets()) { try { s.close(RELAY_CLOSE.forget, "revoked"); } catch { /* closed */ } }
     }
   }
 
@@ -97,7 +96,7 @@ export class Relay extends DurableObject {
     const meta = await this.meta();
     if (meta && this.now() < dueOf(meta)) return this.ctx.storage.setAlarm(dueOf(meta));
     for (const p of this.pending.values()) p.done({ status: "unauthorized" });
-    for (const s of this.ctx.getWebSockets()) { try { s.close(4003, "expired"); } catch { /* closed */ } }
+    for (const s of this.ctx.getWebSockets()) { try { s.close(RELAY_CLOSE.forget, "expired"); } catch { /* closed */ } }
     await this.ctx.storage.deleteAlarm();
     await this.ctx.storage.deleteAll();
   }
@@ -124,7 +123,7 @@ export class Relay extends DurableObject {
       meta.agent = { name: String(message.name ?? "").slice(0, 60), version: String(message.version ?? "").slice(0, 30) };
       await this.save(meta);
       const ws = this.tab();
-      if (ws) this.send(ws, { type: "agent", ...meta.agent });
+      if (ws) this.send(ws, "agent", meta.agent);
       return { status: "ok" };
     }
     if (message.op === "call") {
@@ -135,7 +134,7 @@ export class Relay extends DurableObject {
       return await new Promise((resolve) => {
         const timer = setTimeout(() => { this.pending.delete(id); resolve({ status: "timeout" }); }, timeout);
         this.pending.set(id, { done: (r) => { clearTimeout(timer); this.pending.delete(id); resolve(r); } });
-        if (!this.send(ws, { type: "call", id, tool: message.tool, args: message.args ?? {} })) {
+        if (!this.send(ws, "call", { id, tool: message.tool, args: message.args ?? {} })) {
           this.pending.get(id)?.done({ status: "no-tab" });
         }
       });

@@ -4,8 +4,8 @@
 // Nothing here logs, and no request body is kept.
 import { durableLimiter } from "./limiter.mjs";
 import { handleMcp, memoryLimiter } from "./mcp.mjs";
-import { PROTOCOL } from "./relay.mjs";
 import { checkToken, newToken, relayName, TOKEN_RE } from "./token.mjs";
+import { RELAY_CLOSE, RELAY_PATH, RELAY_PROTOCOL, RELAY_TOKEN_PREFIX, TOKEN_PATH } from "./wire.mjs";
 
 export { McpLimiter } from "./limiter.mjs";
 export { Relay } from "./relay.mjs";
@@ -26,12 +26,12 @@ async function limited(guard, request) {
   return verdict.success ? null : reply({ error: "Too many requests" }, 429, { "Retry-After": "60" });
 }
 
-// A socket that is closed at once, so the tab hears why (4003 makes it forget the token). No relay object is touched.
+// A socket that is closed at once, so the tab hears why (`forget` makes it forget the token). No relay object is touched.
 function closedSocket(code, reason) {
   const [client, server] = Object.values(new WebSocketPair());
   server.accept();
   server.close(code, reason);
-  return new Response(null, { status: 101, webSocket: client, headers: { "Sec-WebSocket-Protocol": PROTOCOL } });
+  return new Response(null, { status: 101, webSocket: client, headers: { "Sec-WebSocket-Protocol": RELAY_PROTOCOL } });
 }
 
 async function relayStub(env, token) {
@@ -52,7 +52,7 @@ export default {
       });
       return handleMcp(request, { limiter: env.MCP_LIMITER && durableLimiter(env.MCP_LIMITER), relayFor });
     }
-    if (pathname === "/api/agent-token") {
+    if (pathname === TOKEN_PATH) {
       // A new agent token with the Worker's own time inside (see token.mjs). It touches no relay object.
       if (request.method !== "POST") return reply({ error: "Method not allowed" }, 405, { Allow: "POST" });
       if (foreign(request, url)) return reply({ error: "Forbidden" }, 403);
@@ -61,18 +61,18 @@ export default {
       const { token, born } = newToken();
       return reply({ token, createdAt: born });
     }
-    if (pathname === "/api/relay") {
+    if (pathname === RELAY_PATH) {
       if (request.headers.get("Upgrade") !== "websocket") return reply({ error: "Expected a WebSocket" }, 426);
       if (foreign(request, url)) return reply({ error: "Forbidden" }, 403);
       const refused = await limited(relayGuard, request);
       if (refused) return refused;
-      // The token travels as a subprotocol, never in the URL: ["prompter", "t.<token>"].
+      // The token travels as a subprotocol, never in the URL: relayProtocols(token) in wire.mjs.
       const protocols = (request.headers.get("Sec-WebSocket-Protocol") || "").split(",").map((p) => p.trim());
-      const token = protocols.find((p) => p.startsWith("t."))?.slice(2) ?? "";
-      if (!protocols.includes(PROTOCOL) || !TOKEN_RE.test(token)) return reply({ error: "Unauthorized" }, 401);
+      const token = protocols.find((p) => p.startsWith(RELAY_TOKEN_PREFIX))?.slice(RELAY_TOKEN_PREFIX.length) ?? "";
+      if (!protocols.includes(RELAY_PROTOCOL) || !TOKEN_RE.test(token)) return reply({ error: "Unauthorized" }, 401);
       // Past its time (or from the future): refused here, before any relay object is touched.
       const t = checkToken(token);
-      if (!t.ok) return closedSocket(4003, t.reason);
+      if (!t.ok) return closedSocket(RELAY_CLOSE.forget, t.reason);
       const stub = await relayStub(env, token);
       return stub.fetch("https://relay/tab", { headers: { Upgrade: "websocket", "X-Token-Born": String(t.born) } });
     }

@@ -1,8 +1,8 @@
 // Page logic. scripts/build.mjs inlines src/core.mjs, src/follow.mjs,
-// src/speech.mjs, src/agent.mjs, src/camframe.mjs, src/reading-line.mjs and src/ui/range-field.mjs
-// above this file inside one function, so parse, PRESETS, DEMO_SCRIPT,
+// src/speech.mjs, src/agent.mjs, src/wire.mjs, src/relay-link.mjs, src/camframe.mjs, src/reading-line.mjs
+// and src/ui/range-field.mjs above this file inside one function, so parse, PRESETS, DEMO_SCRIPT,
 // encodeScript, followWords, heardLink, linkAt, speechWords, speechKeeper,
-// connectionPrompt, agentName, camframeLink, cueCrossing, readingLine,
+// connectionPrompt, agentName, RELAY_PATH, relayLink, camframeLink, cueCrossing, readingLine,
 // rangeField … are in scope here.
 
 // ---------- Player view ----------
@@ -369,141 +369,51 @@ function showDialog(dialog) {
 }
 
 // ---------- Your own agent over MCP (live relay) ----------
-// As in the script editor: Wait for MCP copies a message with a fresh token
-// from the Worker, and this tab keeps a WebSocket to this site's /api/relay.
-// The agent then reaches this tab through its relay to open a script
-// (show_script) or read the open one (get_open_script); the relay keeps no
-// script. Disconnect MCP revokes the token, so the agent's calls get 401.
-// An offline copy (file://) has no relay: its Copy MCP copies the open
-// server's message, which answers with a link instead.
+// The link itself (token, socket, backoff, keepalive, tool calls) is relayLink in src/relay-link.mjs;
+// this part gives it the page's two tools and draws its state. An offline copy (file://) has no relay:
+// its Copy MCP copies the open server's message, which answers with a link instead.
 const live = /^https?:$/.test(location.protocol);
-const AGENT_KEY = "prompter-agent";
-const AGENT_MAX_AGE = 8 * 60 * 60 * 1000;
-const agent = { token: null, createdAt: 0, ws: null, state: "off", info: null, retry: 0, timer: 0, copied: false, copiedTimer: 0, failed: false };
-const relayUrl = () => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/relay`;
-
-// Tokens come from the Worker, which writes its own time into them. A clipboard write needs the click itself, so a
-// spare is fetched when the Open menu opens or the start screen's button is about to be pressed; it is used if it is
-// younger than ten minutes. Ages here use this tab's clock, counted from when the token arrived.
-const SPARE_MS = 10 * 60 * 1000;
-let spareToken = null;
-let spareFetch = null;
-let tokenWait = false;
-function fetchToken() {
-  return fetch("/api/agent-token", { method: "POST", cache: "no-store" })
-    .then((r) => (r.ok ? r.json() : null))
-    .then((b) => (typeof b?.token === "string" && b.token ? { token: b.token, at: Date.now() } : null))
-    .catch(() => null);
-}
-function prefetchToken() {
-  if (!live || liveToken() || spareFetch || (spareToken && Date.now() - spareToken.at < SPARE_MS)) return;
-  spareFetch = fetchToken().then((t) => { spareFetch = null; if (t) spareToken = t; return t; });
-}
-const liveToken = () => Boolean(agent.token) && Date.now() - agent.createdAt < AGENT_MAX_AGE;
-
-function connectRelay() {
-  clearTimeout(agent.timer);
-  if (!agent.token) return;
-  if (Date.now() - agent.createdAt >= AGENT_MAX_AGE) { disconnectAgent(); return; }
-  try { agent.ws?.close(); } catch { /* closed */ }
-  const ws = new WebSocket(relayUrl(), ["prompter", `t.${agent.token}`]);
-  agent.ws = ws;
-  ws.addEventListener("open", () => { agent.retry = 0; });
-  ws.addEventListener("message", (e) => {
-    if (agent.ws !== ws) return; // a detached socket (Disconnect) only carries the revoke
-    let m;
-    try { m = JSON.parse(e.data); } catch { return; }
-    onRelayMessage(m);
-  });
-  ws.addEventListener("close", (e) => {
-    if (agent.ws !== ws) return;
-    agent.ws = null;
-    if (e.code === 4001) { agent.state = "elsewhere"; renderAgent(); return; }
-    if (e.code === 4003) { forgetAgent(); return; }
-    if (!agent.token) return;
-    const delay = Math.min(30000, 1000 * 2 ** agent.retry++) * (0.75 + Math.random() * 0.5);
-    agent.timer = setTimeout(connectRelay, delay);
-  });
-}
-function onRelayMessage(m) {
-  if (m.type === "agent") {
-    agent.info = { name: String(m.name || ""), version: String(m.version || "") };
-    agent.state = "on";
-    renderAgent();
-  } else if (m.type === "call" && typeof m.id === "string") {
-    if (agent.state !== "on") { agent.state = "on"; renderAgent(); }
-    handleCall(m);
-  }
-}
-function forgetAgent() {
-  clearTimeout(agent.timer);
-  const ws = agent.ws;
-  agent.ws = null;
-  try { ws?.close(1000, "bye"); } catch { /* closed */ }
-  agent.token = null;
-  agent.createdAt = 0;
-  agent.info = null;
-  agent.state = "off";
-  store.del(AGENT_KEY);
-  renderAgent();
-}
-// Disconnect MCP: the relay forgets the token, so the agent is refused from now on.
-function disconnectAgent() {
-  // Detach the socket and token first, then show "off" at once; the revoke finishes quietly behind it.
-  const token = agent.token;
-  let ws = agent.ws;
-  agent.ws = null; // the close handler now ignores this socket and won't reconnect
-  forgetAgent();
-  if (!token) return;
-  const close = () => { try { ws?.close(1000, "bye"); } catch { /* closed */ } };
-  const send = () => { try { ws.send(JSON.stringify({ type: "revoke" })); } catch { /* closed */ } setTimeout(close, 200); };
-  try {
-    if (!ws || ws.readyState >= WebSocket.CLOSING) ws = new WebSocket(relayUrl(), ["prompter", `t.${token}`]);
-    if (ws.readyState === WebSocket.OPEN) send();
-    else ws.addEventListener("open", send, { once: true });
-  } catch { /* offline: the token still ends after 8 hours */ }
-  setTimeout(close, 5000);
-}
-
-async function handleCall({ id, tool, args = {} }) {
-  const ws = agent.ws;
-  const send = (payload) => { try { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "result", id, ...payload })); } catch { /* closed */ } };
-  try {
-    if (tool === "get_open_script") {
-      return send({ result: isEmpty() ? { open: false } : { open: true, markdown: scriptText, preset } });
-    }
-    if (tool === "show_script") {
+const liveLink = relayLink({
+  WebSocket,
+  fetch,
+  clock: window,
+  store,
+  url: `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${RELAY_PATH}`,
+  tools: {
+    get_open_script: () => ({ result: isEmpty() ? { open: false } : { open: true, markdown: scriptText, preset } }),
+    async show_script(args) {
       // Opened like a #s= link: its preset, and kept as this browser's last script.
       const text = typeof args.markdown === "string" ? args.markdown : "";
-      if (text.length > MAX_SCRIPT_CHARS) return send({ error: `The script is longer than ${MAX_SCRIPT_CHARS} characters.` });
-      if (!parse(text).length) return send({ error: "No sections found. Each section starts with a title line like: ### **INTRO · 00:00**" });
+      if (text.length > MAX_SCRIPT_CHARS) return { error: `The script is longer than ${MAX_SCRIPT_CHARS} characters.` };
+      if (!parse(text).length) return { error: "No sections found. Each section starts with a title line like: ### **INTRO · 00:00**" };
       preset = PRESETS[args.preset] ? args.preset : "default";
       store.set(PRESET_KEY, preset);
       showAlert("");
-      await openScript(text, { label: `Opened from ${agentName(agent.info?.name)}`, saved: args.saved });
-      return send({ result: { opened: true, sections: sections.length } });
-    }
-    send({ error: `Unknown tool: ${tool}` });
-  } catch (error) {
-    send({ error: `The prompter could not do that: ${error?.message || error}` });
-  }
-}
+      await openScript(text, { label: `Opened from ${agentName(liveLink.info?.name)}`, saved: args.saved });
+      return { result: { opened: true, sections: sections.length } };
+    },
+  },
+  changed: () => renderAgent(),
+});
+// "Copied" with a check for two seconds after a copy.
+const copied = { on: false, timer: 0 };
+const prefetchToken = () => { if (live) liveLink.prefetchToken(); };
 
 // The action reads Wait for MCP, Waiting for MCP, Disconnect MCP or Use this tab (Copy MCP offline);
 // "Copied" with a check for two seconds after a copy. The Open button shows a dot and names the state.
 function renderAgent() {
-  const s = agent.state;
-  const name = agentName(agent.info?.name);
+  const s = liveLink.state;
+  const name = agentName(liveLink.info?.name);
   for (const act of document.querySelectorAll(".mcp-action")) {
     act.dataset.state = live ? s : "offline";
-    act.toggleAttribute("data-copied", agent.copied);
-    act.toggleAttribute("data-failed", agent.failed && s === "off");
-    const label = agent.copied ? "Copied"
+    act.toggleAttribute("data-copied", copied.on);
+    act.toggleAttribute("data-failed", liveLink.failed && s === "off");
+    const label = copied.on ? "Copied"
       : !live ? "Copy MCP"
       : s === "on" ? "Disconnect MCP"
       : s === "elsewhere" ? "Use this tab"
       : s === "waiting" ? "Waiting for MCP"
-      : agent.failed ? "No connection, try again" : "Wait for MCP";
+      : liveLink.failed ? "No connection, try again" : "Wait for MCP";
     // Only a changed label is written: the label is a polite live region.
     const el = act.querySelector(".mcp-label");
     if (el.textContent !== label) el.textContent = label;
@@ -527,42 +437,18 @@ async function copyPrompt(button, text) {
     return;
   }
   box.hidden = true;
-  agent.copied = true;
+  copied.on = true;
   renderAgent();
-  clearTimeout(agent.copiedTimer);
-  agent.copiedTimer = setTimeout(() => { agent.copied = false; renderAgent(); }, 2000);
+  clearTimeout(copied.timer);
+  copied.timer = setTimeout(() => { copied.on = false; renderAgent(); }, 2000);
 }
 
 async function pressMcp(button) {
   if (!live) { copyPrompt(button, openPrompt(`${SITE}/mcp`, preset)); return; }
-  if (agent.state === "on") { disconnectAgent(); return; }
-  if (agent.state === "elsewhere") { agent.state = "waiting"; connectRelay(); renderAgent(); return; }
-  if (!liveToken()) {
-    if (tokenWait) return;
-    let t = spareToken && Date.now() - spareToken.at < SPARE_MS ? spareToken : null;
-    spareToken = null;
-    if (!t) {
-      tokenWait = true;
-      agent.failed = false; // a retry clears the last "No connection"
-      renderAgent();
-      button.setAttribute("aria-busy", "true");
-      t = await (spareFetch ?? fetchToken());
-      tokenWait = false;
-      button.removeAttribute("aria-busy");
-      if (spareToken === t) spareToken = null;
-    }
-    if (liveToken()) return;
-    // No token from the Worker (offline, say): it stays off, and the button says so until the next try.
-    if (!t) { agent.failed = true; renderAgent(); return; }
-    agent.failed = false;
-    agent.token = t.token;
-    agent.createdAt = t.at;
-    store.set(AGENT_KEY, JSON.stringify({ token: agent.token, createdAt: agent.createdAt }));
-    connectRelay();
-  } else if (!agent.ws) connectRelay();
-  if (agent.state !== "on") agent.state = "waiting";
-  renderAgent();
-  copyPrompt(button, connectionPrompt(`${location.origin}/mcp`, agent.token, preset));
+  if (liveLink.state === "on") { liveLink.disconnect(); return; }
+  if (liveLink.state === "elsewhere") { liveLink.useHere(); return; }
+  const token = await liveLink.waitForAgent((busy) => { if (busy) button.setAttribute("aria-busy", "true"); else button.removeAttribute("aria-busy"); });
+  if (token) copyPrompt(button, connectionPrompt(`${location.origin}/mcp`, token, preset));
 }
 
 $("#open-menu").addEventListener("toggle", (e) => {
@@ -571,20 +457,7 @@ $("#open-menu").addEventListener("toggle", (e) => {
 });
 const startMcp = $(".empty .mcp-action");
 for (const type of ["pointerenter", "focus", "pointerdown"]) startMcp.addEventListener(type, prefetchToken);
-if (live) {
-  // A keepalive the relay answers without waking up.
-  setInterval(() => { try { if (agent.ws?.readyState === WebSocket.OPEN) agent.ws.send('{"type":"ping"}'); } catch { /* closed */ } }, 45_000);
-  // A token lives at most eight hours; then it is dropped like Disconnect MCP.
-  setInterval(() => { if (agent.token && !liveToken()) disconnectAgent(); }, 60_000);
-  let saved = null;
-  try { saved = JSON.parse(store.get(AGENT_KEY) || "null"); } catch { /* damaged: dropped below */ }
-  if (typeof saved?.token === "string" && Date.now() - saved.createdAt < AGENT_MAX_AGE) {
-    agent.token = saved.token;
-    agent.createdAt = saved.createdAt;
-    agent.state = "waiting";
-    connectRelay();
-  } else if (store.get(AGENT_KEY)) store.del(AGENT_KEY);
-}
+if (live) liveLink.start();
 renderAgent();
 
 // ---------- Reading line ----------
