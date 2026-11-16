@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decodeScript, encodeScript, EXAMPLE_SCRIPT, formatSavedDate, makeLink, MAX_DECODED_BYTES, readHash, savedDate, SITE } from "../src/core.mjs";
+import { check, decodeScript, encodeScript, EXAMPLE_SCRIPT, formatSavedDate, getPreset, linkExtras, makeLink, MAX_DECODED_BYTES, PRESETS, readHash, savedDate, SITE } from "../src/core.mjs";
 
 test("#s= encode/decode round trip keeps text exactly, including unicode", async () => {
   for (const text of [EXAMPLE_SCRIPT, "", "### **ÜBER · 01:00**\nHéllo 👋 — “quotes” · 中文\r\nend", "x".repeat(70_000)]) {
@@ -25,6 +25,22 @@ test("makeLink and readHash agree; default preset is omitted", async () => {
   assert.ok(!(await makeLink("a", "bogus")).includes("&p="));
   assert.ok((await makeLink("a", "lex", "http://127.0.0.1:8787/")).startsWith("http://127.0.0.1:8787/#s="));
   assert.equal(readHash("#s=abc&p=evil").preset, null);
+});
+
+// Names an object has of its own (__proto__, toString) are no preset, as in the settings table (settingValue).
+const NOT_PRESETS = ["__proto__", "toString", "hasOwnProperty", "constructor", "valueOf"];
+
+test("a link, a link's extras, getPreset and the checker know only the real presets", async () => {
+  for (const name of NOT_PRESETS) {
+    assert.equal(readHash(`#s=abc&p=${name}`).preset, null, `readHash: ${name}`);
+    assert.equal(linkExtras(name, null), "", `linkExtras: ${name}`);
+    assert.ok(!(await makeLink("a", name)).includes("&p="), `makeLink: ${name}`);
+    assert.equal(getPreset(name), PRESETS.default, `getPreset: ${name}`);
+    assert.equal(check(EXAMPLE_SCRIPT, name).preset, "default", `check: ${name}`);
+  }
+  assert.equal(readHash("#s=abc&p=lex").preset, "lex");
+  assert.equal(linkExtras("lex", null), "&p=lex");
+  assert.equal(getPreset("lex"), PRESETS.lex);
 });
 
 test("damaged link data is refused with a plain message", async () => {

@@ -61,8 +61,19 @@ export const PRESETS = {
   },
 };
 
+/**
+ * The preset names. A name is a preset only when it is in this list, the settings table's choices for the
+ * preset (src/settings.mjs): never a name every object has, such as "__proto__" or "toString".
+ */
+export const PRESET_NAMES = Object.keys(PRESETS);
+
+/** Whether `name` is one of PRESET_NAMES. */
+export function isPreset(name) {
+  return PRESET_NAMES.includes(name);
+}
+
 export function getPreset(name) {
-  return PRESETS[name] || PRESETS.default;
+  return isPreset(name) ? PRESETS[name] : PRESETS.default;
 }
 
 export const EXAMPLE_SCRIPT = `### **PREP**
@@ -709,7 +720,7 @@ export function formatSavedDate(value) {
 /** The part of a link after the script: `&p=lex` and `&d=2026-11-10`, each only when it is not the default or unknown. */
 export function linkExtras(presetName, saved) {
   const day = savedDate(saved);
-  return `${presetName === "default" || !PRESETS[presetName] ? "" : `&p=${presetName}`}${day ? `&d=${day}` : ""}`;
+  return `${presetName === "default" || !isPreset(presetName) ? "" : `&p=${presetName}`}${day ? `&d=${day}` : ""}`;
 }
 
 /** Build a prompter link; the script travels only in the fragment. `saved` (YYYY-MM-DD) is the day the script was saved. */
@@ -721,5 +732,5 @@ export async function makeLink(text, presetName, origin = SITE, saved = null) {
 export function readHash(hash) {
   const q = new URLSearchParams(String(hash || "").replace(/^#/, ""));
   const p = q.get("p");
-  return { data: q.get("s"), preset: PRESETS[p] ? p : null, saved: savedDate(q.get("d")) };
+  return { data: q.get("s"), preset: isPreset(p) ? p : null, saved: savedDate(q.get("d")) };
 }

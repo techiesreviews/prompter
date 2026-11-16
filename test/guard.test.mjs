@@ -134,6 +134,18 @@ test("/mcp: the Durable Object limiter still gets one object per client (the sam
   assert.deepEqual(names, await Promise.all(addresses.map(hashClient)));
 });
 
+test("/mcp with an agent token: a request from another website gets 403 before the Durable Object limiter is asked", async () => {
+  let asked = 0;
+  const MCP_LIMITER = {
+    idFromName: (name) => { asked++; return { name }; },
+    get: () => ({ fetch: async () => new Response(null, { status: 204 }) }),
+  };
+  const route = ROUTES.find((r) => r.name === "/mcp with an agent token");
+  const res = await worker.fetch(route.request({ "cf-connecting-ip": v4()(1), Origin: EVIL }), env({ MCP_LIMITER }));
+  assert.equal(res.status, 403);
+  assert.equal(asked, 0, "the limiter object is never woken for it");
+});
+
 test("clientOf: the limiters' client key from cf-connecting-ip, grouped as limiter.mjs does", () => {
   const req = (ip) => new Request(SITE, ip ? { headers: { "cf-connecting-ip": ip } } : {});
   assert.equal(clientOf(req("203.0.113.5")), "203.0.113.5");
