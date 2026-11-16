@@ -55,7 +55,7 @@ const PAIRS = [
   ["text", "panel", "start screen, control bar, popovers, notices, dialogs"],
   ["muted", "panel", "start screen notes, setting values, status, idle clock, QL label"],
   ["dim", "panel", "lines and labels on raised surfaces"],
-  ["accent", "panel", "late clock, paste errors, links"],
+  ["accent", "panel", "late clock, paste errors, links, the start screen's save note"],
   ["ok", "panel", "main screen connected"],
   ["ql", "panel", "active QL box"],
   ["ql-dim", "panel", "other sections' QL box"],

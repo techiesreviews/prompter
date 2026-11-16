@@ -1071,6 +1071,127 @@ export async function run({ browser, base, mode, dist, out }) {
   await showsStart(page);
   assert.equal(await page.locator(".section").count(), 0);
   ok("a damaged link shows a plain error over the start screen");
+
+  // A link that opens nothing leaves the saved style preset alone: damaged, or without sections.
+  await page.evaluate(() => localStorage.setItem("prompter-preset", "lex"));
+  await page.goto(`${base}/#s=@@@`);
+  await page.locator(".note-row.alert:not([hidden])").waitFor();
+  assert.equal(await page.evaluate(() => localStorage.getItem("prompter-preset")), "lex", "a damaged link (made for the default preset) does not change the saved preset");
+  await page.goto(await makeLink("No sections in here.", "default", base));
+  await page.waitForFunction(() => /no sections/.test(document.querySelector(".alert-text").textContent));
+  assert.equal(await page.evaluate(() => localStorage.getItem("prompter-preset")), "lex", "a link without sections does not change the saved preset");
+  ok("a damaged link, or one without sections, keeps the saved style preset");
+
+  // Opened from the paste window on the start screen.
+  const pasteOpen = async (text) => {
+    await page.goto(`${base}/`);
+    await showsStart(page);
+    await card.locator('[data-action="paste"]').click();
+    await page.locator("#paste-text").fill(text);
+    await page.locator('[data-action="open-paste"]').click();
+    await page.locator(".paste-dialog:not([open])").waitFor({ state: "attached" });
+  };
+  // When the script cannot be packed into a link, the address shows no script at all, never the one before:
+  // opened over another script, and opened from the start screen (Back still returns to the start).
+  await pasteOpen("### **FIRST · 00:00**\n\nThe first script.");
+  await page.waitForFunction(() => location.hash.startsWith("#s="));
+  await page.evaluate(() => {
+    window.CompressionStream = class { constructor() { throw new Error("no compression here"); } };
+    document.querySelector('[data-action="paste"]').click();
+  });
+  await page.locator("#paste-text").fill("### **SECOND · 00:00**\n\nThe second script.");
+  await page.locator('[data-action="open-paste"]').click();
+  await page.locator(".paste-dialog:not([open])").waitFor({ state: "attached" });
+  assert.equal(await page.locator(".section .title span").first().textContent(), "SECOND");
+  assert.equal(await page.evaluate(() => location.hash), "", "the first script's link does not stay in the address");
+  const backToStart = async () => {
+    await (await dock(page, ".open-btn")).click();
+    await page.locator('#open-menu [data-action="start"]').click();
+    await showsStart(page);
+  };
+  const pasteFromStart = async (title) => {
+    await card.locator('[data-action="paste"]').click();
+    await page.locator("#paste-text").fill(`### **${title} · 00:00**\n\nThe ${title.toLowerCase()} script.`);
+    await page.locator('[data-action="open-paste"]').click();
+    await page.locator(".paste-dialog:not([open])").waitFor({ state: "attached" });
+    assert.equal(await page.locator(".section .title span").first().textContent(), title);
+  };
+  await backToStart();
+  const entries = await page.evaluate(() => history.length);
+  await pasteFromStart("FROM START");
+  assert.equal(await page.evaluate(() => location.hash), "", "opened from the start screen: no link either");
+  assert.equal(await page.evaluate(() => history.length), entries + 1, "a new history entry, so Back returns to the start");
+  await page.goBack();
+  await showsStart(page);
+  ok("a script that cannot be packed into a link leaves no older script's link in the address (over a script, or from the start screen, where Back returns to the start)");
+
+  // Browser storage that cannot keep the last script: a short note naming it, just under Continue.
+  const failSave = (failing) => page.evaluate((k) => {
+    window.__setItem ||= Storage.prototype.setItem;
+    const set = window.__setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key === k) throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+      return set.call(this, key, value);
+    };
+  }, failing);
+  const saveWorks = () => page.evaluate(() => { if (window.__setItem) Storage.prototype.setItem = window.__setItem; });
+  const note = card.locator(".save-note");
+  await page.reload();
+  await page.goto(await makeLink("### **DATED · 00:00**\n\nA dated script.", "default", base, "2026-11-03"));
+  await page.locator(".section").first().waitFor();
+  await page.goto(`${base}/`);
+  await showsStart(page);
+  assert.equal(await note.isVisible(), false, "no note while saving works");
+  assert.deepEqual([await card.locator(".continue-title").textContent(), await card.locator(".continue-saved").textContent()], ["Continue: DATED", "Saved 3 Nov 2026"]);
+  await failSave("prompter-last-script");
+  await pasteFromStart("THIRD");
+  assert.equal(await page.locator(".save-note").isVisible(), false, "nothing shows over the script");
+  await backToStart();
+  assert.equal(await note.textContent(), "Couldn’t save “THIRD” on this device", "the note names the script that was not kept");
+  assert.equal(await note.isVisible(), true);
+  assert.deepEqual([await card.locator(".continue-title").textContent(), await card.locator(".continue-saved").textContent()], ["Continue: DATED", "Saved 3 Nov 2026"], "Continue keeps the script it had, with its own date");
+  assert.equal(await card.locator(".continue").getAttribute("aria-describedby"), "save-note", "Continue is described by the note while it shows");
+  const [noteBox, continueBox] = await Promise.all([note.boundingBox(), card.locator(".continue").boundingBox()]);
+  assert.ok(noteBox.y >= continueBox.y + continueBox.height && noteBox.y - (continueBox.y + continueBox.height) < 24, `the note sits just under Continue: ${JSON.stringify([continueBox, noteBox])}`);
+  await closeUp(page, ".empty .card", "save-note-close-up-desktop");
+  // A newer copy with the name Continue shows is "your latest".
+  await pasteFromStart("DATED");
+  await backToStart();
+  assert.equal(await note.textContent(), "Couldn’t save your latest “DATED” on this device");
+  assert.equal(await card.locator(".continue-saved").textContent(), "Saved 3 Nov 2026");
+  // The script kept but not its date: Continue shows no date rather than the one before.
+  await failSave("prompter-last-saved");
+  await pasteFromStart("FOURTH");
+  await backToStart();
+  assert.equal(await note.isVisible(), false, "the note goes once a script is kept again");
+  assert.equal(await card.locator(".continue-title").textContent(), "Continue: FOURTH");
+  assert.equal(await card.locator(".continue-saved").isVisible(), false, "no older script's date on Continue");
+  // Nothing kept at all (storage blocked from the start): the note stands alone at the top of the list.
+  await saveWorks();
+  await page.evaluate(() => localStorage.clear());
+  await failSave("prompter-last-script");
+  const LONG = "ALEKSANDRA WIŚNIEWSKA-KOWALCZYK’S QUARTERLY REVIEW 四半期レビュー 🎬";
+  await pasteFromStart(LONG);
+  await backToStart();
+  assert.equal(await card.locator(".continue").isVisible(), false);
+  assert.equal(await note.textContent(), `Couldn’t save “${LONG}” on this device`);
+  assert.equal(await card.locator(".choices > :not([hidden])").first().evaluate((el) => el.classList.contains("save-note")), true, "first in the list");
+  await page.setViewportSize({ width: 320, height: 700 });
+  assert.deepEqual(await page.evaluate(() => {
+    const n = document.querySelector(".save-note").getBoundingClientRect();
+    const c = document.querySelector(".empty .card").getBoundingClientRect();
+    return [document.documentElement.scrollWidth <= innerWidth, n.left >= c.left && n.right <= c.right];
+  }), [true, true], "a long name wraps inside the card at 320px, no sideways scroll");
+  await page.setViewportSize(MOBILE.viewport);
+  await closeUp(page, ".empty .card", "save-note-close-up-mobile");
+  await page.setViewportSize(DESKTOP.viewport);
+  await saveWorks();
+  await pasteFromStart("SIXTH");
+  await backToStart();
+  assert.equal(await note.isVisible(), false);
+  assert.equal(await card.locator(".continue").getAttribute("aria-describedby"), null);
+  assert.equal(await card.locator(".continue-title").textContent(), "Continue: SIXTH");
+  ok("when the browser cannot keep the last script, the start screen names it (“Couldn’t save “THIRD” on this device”) just under Continue, or alone when there is no Continue, only then; Continue keeps the script and date it had, and never shows another script's date");
   await desktop.close();
 
   // Reduced motion: no colour fade between sections.

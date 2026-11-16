@@ -1,9 +1,9 @@
 // Page logic. scripts/build.mjs inlines src/core.mjs, src/follow.mjs,
-// src/speech.mjs, src/agent.mjs, src/camframe.mjs and src/ui/range-field.mjs
+// src/speech.mjs, src/agent.mjs, src/camframe.mjs, src/reading-line.mjs and src/ui/range-field.mjs
 // above this file inside one function, so parse, PRESETS, DEMO_SCRIPT,
 // encodeScript, followWords, heardLink, linkAt, speechWords, speechKeeper,
-// connectionPrompt, agentName, camframeCall, cueCrossing, rangeField … are in
-// scope here.
+// connectionPrompt, agentName, camframeCall, cueCrossing, readingLine,
+// rangeField … are in scope here.
 
 // ---------- Player view ----------
 // The main-screen window shows a YouTube video full size via this same page.
@@ -57,6 +57,7 @@ const fileInput = $(".file-input");
 const continueBtn = $(".continue");
 const continueTitle = $(".continue-title");
 const continueSaved = $(".continue-saved");
+const saveNote = $(".save-note");
 const widthInputs = document.querySelectorAll('input[name="width"]');
 const spacingInputs = document.querySelectorAll('input[name="spacing"]');
 const toastEl = $(".toast");
@@ -84,12 +85,13 @@ const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 // Some viewers (for example a sandboxed file preview) refuse storage; never let that stop the page.
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
-  set(k, v) { try { localStorage.setItem(k, v); } catch { /* not available */ } },
+  set(k, v) { try { localStorage.setItem(k, v); return true; } catch { return false; } }, // false: not kept (full or blocked)
   del(k) { try { localStorage.removeItem(k); } catch { /* not available */ } },
 };
 
 let scriptText = "";
 let scriptSaved = null; // the open script's save date, when known; it goes into links made from it
+let notKept = null; // the title of the last script opened when it could not be kept on this device ("" if none), else null
 let preset = PRESETS[store.get(PRESET_KEY)] ? store.get(PRESET_KEY) : "default";
 let sections = [];
 let active = -1;
@@ -151,7 +153,16 @@ async function openScript(text, { fromLink = false, remember = true, label = "",
   scriptText = text;
   scriptSaved = savedDate(saved);
   sections = parsed;
-  if (remember) { store.set(LAST_KEY, text); store.set(LAST_SAVED_KEY, scriptSaved || ""); }
+  if (remember) {
+    // The date goes first, so Continue never shows one script with another's date: not kept, Continue stays with
+    // the script and date it had; kept but its date not, Continue shows no date.
+    const oldDate = store.get(LAST_SAVED_KEY);
+    store.del(LAST_SAVED_KEY);
+    const kept = store.set(LAST_KEY, text);
+    notKept = kept ? null : rememberedTitle(text);
+    if (kept) store.set(LAST_SAVED_KEY, scriptSaved || "");
+    else if (oldDate !== null) store.set(LAST_SAVED_KEY, oldDate);
+  }
   root.dataset.view = "script";
   $(".empty").hidden = true;
   window.scrollTo(0, 0);
@@ -162,7 +173,10 @@ async function openScript(text, { fromLink = false, remember = true, label = "",
       const data = await encodeScript(text);
       const url = `#s=${data}${linkExtras(preset, scriptSaved)}`;
       if (fromStart) history.pushState(null, "", url); else history.replaceState(null, "", url);
-    } catch { /* the link is a convenience; the prompter works without it */ }
+    } catch {
+      // The link is a convenience; the prompter works without it. But the address must not keep another script's link.
+      if (fromStart) history.pushState(null, "", plainAddress()); else history.replaceState(null, "", plainAddress());
+    }
   }
   return true;
 }
@@ -207,6 +221,12 @@ function showStart() {
   continueSaved.hidden = !saved;
   continueSaved.textContent = saved ? `Saved ${formatSavedDate(saved)}` : "";
   if (saved) continueSaved.dateTime = saved; else continueSaved.removeAttribute("datetime");
+  // Named, so it is never taken for the script Continue offers (a newer copy with the same name is "your latest").
+  saveNote.hidden = notKept === null;
+  saveNote.textContent = !notKept ? "Couldn’t save this script on this device"
+    : notKept === title ? `Couldn’t save your latest “${notKept}” on this device` : `Couldn’t save “${notKept}” on this device`;
+  if (notKept === null) continueBtn.removeAttribute("aria-describedby");
+  else { continueBtn.setAttribute("aria-describedby", "save-note"); setStatus(saveNote.textContent); }
   root.dataset.view = "empty";
   $(".empty").hidden = false;
   window.scrollTo(0, 0);
@@ -217,13 +237,16 @@ async function route() {
   const hash = location.hash;
   if (hash.startsWith("#s=") || hash.includes("&s=")) {
     const { data, preset: p, saved } = readHash(hash);
-    preset = p || "default"; // a link without &p= was made for the default preset
-    store.set(PRESET_KEY, preset);
     let text;
     try { text = await decodeScript(data || ""); } catch (error) {
       showStart();
       showAlert(`This link could not be opened: ${error.message}`);
       return;
+    }
+    // Only a link that opens a script brings its preset; a link without &p= was made for the default one.
+    if (parse(text).length) {
+      preset = p || "default";
+      store.set(PRESET_KEY, preset);
     }
     if (!(await openScript(text, { fromLink: true, label: "Opened from link", saved }))) {
       showStart();
@@ -576,20 +599,30 @@ renderAgent();
 // ---------- Reading line ----------
 // Dragged anywhere along it (or moved with the keys when focused) to camera height and
 // remembered on this device as a share of the window height. It is set on
-// :root as --line in px; the page's CSS and every check here use that one value.
+// :root as --line in px; the page's CSS and `reading` (src/reading-line.mjs: what is at
+// the line, bring this to the line) use that one value.
 const handle = $(".line-handle");
 const LINE_STEPS = { ArrowUp: -1, ArrowDown: 1, PageUp: -10, PageDown: 10 }; // percent
 const TAP_SLOP = 8; // px a finger or pen may drift and still tap
 const CLICK_SLOP = 2; // the same for a mouse, so it can still move the line a few px
 const LINE_KEYS = [...Object.keys(LINE_STEPS), "Home", "End"];
 let lineFrac = LINE_DEFAULT;
-let lineY = 0;
+// Scrolling asks for a look; the frame's one look moves the section, its link and the cues, and
+// Follow my voice when a wheel, touch or scroll end asked for it.
+const reading = readingLine({
+  script: main,
+  view: window,
+  frame: requestAnimationFrame,
+  onLook(at, { voice }) {
+    updateActive(at);
+    if (voice && voiceOn && !voiceScrolling) voiceFromReadingLine(at.line);
+  },
+});
 let lineDrag = null; // { id, offset, from, start, slop, moved } while a pointer drags the handle
 let dragFrame = 0;
 let dragY = 0;
 let lastTap = -Infinity; // two taps (or clicks) on the handle without a move reset the line
 
-function readingLineY() { return lineY; }
 // The window height without the phone's address bar: it stays the same when the
 // bar hides or shows while scrolling, so the line and the script do not jump.
 const viewHeight = () => document.documentElement.clientHeight || window.innerHeight;
@@ -603,8 +636,7 @@ const viewHeight = () => document.documentElement.clientHeight || window.innerHe
 function setLine(frac, keepText = false) {
   lineFrac = Math.min(LINE_MAX, Math.max(LINE_MIN, Number(frac) || LINE_DEFAULT));
   const y = Math.round(viewHeight() * lineFrac);
-  const delta = y - lineY;
-  lineY = y;
+  const delta = reading.place(y);
   root.style.setProperty("--line", `${y}px`);
   const pct = Math.round(lineFrac * 100);
   handle.setAttribute("aria-valuenow", String(pct));
@@ -619,8 +651,7 @@ function setLine(frac, keepText = false) {
 function moveLine(frac, save = false) {
   setLine(frac, true);
   if (save) store.set(LINE_KEY, lineFrac.toFixed(4));
-  updateActive();
-  if (voiceOn) voiceFromReadingLine();
+  followLine();
 }
 
 // Mouse, pen and touch drag it the same way; the page does not scroll under a finger (touch-action: none).
@@ -628,7 +659,7 @@ handle.addEventListener("pointerdown", (e) => {
   if (e.button !== 0) return;
   e.preventDefault();
   handle.setPointerCapture(e.pointerId);
-  lineDrag = { id: e.pointerId, offset: e.clientY - lineY, from: e.clientY, start: lineFrac, slop: e.pointerType === "mouse" ? CLICK_SLOP : TAP_SLOP, moved: false };
+  lineDrag = { id: e.pointerId, offset: e.clientY - reading.y, from: e.clientY, start: lineFrac, slop: e.pointerType === "mouse" ? CLICK_SLOP : TAP_SLOP, moved: false };
   handle.dataset.dragging = "true";
 });
 // The line lies over the script: a link under it still opens with a click or tap.
@@ -670,22 +701,24 @@ handle.addEventListener("keydown", (e) => {
 
 // ---------- Active section ----------
 
-function updateActive() {
-  const els = main.querySelectorAll(".section");
-  const y = readingLineY();
-  updateCues(y);
-  let idx = 0;
-  els.forEach((el, i) => { if (el.getBoundingClientRect().top <= y + 4) idx = i; });
+/** The place under the reading line moved (the line, a section jump, line spacing): all that follows it, from one look. */
+function followLine() {
+  const at = reading.look();
+  updateActive(at); // the page may not have scrolled (at the top), so no scroll event will do it
+  if (voiceOn) voiceFromReadingLine(at.line);
+}
+
+function updateActive(look = reading.look()) {
+  updateCues(look);
+  const idx = look.section;
   if (idx !== active) {
     active = idx;
-    els.forEach((el, i) => el.classList.toggle("active", i === idx));
+    main.querySelectorAll(".section").forEach((el, i) => el.classList.toggle("active", i === idx));
     updateClock();
   }
   // The most recent link above the reading line goes on the main screen once
   // the reader settles there, so fast scrolling does not flash every link.
-  let reached = -1;
-  els[idx]?.querySelectorAll(".mark, .inlink").forEach((el) => { if (el.getBoundingClientRect().top <= y + 4) reached = Number(el.dataset.l); });
-  const at = linkAt(sections, idx, reached);
+  const at = linkAt(sections, idx, look.link);
   const key = at ? `${at.s}:${at.l}` : "";
   if (key === anchorKey) return;
   anchor = at;
@@ -698,10 +731,9 @@ function updateActive() {
 // A camera cue line that reaches the reading line goes to CamFrame once per
 // pass down (auto-scroll, scrolling by hand, Follow my voice and section jumps
 // all scroll the page). Failures only change the CamFrame button in Settings.
-function updateCues(y) {
+function updateCues(look) {
   if (!cues.length) return;
-  const now = [];
-  main.querySelectorAll("[data-cue]").forEach((el) => { if (el.getBoundingClientRect().top <= y + 4) now.push(Number(el.dataset.cue)); });
+  const now = look.cues;
   // Opening a script, or a cue already passed when the link is turned on, sends nothing.
   if (!cueAbove || !cueArmed) { cueAbove = new Set(now); return; }
   const { above, send } = cueCrossing(cueAbove, now);
@@ -1072,7 +1104,7 @@ function setWidth(name) {
 function setSpacing(name) {
   const v = SPACINGS.includes(name) ? name : "normal";
   // With no voice move in progress, keep what is under the reading line, as with Follow my voice off.
-  const y = readingLineY();
+  const y = reading.y;
   const cur = voiceOn && voiceScrolling ? main.querySelector("p.cur") : null;
   const lines = [...main.querySelectorAll("p, .mark, .links")];
   // Below the last line (the page scrolls into the bottom padding): hold the last line's distance.
@@ -1087,37 +1119,27 @@ function setSpacing(name) {
   spacingInputs.forEach((input) => { input.checked = input.value === v; });
   if (store.get("prompter-spacing") || v !== "normal") store.set("prompter-spacing", v); // nothing is stored until the default is left
   // (The voice path scrolls at once, not smoothly: this is a settings change, not a move on.)
-  if (cur) window.scrollTo({ top: cur.getBoundingClientRect().top + window.scrollY - readingLineY() + 2 });
-  else if (keep) { const r = keep.getBoundingClientRect(); window.scrollBy(0, r.top + (inside ? frac * r.height : dist) - readingLineY()); }
-  updateActive(); // the page may not have scrolled (at the top), so no scroll event will do it
-  if (voiceOn) voiceFromReadingLine();
+  if (cur) reading.bring(cur);
+  else if (keep) reading.bring(keep, { at: inside ? frac * keep.getBoundingClientRect().height : dist });
+  followLine();
 }
 
 function goSection(delta) {
   const els = main.querySelectorAll(".section");
   const target = els[Math.min(els.length - 1, Math.max(0, active + delta))];
   if (!target) return;
-  window.scrollTo({ top: target.offsetTop - readingLineY() + 2 });
-  updateActive(); // at once, so quick repeated presses keep moving
-  if (voiceOn) voiceFromReadingLine();
+  reading.bring(target);
+  followLine(); // at once, so quick repeated presses keep moving
 }
 
 // ---------- Follow my voice ----------
 // The browser's speech recognition turns the voice into words (Chrome sends
 // the audio to Google for that, unless it can do it on this device); the
 // script itself never leaves the page.
-function lineAtReadingLine() {
-  const y = readingLineY();
-  let k = -1;
-  main.querySelectorAll("[data-k]").forEach((el) => { if (el.getBoundingClientRect().top <= y + 4) k = Number(el.dataset.k); });
-  return k;
-}
-
 // Scrolled by hand, a section jump or the line moved: follow on from the line
-// at the reading line, marked there without scrolling. Still on the followed
-// line, the place in it is kept.
-function voiceFromReadingLine() {
-  const k = lineAtReadingLine();
+// at the reading line (`k`, from the look), marked there without scrolling. Still on
+// the followed line, the place in it is kept.
+function voiceFromReadingLine(k) {
   if (Math.max(0, k) !== voiceState.line) voiceState = followStart(k);
   markLine(k, false);
 }
@@ -1132,11 +1154,10 @@ function markLine(k, scroll = true) {
   if (!el) return;
   el.classList.add("cur");
   if (!scroll) return;
-  const top = el.getBoundingClientRect().top + window.scrollY - readingLineY() + 2;
   voiceScrolling = true;
   clearTimeout(voiceScrollTimer);
   voiceScrollTimer = setTimeout(() => { voiceScrolling = false; }, 2000);
-  window.scrollTo({ top, behavior: reducedMotion.matches ? "auto" : "smooth" });
+  reading.bring(el, { smooth: !reducedMotion.matches });
 }
 
 function setVoiceButton() {
@@ -1191,7 +1212,7 @@ function startVoice() {
   voiceLinkKey = "";
   voiceLinkAt = -1;
   voiceFinal = 0;
-  voiceState = followStart(lineAtReadingLine());
+  voiceState = followStart(reading.look().line);
   resumeAuto = autoOn;
   setAuto(false);
   setVoiceButton();
@@ -1417,7 +1438,7 @@ async function loadFile(file) {
 }
 
 // ---------- Events ----------
-window.addEventListener("scroll", () => requestAnimationFrame(updateActive), { passive: true });
+window.addEventListener("scroll", () => reading.ask(), { passive: true });
 for (const type of ["pointerdown", "keydown", "wheel", "touchstart"]) {
   window.addEventListener(type, () => { cueArmed = true; }, { capture: true, passive: true });
 }
@@ -1458,7 +1479,7 @@ for (const type of ["wheel", "touchmove", "scrollend"]) {
     if (type === "scrollend" && voiceScrolling) { voiceScrolling = false; clearTimeout(voiceScrollTimer); return; }
     // The reader's own hand takes over: the voice move is over, even if the browser sends no scrollend.
     if (type !== "scrollend") { voiceScrolling = false; clearTimeout(voiceScrollTimer); }
-    if (voiceOn && !voiceScrolling) requestAnimationFrame(() => { if (voiceOn && !voiceScrolling) voiceFromReadingLine(); });
+    if (voiceOn && !voiceScrolling) reading.ask({ voice: true });
   }, { passive: true });
 }
 clockBtn.addEventListener("click", startClock);

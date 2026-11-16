@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Builds dist/: one self-contained index.html (core, follow, agent, camframe, the range field + app
+// Builds dist/: one self-contained index.html (core, follow, speech, agent, camframe, the reading line, the range field + app
 // inlined, and the range field's styles), the _headers file whose
 // Content-Security-Policy pins that inline script's hash, and the two font files
 // (the page falls back to system fonts without them).
@@ -17,7 +17,7 @@ const read = (file) => readFileSync(join(root, file), "utf8");
 export const FONTS = ["inter-latin.woff2", "roboto-mono-latin.woff2", "OFL.txt"];
 
 /** Shared modules inlined into the page, in this order, without `export`. */
-export const INLINED = ["src/core.mjs", "src/follow.mjs", "src/speech.mjs", "src/agent.mjs", "src/camframe.mjs", "src/ui/range-field.mjs"];
+export const INLINED = ["src/core.mjs", "src/follow.mjs", "src/speech.mjs", "src/agent.mjs", "src/camframe.mjs", "src/reading-line.mjs", "src/ui/range-field.mjs"];
 
 /** Shared component styles inlined into the page's style at its marker. */
 export const UI_CSS = ["src/ui/range-field.css"];
