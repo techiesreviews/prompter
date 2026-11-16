@@ -45,15 +45,24 @@ export function scriptState({ text = "", saved = null, sections = [] } = {}) {
  * Read: `now`, the open script's state (an empty one on the start screen). Do: `open({ text, saved,
  * sections })` replaces it with a fresh state and returns that; `close()` replaces it with an empty one (the
  * start screen); `current(state)` says whether a state is still the open one, so a late answer for a script
- * that has gone (its link packed, say) changes nothing; `settle(fn, ms)` runs `fn` after `ms` unless a newer
- * settle, `unsettle()` or another script comes first.
+ * that has gone (its link packed, say) changes nothing; `ask()`, called before a script is fetched (a link
+ * unpacked, a file read), returns a check that says whether that request is still the newest: false once
+ * another request, another script or the start screen came after it, so only the newest request ever opens;
+ * `settle(fn, ms)` runs `fn` after `ms` unless a newer settle, `unsettle()` or another script comes first.
  */
 export function openScripts({ clock = globalThis } = {}) {
   // Plain calls: a browser's timers refuse to run on any other object.
   const { setTimeout: later, clearTimeout: cancel } = clock;
   let now = scriptState();
+  let asked = 0; // counts requests to open and every open or close, so an older request knows it was overtaken
+
+  function ask() {
+    const n = ++asked;
+    return () => n === asked;
+  }
 
   function replace(next) {
+    asked++;
     cancel(now.settleTimer);
     now = next;
     return now;
@@ -70,6 +79,7 @@ export function openScripts({ clock = globalThis } = {}) {
     open: (fields) => replace(scriptState(fields)),
     close: () => replace(scriptState()),
     current: (script) => script === now,
+    ask,
     settle,
     unsettle: () => { cancel(now.settleTimer); },
   };

@@ -253,7 +253,7 @@ const sceneNames = (body, fallback) => (Array.isArray(body.scenes) ? body.scenes
  * before is not news after), `scenes` (CamFrame's Scene names), `layouts` (CamFrame's last status when it
  * can save layouts, else null), `problem` (how the last layout save ended, "" when well) and `saving`.
  * Do: `turn(on)`, `check()`, `cue(cue, stillThere)` (sends it once it settled at the reading line),
- * `dropCue()` (a new script: a cue still waiting goes), `sendCue(cue)`.
+ * `dropCue()` (a new script: a cue still waiting goes, and so does a cue's second try), `sendCue(cue)`.
  */
 export function camframeLink({ fetch = globalThis.fetch, clock = globalThis, visible = () => true, changed = () => {} } = {}) {
   // Plain calls: a browser's timers refuse to run on any other object.
@@ -264,6 +264,7 @@ export function camframeLink({ fetch = globalThis.fetch, clock = globalThis, vis
   let timer = 0;
   let retry = 0;
   let cueTimer = 0;
+  let cueSeq = 0; // only the newest cue may go: an older one's second try is dropped once a newer cue or a new script came
   // Camera layouts: the last status when it can save layouts (API 2), the session the layouts were last
   // saved for by themselves (once per session), a save under way (`busy` is the session it runs for, -1:
   // none, so a save left from before the link was turned off and on never holds up the new session's) and
@@ -317,10 +318,12 @@ export function camframeLink({ fetch = globalThis.fetch, clock = globalThis, vis
     cueTimer = later(() => { if (stillThere()) sendCue(c); }, CUE_SETTLE_MS);
   }
 
-  // A cue that does not get through is sent once more; then it counts as a missed check.
+  // A cue that does not get through is sent once more; then it counts as a missed check. A newer cue, a new
+  // script (dropCue) or the link turned off and on drops it, second try and all.
   async function sendCue(c) {
     const session = link.session;
-    const current = () => link.on && link.session === session;
+    const n = ++cueSeq;
+    const current = () => link.on && link.session === session && n === cueSeq;
     let answer = null;
     for (let tries = 0; tries < 2 && !answer; tries++) {
       if (tries) await new Promise((done) => { later(done, CUE_RETRY_MS); });
@@ -405,7 +408,7 @@ export function camframeLink({ fetch = globalThis.fetch, clock = globalThis, vis
     turn,
     check,
     cue,
-    dropCue: () => { cancel(cueTimer); },
+    dropCue: () => { cancel(cueTimer); cueSeq++; },
     sendCue,
   };
 }
