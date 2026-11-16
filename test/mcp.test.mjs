@@ -4,7 +4,8 @@ import "./runtime.mjs";
 import { connectionPrompt, openPrompt } from "../src/agent.mjs";
 import { decodeScript, EXAMPLE_SCRIPT, PRESETS, readHash } from "../src/core.mjs";
 import { RATE_LIMIT } from "../src/limiter.mjs";
-import { handleMcp, MAX_BODY_BYTES, memoryLimiter, NOT_OPEN } from "../src/mcp.mjs";
+import { memoryLimiter } from "../src/guard.mjs";
+import { handleMcp, MAX_BODY_BYTES, NOT_OPEN } from "../src/mcp.mjs";
 import { MAX_AGE_MS, newToken } from "../src/token.mjs";
 
 const { default: worker } = await import("../src/worker.mjs");
