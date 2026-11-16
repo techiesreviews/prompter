@@ -6,7 +6,7 @@
 // (see relay.mjs): show_script and get_open_script. Their scripts pass
 // through memory only. Without a token /mcp stays open and stateless.
 import { check, describeProblems, formatGuide, makeLink, MAX_SCRIPT_CHARS, PRESETS, savedDate } from "./core.mjs";
-import { RATE_LIMIT } from "./limiter.mjs";
+import { agentInfo, fromOtherSite, memoryLimiter, refusedBy } from "./guard.mjs";
 import { checkToken } from "./token.mjs";
 
 export const MAX_BODY_BYTES = 200 * 1024;
@@ -189,7 +189,7 @@ async function handleMessage(msg, context) {
       // The agent's name and version go to the person's tab, which shows who is connected.
       if (relay) {
         const info = params.clientInfo && typeof params.clientInfo === "object" ? params.clientInfo : {};
-        const r = await relay.op({ op: "agent", name: String(info.name ?? "agent").slice(0, 60), version: String(info.version ?? "").slice(0, 30) });
+        const r = await relay.op({ op: "agent", ...agentInfo({ name: info.name ?? "agent", version: info.version }) });
         if (r.status === "unauthorized") throw UNAUTHORIZED;
       }
       const asked = params.protocolVersion;
@@ -247,33 +247,6 @@ async function readCapped(request) {
   return new TextDecoder().decode(all);
 }
 
-/**
- * Per-isolate fixed-window counter. Runs on every request before the Durable
- * Object limiter. When full it drops expired entries, then the oldest window starts,
- * so rotating IPs cannot reset every count at once.
- */
-export function memoryLimiter(limit = RATE_LIMIT, windowMs = 60_000, now = () => Date.now(), maxKeys = 10_000) {
-  const hits = new Map();
-  return {
-    async limit({ key }) {
-      const t = now();
-      const entry = hits.get(key);
-      if (!entry || t - entry.start >= windowMs) {
-        if (hits.size >= maxKeys) {
-          // Map order is insertion order (oldest first): only scan when the oldest has expired.
-          if (t - hits.values().next().value.start >= windowMs) for (const [k, v] of hits) if (t - v.start >= windowMs) hits.delete(k);
-          for (const k of hits.keys()) { if (hits.size < maxKeys) break; hits.delete(k); }
-        }
-        hits.delete(key);
-        hits.set(key, { start: t, count: 1 });
-        return { success: true };
-      }
-      entry.count += 1;
-      return entry.count <= limit ? { success: true } : { success: false, max: limit, ms: windowMs };
-    },
-  };
-}
-
 const instanceGuard = memoryLimiter();
 
 /** "60 per minute" or "10 per 10 seconds": the limit that refused, else the minute limit. */
@@ -295,8 +268,9 @@ function unauthorized() {
 }
 
 /**
- * Handle one HTTP request to /mcp. The per-isolate guard runs first and stops
- * bursts that land on one instance without any extra call. `limiter` is the
+ * Handle one HTTP request to /mcp. A token request from another website is
+ * refused first; then the per-isolate guard stops bursts that land on one
+ * instance without any extra call. `limiter` is the
  * per-client Durable Object limiter (see limiter.mjs), the one that holds
  * across instances; both use the `limit({ key })` shape and a request must
  * pass both. With an Authorization header the request must carry a live agent
@@ -308,10 +282,14 @@ export async function handleMcp(request, { limiter, guard = instanceGuard, relay
     return json(rpcError(null, -32000, "Method not allowed. This MCP server only accepts POST (no SSE stream)."), 405, { Allow: "POST, OPTIONS" });
   }
 
-  const key = request.headers.get("cf-connecting-ip") || "local";
-  let verdict = await guard.limit({ key });
-  if (verdict.success && limiter) verdict = await limiter.limit({ key });
-  if (!verdict.success) {
+  // Only a prompter token switches to the person's tab; any other Authorization header is ignored, as before.
+  const authorization = request.headers.get("authorization");
+  const withToken = /^Bearer\s+tp1-/i.test(authorization || "");
+  // A token is for this person's own agent, never for another website's page; refused before it counts.
+  if (withToken && fromOtherSite(request)) return json(rpcError(null, -32600, "Requests with a token from other websites are refused."), 403);
+
+  const verdict = await refusedBy(request, guard, limiter);
+  if (verdict) {
     const wait = verdict.retryAfter || 60;
     return json(rpcError(null, -32000, `Too many requests.${describeLimit(verdict)} Try again in ${wait} seconds.`), 429, { "Retry-After": String(wait) });
   }
@@ -324,12 +302,7 @@ export async function handleMcp(request, { limiter, guard = instanceGuard, relay
 
   const origin = new URL(request.url).origin;
   let relay = null;
-  // Only a prompter token switches to the person's tab; any other Authorization header is ignored, as before.
-  const authorization = request.headers.get("authorization");
-  if (/^Bearer\s+tp1-/i.test(authorization || "")) {
-    // A token is for this person's own agent, never for another website's page.
-    const from = request.headers.get("origin");
-    if (from && from !== origin) return json(rpcError(null, -32600, "Requests with a token from other websites are refused."), 403);
+  if (withToken) {
     const auth = bearer(authorization, now());
     if (!auth || !relayFor) return unauthorized();
     const stub = relayFor(auth.token);

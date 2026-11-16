@@ -5,6 +5,7 @@
 // text: tool calls and their results pass through memory. An alarm just after
 // expiresAt erases the note. Nothing is logged. What it says on the wire comes from wire.mjs.
 import { DurableObject } from "cloudflare:workers";
+import { agentInfo } from "./guard.mjs";
 import { MAX_AGE_MS } from "./token.mjs";
 import { RELAY_CLOSE, RELAY_PROTOCOL, readRelayMessage, relayMessage } from "./wire.mjs";
 
@@ -114,13 +115,13 @@ export class Relay extends DurableObject {
     // object is evicted first, the tab turns "on" at the agent's first call, without its name).
     // An auth (or unknown) op is fine for a young token.
     if (!meta) {
-      if (message.op === "agent") this.earlyAgent = { name: String(message.name ?? "").slice(0, 60), version: String(message.version ?? "").slice(0, 30) };
+      if (message.op === "agent") this.earlyAgent = agentInfo(message);
       return { status: message.op === "call" ? "no-tab" : "ok" };
     }
     if (!this.valid(meta)) return { status: "unauthorized" };
     if (message.op === "auth") return { status: "ok" };
     if (message.op === "agent") {
-      meta.agent = { name: String(message.name ?? "").slice(0, 60), version: String(message.version ?? "").slice(0, 30) };
+      meta.agent = agentInfo(message);
       await this.save(meta);
       const ws = this.tab();
       if (ws) this.send(ws, "agent", meta.agent);

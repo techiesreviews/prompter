@@ -2,8 +2,9 @@
 // /api/* (see run_worker_first in wrangler.jsonc). Only /mcp uses the
 // MCP_LIMITER Durable Object; only /mcp and /api/relay reach a RELAY object.
 // Nothing here logs, and no request body is kept.
+import { fromOtherSite, memoryLimiter, refusedBy } from "./guard.mjs";
 import { durableLimiter } from "./limiter.mjs";
-import { handleMcp, memoryLimiter } from "./mcp.mjs";
+import { handleMcp } from "./mcp.mjs";
 import { checkToken, newToken, relayName, TOKEN_RE } from "./token.mjs";
 import { RELAY_CLOSE, RELAY_PATH, RELAY_PROTOCOL, RELAY_TOKEN_PREFIX, TOKEN_PATH } from "./wire.mjs";
 
@@ -17,13 +18,10 @@ const relayGuard = memoryLimiter(30);
 
 const noStore = { "Cache-Control": "no-store", "X-Robots-Tag": "noindex" };
 const reply = (body, status = 200, extra = {}) => Response.json(body, { status, headers: { ...noStore, ...extra } });
-const foreign = (request, url) => {
-  const origin = request.headers.get("Origin");
-  return origin && origin !== url.origin;
-};
-async function limited(guard, request) {
-  const verdict = await guard.limit({ key: request.headers.get("cf-connecting-ip") || "local" });
-  return verdict.success ? null : reply({ error: "Too many requests" }, 429, { "Retry-After": "60" });
+// The tab's routes take this site's requests only, and each one counts against the client's limit (guard.mjs).
+async function refused(request, limiter) {
+  if (fromOtherSite(request)) return reply({ error: "Forbidden" }, 403);
+  return (await refusedBy(request, limiter)) ? reply({ error: "Too many requests" }, 429, { "Retry-After": "60" }) : null;
 }
 
 // A socket that is closed at once, so the tab hears why (`forget` makes it forget the token). No relay object is touched.
@@ -40,8 +38,7 @@ async function relayStub(env, token) {
 
 export default {
   async fetch(request, env) {
-    const url = new URL(request.url);
-    const { pathname } = url;
+    const { pathname } = new URL(request.url);
     if (pathname === "/mcp" || pathname === "/mcp/") {
       const stubs = new Map();
       const relayFor = (token) => ({
@@ -55,17 +52,15 @@ export default {
     if (pathname === TOKEN_PATH) {
       // A new agent token with the Worker's own time inside (see token.mjs). It touches no relay object.
       if (request.method !== "POST") return reply({ error: "Method not allowed" }, 405, { Allow: "POST" });
-      if (foreign(request, url)) return reply({ error: "Forbidden" }, 403);
-      const refused = await limited(tokenGuard, request);
-      if (refused) return refused;
+      const refusal = await refused(request, tokenGuard);
+      if (refusal) return refusal;
       const { token, born } = newToken();
       return reply({ token, createdAt: born });
     }
     if (pathname === RELAY_PATH) {
       if (request.headers.get("Upgrade") !== "websocket") return reply({ error: "Expected a WebSocket" }, 426);
-      if (foreign(request, url)) return reply({ error: "Forbidden" }, 403);
-      const refused = await limited(relayGuard, request);
-      if (refused) return refused;
+      const refusal = await refused(request, relayGuard);
+      if (refusal) return refusal;
       // The token travels as a subprotocol, never in the URL: relayProtocols(token) in wire.mjs.
       const protocols = (request.headers.get("Sec-WebSocket-Protocol") || "").split(",").map((p) => p.trim());
       const token = protocols.find((p) => p.startsWith(RELAY_TOKEN_PREFIX))?.slice(RELAY_TOKEN_PREFIX.length) ?? "";
