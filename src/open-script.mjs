@@ -4,7 +4,7 @@
 // the links it opened, the camera cues. The page reads and writes that object; it keeps no loose copy.
 // scripts/build.mjs inlines this file into the page after src/follow.mjs and drops the import line below,
 // so keep it free of any other import and use only `export function`/`export const` forms.
-import { followStart } from "./follow.mjs";
+import { voiceStart } from "./follow.mjs";
 
 /**
  * Everything that belongs to one open script, fresh. `text` is its Markdown, `saved` its save day
@@ -14,9 +14,9 @@ import { followStart } from "./follow.mjs";
  * - `anchor`, `anchorKey`: the link above the reading line ({ s, l } and "s:l", see linkAt), and
  *   `settleTimer`, its wait before it goes on the main screen;
  * - `shownUrl`: the page this script last put on the main screen;
- * - `voiceLines` (speechWords of each spoken line, by data-k), `voiceState` (where the voice is, see
- *   followWords), `voiceLinkKey` and `voiceLinkAt` (the link the voice last opened by its label, and the
- *   speech result it was heard in);
+ * - `voiceLines` (speechWords of each spoken line, by data-k) and `voice` (Follow my voice's state, see
+ *   voiceStart and voiceStep: where the voice is, the speech results already followed, the link the voice
+ *   last opened by its label and the speech result it was heard in);
  * - `cues` (the camera cues by data-cue) and `cueAbove` (those above the reading line; null until the
  *   first look, which sends nothing);
  * - `pushOwed`: opened from the start screen, its link is still owed a new history entry (so Back returns
@@ -33,9 +33,7 @@ export function scriptState({ text = "", saved = null, sections = [] } = {}) {
     settleTimer: 0,
     shownUrl: "",
     voiceLines: [],
-    voiceState: followStart(-1),
-    voiceLinkKey: "",
-    voiceLinkAt: -1,
+    voice: voiceStart(-1),
     cues: [],
     cueAbove: null,
     pushOwed: false,
