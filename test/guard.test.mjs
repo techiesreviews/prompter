@@ -128,7 +128,7 @@ test("/mcp: the Durable Object limiter still gets one object per client (the sam
   };
   const addresses = ["2001:db8:5:7::1", "::ffff:cb00:7109", "203.0.113.9", "::ffff:203.0.113.10"];
   for (const ip of addresses) {
-    const res = await worker.fetch(ROUTES[3].request({ "cf-connecting-ip": ip }), env({ MCP_LIMITER }));
+    const res = await worker.fetch(ROUTES.find((r) => r.name === "/mcp without a token").request({ "cf-connecting-ip": ip }), env({ MCP_LIMITER }));
     assert.equal(res.status, 200);
   }
   assert.deepEqual(names, await Promise.all(addresses.map(hashClient)));
