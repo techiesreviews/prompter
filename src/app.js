@@ -1,8 +1,8 @@
 // Page logic. scripts/build.mjs inlines src/core.mjs, src/follow.mjs,
 // src/open-script.mjs, src/speech.mjs, src/agent.mjs, src/wire.mjs, src/relay-link.mjs, src/camframe.mjs,
 // src/reading-line.mjs and src/ui/range-field.mjs above this file inside one function, so parse, PRESETS,
-// DEMO_SCRIPT, encodeScript, voiceStep, voiceStart, linkAt, openScripts, speechWords, speechKeeper,
-// connectionPrompt, agentName, RELAY_PATH, relayLink, camframeLink, cueCrossing, readingLine,
+// DEMO_SCRIPT, encodeScript, voiceStep, voiceStart, voiceSession, voiceAt, linkAt, openScripts, speechWords,
+// speechKeeper, connectionPrompt, agentName, RELAY_PATH, relayLink, camframeLink, cueCrossing, readingLine,
 // rangeField … are in scope here.
 
 // ---------- Player view ----------
