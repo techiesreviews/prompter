@@ -221,9 +221,10 @@ function showStart() {
   continueSaved.hidden = !saved;
   continueSaved.textContent = saved ? `Saved ${formatSavedDate(saved)}` : "";
   if (saved) continueSaved.dateTime = saved; else continueSaved.removeAttribute("datetime");
-  // Named, so it is never taken for the script Continue offers.
+  // Named, so it is never taken for the script Continue offers (a newer copy with the same name is "your latest").
   saveNote.hidden = notKept === null;
-  saveNote.textContent = notKept ? `Couldn’t save “${notKept}” on this device` : "Couldn’t save this script on this device";
+  saveNote.textContent = !notKept ? "Couldn’t save this script on this device"
+    : notKept === title ? `Couldn’t save your latest “${notKept}” on this device` : `Couldn’t save “${notKept}” on this device`;
   if (notKept === null) continueBtn.removeAttribute("aria-describedby");
   else { continueBtn.setAttribute("aria-describedby", "save-note"); setStatus(saveNote.textContent); }
   root.dataset.view = "empty";
