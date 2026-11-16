@@ -44,7 +44,7 @@ try {
   if (command === "doctor") {
     if (Number(process.versions.node.split(".")[0]) < 24) throw Error("Node >=24 required");
     run("git", ["rev-parse", "--verify", "HEAD"]);
-    for (const file of ["src/core.mjs", "src/agent.mjs", "src/mcp.mjs", "src/limiter.mjs", "src/relay.mjs", "src/token.mjs", "src/worker.mjs", "src/app.js", "src/page.html", "scripts/build.mjs", "wrangler.jsonc", "docs/agents/kitchen-extras.md"]) {
+    for (const file of ["src/core.mjs", "src/agent.mjs", "src/mcp.mjs", "src/limiter.mjs", "src/relay.mjs", "src/token.mjs", "src/wire.mjs", "src/worker.mjs", "src/app.js", "src/page.html", "scripts/build.mjs", "wrangler.jsonc", "docs/agents/kitchen-extras.md"]) {
       if (!existsSync(join(root, file))) throw Error(`Missing ${file}`);
     }
     const built = await buildInto(join(out, "dist"));
@@ -98,7 +98,7 @@ try {
   } else if (command === "size") {
     const dist = join(out, "dist");
     await buildInto(dist);
-    const files = [["dist/index.html", join(dist, "index.html")], ...["src/core.mjs", "src/mcp.mjs", "src/limiter.mjs", "src/relay.mjs", "src/token.mjs", "src/worker.mjs"].map((f) => [f, join(root, f)])];
+    const files = [["dist/index.html", join(dist, "index.html")], ...["src/core.mjs", "src/mcp.mjs", "src/limiter.mjs", "src/relay.mjs", "src/token.mjs", "src/wire.mjs", "src/worker.mjs"].map((f) => [f, join(root, f)])];
     const report = files.map(([file, path]) => { const data = readFileSync(path); return { file, bytes: data.length, gzipBytes: gzipSync(data).length }; });
     const worker = report.filter((r) => r.file.startsWith("src/")).reduce((sum, r) => ({ bytes: sum.bytes + r.bytes, gzipBytes: sum.gzipBytes + r.gzipBytes }), { bytes: 0, gzipBytes: 0 });
     const summary = { files: report, workerSourceTotal: worker, note: "Report only. Free plan Worker limit is 3 MB compressed; the page is one self-contained file." };

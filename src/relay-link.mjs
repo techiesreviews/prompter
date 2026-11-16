@@ -24,7 +24,7 @@ export function relayBackoff(retry, random) {
 /**
  * The tab's link: the token (fetched, kept on this device, aged), the socket with its reconnect backoff,
  * keepalive and close codes, and the agent's tool calls, in one place the page only draws.
- * `WebSocket`, `fetch`, `clock` ({ setTimeout, clearTimeout, setInterval, clearInterval }), `now` and
+ * `WebSocket`, `fetch`, `clock` ({ setTimeout, clearTimeout, setInterval }), `now` and
  * `random` are the browser's, or stand-ins in tests; `store` is { get, set, del } on this device's storage;
  * `url` the relay's address; `tools` maps a tool name to `(args) => ({ result } | { error })` (or a promise
  * of one); `changed()` is called after each change, for the page to draw it.
