@@ -1117,8 +1117,10 @@ export async function run({ browser, base, mode, dist, out }) {
     assert.equal(await page.locator(".section .title span").first().textContent(), title);
   };
   await backToStart();
+  const entries = await page.evaluate(() => history.length);
   await pasteFromStart("FROM START");
   assert.equal(await page.evaluate(() => location.hash), "", "opened from the start screen: no link either");
+  assert.equal(await page.evaluate(() => history.length), entries + 1, "a new history entry, so Back returns to the start");
   await page.goBack();
   await showsStart(page);
   ok("a script that cannot be packed into a link leaves no older script's link in the address (over a script, or from the start screen, where Back returns to the start)");
@@ -1152,6 +1154,11 @@ export async function run({ browser, base, mode, dist, out }) {
   const [noteBox, continueBox] = await Promise.all([note.boundingBox(), card.locator(".continue").boundingBox()]);
   assert.ok(noteBox.y >= continueBox.y + continueBox.height && noteBox.y - (continueBox.y + continueBox.height) < 24, `the note sits just under Continue: ${JSON.stringify([continueBox, noteBox])}`);
   await closeUp(page, ".empty .card", "save-note-close-up-desktop");
+  // A newer copy with the name Continue shows is "your latest".
+  await pasteFromStart("DATED");
+  await backToStart();
+  assert.equal(await note.textContent(), "Couldn’t save your latest “DATED” on this device");
+  assert.equal(await card.locator(".continue-saved").textContent(), "Saved 3 Nov 2026");
   // The script kept but not its date: Continue shows no date rather than the one before.
   await failSave("prompter-last-saved");
   await pasteFromStart("FOURTH");
