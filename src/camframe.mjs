@@ -264,7 +264,7 @@ export function camframeLink({ fetch = globalThis.fetch, clock = globalThis, vis
   let timer = 0;
   let retry = 0;
   let cueTimer = 0;
-  let cueSeq = 0; // only the newest cue may go: an older one's second try is dropped once a newer cue or a new script came
+  let cueSeq = 0; // only the newest cue may go: an older one's second try is dropped once a newer cue (settling or sent) or a new script came
   // Camera layouts: the last status when it can save layouts (API 2), the session the layouts were last
   // saved for by themselves (once per session), a save under way (`busy` is the session it runs for, -1:
   // none, so a save left from before the link was turned off and on never holds up the new session's) and
@@ -314,6 +314,7 @@ export function camframeLink({ fetch = globalThis.fetch, clock = globalThis, vis
 
   function cue(c, stillThere) {
     if (!link.on) return;
+    cueSeq++; // a newer cue reached the reading line: an older cue's second try is dropped
     cancel(cueTimer);
     cueTimer = later(() => { if (stillThere()) sendCue(c); }, CUE_SETTLE_MS);
   }

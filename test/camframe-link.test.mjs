@@ -263,6 +263,18 @@ test("cue resend: a cue whose first try failed is not sent again once a new scri
   link.sendCue({ size: "full" });
   await time.advance(CUE_RETRY_MS);
   assert.deepEqual(cam.calls.map((c) => c.body), [{ size: "small" }, { size: "full" }], "the older cue's second try is dropped");
+
+  // A newer cue reaching the reading line while the older one waits for its second try: the older one is
+  // not sent again while the newer one settles, and the newer one goes once it has.
+  cam.calls.length = 0;
+  fails = 1;
+  link.sendCue({ size: "small" });
+  await time.advance(300);
+  link.cue({ size: "full" }, () => true);
+  await time.advance(CUE_RETRY_MS - 300);
+  assert.deepEqual(cam.calls.map((c) => c.body), [{ size: "small" }], "no second try for the older cue");
+  await time.advance(CUE_SETTLE_MS);
+  assert.deepEqual(cam.calls.map((c) => c.body), [{ size: "small" }, { size: "full" }], "the newer cue went after settling");
 });
 
 test("cue resend after reconnect: a cue answered while reconnecting checks the status, which connects again", async () => {
