@@ -130,7 +130,8 @@ async function openScript(text, { fromLink = false, remember = true, label = "",
   const parsed = parse(text);
   if (!parsed.length) return false;
   if (voiceOn) stopVoice();
-  const fromStart = isEmpty();
+  // Opened from the start screen, or over a script whose link (and its new history entry) is still being packed.
+  const fromStart = isEmpty() || scripts.now.pushOwed;
   const script = scripts.open({ text, saved: savedDate(saved), sections: parsed });
   if (remember) {
     // The date goes first, so Continue never shows one script with another's date: not kept, Continue stays with
@@ -148,6 +149,7 @@ async function openScript(text, { fromLink = false, remember = true, label = "",
   render();
   setStatus(label);
   if (!fromLink) {
+    script.pushOwed = fromStart;
     let url;
     try {
       url = `#s=${await encodeScript(text)}${linkExtras(preset, script.saved)}`;
@@ -157,6 +159,7 @@ async function openScript(text, { fromLink = false, remember = true, label = "",
     }
     // Packing takes a moment: a script (or the start screen) that came in the meantime keeps the address.
     if (!scripts.current(script)) return true;
+    script.pushOwed = false;
     if (fromStart) history.pushState(null, "", url); else history.replaceState(null, "", url);
   }
   return true;
@@ -273,7 +276,7 @@ function cueHtml(it) {
   return `<p class="note cue" data-cue="${scripts.now.cues.push(it.cue) - 1}">${CAMERA_ICON}<span class="cue-what">Camera: ${esc(cueWords(it.cue))}</span>${rest ? `<span class="cue-rest"> · ${esc(rest)}</span>` : ""}</p>`;
 }
 
-/** Draws the script just opened; its state (scripts.now) is fresh, and gets its spoken lines and cues here. */
+/** Draws the script just opened, once: its state (scripts.now) is fresh, and gets its spoken lines and cues here. */
 function render() {
   const { sections, voiceLines } = scripts.now;
   main.innerHTML = sections.map((s, i) => {
@@ -359,12 +362,13 @@ const liveLink = relayLink({
       // Opened like a #s= link: its preset, and kept as this browser's last script.
       const text = typeof args.markdown === "string" ? args.markdown : "";
       if (text.length > MAX_SCRIPT_CHARS) return { error: `The script is longer than ${MAX_SCRIPT_CHARS} characters.` };
-      if (!parse(text).length) return { error: "No sections found. Each section starts with a title line like: ### **INTRO · 00:00**" };
+      const found = parse(text).length;
+      if (!found) return { error: "No sections found. Each section starts with a title line like: ### **INTRO · 00:00**" };
       preset = PRESETS[args.preset] ? args.preset : "default";
       store.set(PRESET_KEY, preset);
       showAlert("");
       await openScript(text, { label: `Opened from ${agentName(liveLink.info?.name)}`, saved: args.saved });
-      return { result: { opened: true, sections: scripts.now.sections.length } };
+      return { result: { opened: true, sections: found } }; // this script's, even if another opened while it was packed
     },
   },
   changed: () => renderAgent(),

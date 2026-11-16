@@ -1175,6 +1175,16 @@ export async function run({ browser, base, mode, dist, out }) {
   await showsStart(page);
   assert.equal(await page.evaluate(() => location.hash), "", "the start screen keeps its clean address");
   assert.equal(await page.evaluate(() => history.length), startEntries, "and gets no extra history entry");
+  // From the start screen, a script opened while the first one's link is packed still leaves the start
+  // screen one Back away.
+  await slowPack();
+  await fileOpen("SLOW FIVE"); // its link (and its new history entry) waits
+  await pasteOver("QUICK SIX");
+  await releasePack();
+  assert.equal(await page.locator(".section .title span").first().textContent(), "QUICK SIX");
+  await page.goBack();
+  await showsStart(page);
+  assert.equal(await page.evaluate(() => location.hash), "", "Back from it returns to the start screen");
   ok("a script's link that is still being packed never lands late: a newer script, or the start screen, keeps the address (no older script comes back on reload)");
 
   // Browser storage that cannot keep the last script: a short note naming it, just under Continue.

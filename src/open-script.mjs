@@ -18,7 +18,9 @@ import { followStart } from "./follow.mjs";
  *   followWords), `voiceLinkKey` and `voiceLinkAt` (the link the voice last opened by its label, and the
  *   speech result it was heard in);
  * - `cues` (the camera cues by data-cue) and `cueAbove` (those above the reading line; null until the
- *   first look, which sends nothing).
+ *   first look, which sends nothing);
+ * - `pushOwed`: opened from the start screen, its link is still owed a new history entry (so Back returns
+ *   there); a script opened before that link lands takes the entry over.
  */
 export function scriptState({ text = "", saved = null, sections = [] } = {}) {
   return {
@@ -36,6 +38,7 @@ export function scriptState({ text = "", saved = null, sections = [] } = {}) {
     voiceLinkAt: -1,
     cues: [],
     cueAbove: null,
+    pushOwed: false,
   };
 }
 
