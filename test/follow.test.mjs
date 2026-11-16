@@ -268,6 +268,31 @@ test("voice step: a label said again split over two results reopens its link", (
   assert.equal(echo.link, null, "and its echo stays quiet");
 });
 
+test("voice step: a label heard in an interim result does not open again when that result turns final", () => {
+  const a = voiceStep(lines, voiceStart(0), [said("the big idea", false)], { links: LINKS });
+  assert.deepEqual([a.link?.key, a.voice.linkAt, a.voice.final], ["0:0", 0, 0]);
+  const b = voiceStep(lines, a.voice, [said("the big idea")], { links: LINKS, shownUrl: "https://other.test/" });
+  assert.equal(b.link, null, "the same result, now final: an echo");
+  assert.equal(b.voice.final, 1);
+});
+
+test("voice step: a label that starts before the last 3 results is not heard", () => {
+  const r = voiceStep(lines, voiceStart(0), [said("now the big"), said("idea"), said("one"), said("two")], { links: LINKS });
+  assert.equal(r.link, null);
+});
+
+test("voice step: in a new session the remembered label reopens its link when another page shows", () => {
+  const first = voiceStep(lines, voiceStart(0), [said("writing scripts"), said("the big idea")], { links: LINKS });
+  assert.deepEqual([first.voice.final, first.voice.linkAt], [2, 1]);
+  const fresh = voiceSession(first.voice);
+  const r = voiceStep(lines, fresh, [said("takes too long the big idea")], { links: LINKS, shownUrl: "https://other.test/" });
+  assert.equal(r.link?.key, "0:0", "result 0 of the new session is later than anything before");
+  assert.equal(r.voice.final, 1, "the new session's result is followed from 0");
+  assert.deepEqual(r.voice.follow, followWords(lines, first.voice.follow, speechWords("takes too long the big idea")));
+  const quiet = voiceStep(lines, fresh, [said("takes too long the big idea")], { links: LINKS, shownUrl: "https://big.test/" });
+  assert.equal(quiet.link, null, "already on the main screen: quiet");
+});
+
 test("voice session: a new session counts its results from 0 and keeps the place and the link", () => {
   const v = { follow: { line: 4, word: 1, heard: [], moved: true }, final: 6, linkKey: "0:1", linkAt: 5 };
   assert.deepEqual(voiceSession(v), { ...v, final: 0, linkAt: -1 });
