@@ -255,7 +255,7 @@ test("cue resend: a cue whose first try failed is not sent again once a new scri
   assert.deepEqual(cam.paths(), ["cue"], "the old script's cue is not sent again");
   assert.equal(link.state, "on", "and its dropped retry counts as no miss");
 
-  // A newer cue sent while the older one waits for its second try: the camera keeps the newer one.
+  // A newer cue sent while the older one waits for its second try: the older cue is not sent again.
   cam.calls.length = 0;
   fails = 1;
   link.sendCue({ size: "small" });

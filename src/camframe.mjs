@@ -330,6 +330,7 @@ export function camframeLink({ fetch = globalThis.fetch, clock = globalThis, vis
       if (!current()) return;
       try { answer = await call("cue", c); } catch { /* not through: once more, then a miss */ }
     }
+    // A cue overtaken by a newer one or a new script is no news either way: the checks say how the link is.
     if (!current()) return;
     if (!answer) {
       // A miss like a status check's, news whatever check is still running.

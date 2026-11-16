@@ -1222,6 +1222,16 @@ export async function run({ browser, base, mode, dist, out }) {
   await releaseUnpack();
   assert.equal(await shownTitle(), "LINK THREE", "the older link never opens over the newer one");
   assert.equal(await page.evaluate(() => location.hash), linkThree);
+  // A damaged link that fails to unpack after a newer link opened says nothing and changes nothing.
+  await page.evaluate((one) => { history.pushState(null, "", "#s=AAAA"); history.pushState(null, "", one); }, linkOne);
+  await slowUnpack();
+  await page.evaluate(() => history.back()); // the damaged link: its unpacking waits
+  await page.waitForFunction(() => window.__unpacking);
+  await page.evaluate(() => history.forward()); // LINK ONE, unpacked at once
+  await page.waitForFunction(() => document.querySelector(".section .title span")?.textContent === "LINK ONE");
+  await releaseUnpack();
+  assert.equal(await shownTitle(), "LINK ONE", "the damaged link never brings the start screen back");
+  assert.equal(await page.locator(".note-row.alert").isVisible(), false, "and shows no alert over the newer script");
   await slowUnpack();
   await page.evaluate(() => history.back()); // LINK TWO again: its unpacking waits
   await page.waitForFunction(() => window.__unpacking);
@@ -1230,7 +1240,23 @@ export async function run({ browser, base, mode, dist, out }) {
   await releaseUnpack();
   assert.equal(await page.locator(".empty").isVisible(), true, "the older link never opens over the start screen");
   assert.equal(await page.evaluate(() => location.hash), "", "the start screen keeps its clean address");
-  ok("two links opened fast in a row: only the newest opens, even when the older one finishes unpacking last (and the start screen stays when it came after)");
+  // A file still being read: a script pasted meanwhile stays, and the file never opens over it.
+  await page.evaluate(() => {
+    const real = Blob.prototype.text;
+    const gate = new Promise((done) => { window.__releaseRead = done; });
+    Blob.prototype.text = async function () { Blob.prototype.text = real; await gate; return real.call(this); };
+  });
+  await page.locator(".file-input").setInputFiles({ name: "slow.md", mimeType: "text/markdown", buffer: Buffer.from("### **SLOW FILE · 00:00**\n\nThe slow file.") });
+  await pasteFromStart("PASTED MEANWHILE");
+  await page.waitForFunction(() => location.hash.startsWith("#s="));
+  const pastedLink = await page.evaluate(() => location.hash);
+  await page.evaluate(async () => {
+    window.__releaseRead();
+    for (let i = 0; i < 20; i++) await new Promise((done) => { setTimeout(done, 10); });
+  });
+  assert.equal(await shownTitle(), "PASTED MEANWHILE", "the file read before it never opens over it");
+  assert.equal(await page.evaluate(() => location.hash), pastedLink, "and the address keeps its link");
+  ok("two links opened fast in a row: only the newest opens, even when the older one finishes unpacking last (the start screen stays when it came after, a damaged older link says nothing, and a file still being read never opens over a newer script)");
 
   // Browser storage that cannot keep the last script: a short note naming it, just under Continue.
   const failSave = (failing) => page.evaluate((k) => {
