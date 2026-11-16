@@ -1,7 +1,8 @@
 // The reading line: where it sits on screen, and what of the script has reached it.
 // The page asks it "what is at the line" (the section, the link reached in it, the camera cues
-// above it, the spoken line) and "bring this to the line". However many scrolls, wheels and
-// moves ask in one animation frame, it looks once in that frame. A look measures only the
+// above it, the spoken line) and "bring this to the line". However many scrolls and wheels ask
+// in one animation frame, it looks once in that frame; a move by the reader (the line dragged,
+// a section jump, line spacing) looks at once, so it follows without waiting. A look measures only the
 // answers read from it, each once, and finds each by halving: the script's elements of one
 // kind sit top to bottom in page order, so a look reads a handful of positions, not every line.
 // Inlined into the page by scripts/build.mjs (no imports; `export function`/`export const` only).

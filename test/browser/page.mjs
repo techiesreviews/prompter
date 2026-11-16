@@ -1170,11 +1170,18 @@ export async function run({ browser, base, mode, dist, out }) {
   await saveWorks();
   await page.evaluate(() => localStorage.clear());
   await failSave("prompter-last-script");
-  await pasteFromStart("FIFTH");
+  const LONG = "ALEKSANDRA WIŚNIEWSKA-KOWALCZYK’S QUARTERLY REVIEW 四半期レビュー 🎬";
+  await pasteFromStart(LONG);
   await backToStart();
   assert.equal(await card.locator(".continue").isVisible(), false);
-  assert.equal(await note.textContent(), "Couldn’t save “FIFTH” on this device");
+  assert.equal(await note.textContent(), `Couldn’t save “${LONG}” on this device`);
   assert.equal(await card.locator(".choices > :not([hidden])").first().evaluate((el) => el.classList.contains("save-note")), true, "first in the list");
+  await page.setViewportSize({ width: 320, height: 700 });
+  assert.deepEqual(await page.evaluate(() => {
+    const n = document.querySelector(".save-note").getBoundingClientRect();
+    const c = document.querySelector(".empty .card").getBoundingClientRect();
+    return [document.documentElement.scrollWidth <= innerWidth, n.left >= c.left && n.right <= c.right];
+  }), [true, true], "a long name wraps inside the card at 320px, no sideways scroll");
   await page.setViewportSize(MOBILE.viewport);
   await closeUp(page, ".empty .card", "save-note-close-up-mobile");
   await page.setViewportSize(DESKTOP.viewport);
