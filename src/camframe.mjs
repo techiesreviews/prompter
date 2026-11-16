@@ -14,6 +14,10 @@ export const CAMFRAME_MISSES = 3;
 export const CAMFRAME_RETRY_MS = [1000, 2000];
 /** The wait before a cue that did not get through is sent once more. */
 export const CUE_RETRY_MS = 400;
+/** The usual status check, while the page is in view. */
+export const CAMFRAME_CHECK_MS = 10_000;
+/** A cue waits this long at the reading line, so scrolling fast past cues sends only the last. */
+export const CUE_SETTLE_MS = 250;
 
 /**
  * Ask CamFrame: `camframeCall("status")` for { app, version, scenes, … },
@@ -21,8 +25,9 @@ export const CUE_RETRY_MS = 400;
  * `camframeCall("scenes", layout)` to save a camera layout. Resolves to
  * { ok, body } (ok false when CamFrame refused, with body.error and body.code);
  * rejects when CamFrame is not there, is turned off or the browser blocked it.
+ * `fetch` is the browser's, or a stand-in in tests.
  */
-export async function camframeCall(path, cue) {
+export async function camframeCall(path, cue, fetch = globalThis.fetch) {
   const init = cue
     ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cue) }
     : { method: "GET" };
@@ -233,4 +238,171 @@ export function layoutsWithSaved(status, scenes) {
     if (inDetails >= 0) details[inDetails] = scene; else details.push(scene);
   }
   return { ...status, scenes: names, sceneDetails: details };
+}
+
+const sceneNames = (body, fallback) => (Array.isArray(body.scenes) ? body.scenes.filter((n) => typeof n === "string") : fallback);
+
+/**
+ * The CamFrame link: status checks, quick retries after a miss, sessions, cues and the layout saves, in one
+ * place the page only draws. `fetch` and `clock` ({ setTimeout, clearTimeout, setInterval, clearInterval })
+ * are the browser's, or stand-ins in tests; `visible()` says whether the page is in view (the usual checks
+ * and quick retries run only then); `changed()` is called after each change, for the page to draw it.
+ *
+ * Read: `on`, `state` (off, looking, on when CamFrame answered, reconnecting after a missed check or two,
+ * lost after several in a row), `misses`, `session` (counts turns on and off, so an answer or cue from
+ * before is not news after), `scenes` (CamFrame's Scene names), `layouts` (CamFrame's last status when it
+ * can save layouts, else null), `problem` (how the last layout save ended, "" when well) and `saving`.
+ * Do: `turn(on)`, `check()`, `cue(cue, stillThere)` (sends it once it settled at the reading line),
+ * `dropCue()` (a new script: a cue still waiting goes), `sendCue(cue)`.
+ */
+export function camframeLink({ fetch = globalThis.fetch, clock = globalThis, visible = () => true, changed = () => {} } = {}) {
+  // Plain calls: a browser's timers refuse to run on any other object.
+  const { setTimeout: later, clearTimeout: cancel, setInterval: every, clearInterval: stop } = clock;
+  const call = (path, body) => camframeCall(path, body, fetch);
+  const link = { on: false, state: "off", misses: 0, session: 0, scenes: [] };
+  let seq = 0; // only the newest check counts: an older answer landing late is dropped
+  let timer = 0;
+  let retry = 0;
+  let cueTimer = 0;
+  // Camera layouts: the last status when it can save layouts (API 2), the session the layouts were last
+  // saved for by themselves (once per session), a save under way (`busy` is the session it runs for, -1:
+  // none, so a save left from before the link was turned off and on never holds up the new session's) and
+  // the problem it ended with.
+  const layouts = { status: null, busy: -1, auto: -1, problem: "" };
+  const saving = () => layouts.busy === link.session;
+  const set = (patch) => { Object.assign(link, patch); changed(); };
+
+  function turn(on) {
+    link.on = on;
+    seq++;
+    link.session++;
+    stop(timer);
+    cancel(retry);
+    layouts.status = null;
+    layouts.problem = "";
+    link.scenes = [];
+    if (!on) { set({ state: "off", misses: 0 }); return; }
+    set({ state: "looking", misses: 0 });
+    check();
+    timer = every(() => { if (visible()) check(); }, CAMFRAME_CHECK_MS);
+  }
+
+  async function check() {
+    if (!link.on) return;
+    cancel(retry);
+    const n = ++seq;
+    let body = null;
+    try { ({ body } = await call("status")); } catch { /* a miss */ }
+    if (link.on && n === seq) {
+      afterCheck(body);
+      if (body) {
+        link.scenes = sceneNames(body, []);
+        seeLayouts(body);
+      }
+    }
+  }
+
+  // A missed check or two only say reconnecting and check again soon; several in a row say not found.
+  function afterCheck(body) {
+    cancel(retry);
+    const next = camframeAfterCheck(link.state, link.misses, Boolean(body));
+    set({ state: next.state, misses: next.misses });
+    // Like the usual checks, only while the page is in view; those pick it up again after.
+    if (next.retry >= 0) retry = later(() => { if (visible()) check(); }, next.retry);
+  }
+
+  function cue(c, stillThere) {
+    if (!link.on) return;
+    cancel(cueTimer);
+    cueTimer = later(() => { if (stillThere()) sendCue(c); }, CUE_SETTLE_MS);
+  }
+
+  // A cue that does not get through is sent once more; then it counts as a missed check.
+  async function sendCue(c) {
+    const session = link.session;
+    const current = () => link.on && link.session === session;
+    let answer = null;
+    for (let tries = 0; tries < 2 && !answer; tries++) {
+      if (tries) await new Promise((done) => { later(done, CUE_RETRY_MS); });
+      if (!current()) return;
+      try { answer = await call("cue", c); } catch { /* not through: once more, then a miss */ }
+    }
+    if (!current()) return;
+    if (!answer) {
+      // A miss like a status check's, news whatever check is still running.
+      seq++;
+      afterCheck(null);
+      return;
+    }
+    // CamFrame answered (switched, or refused with its reason): it is there.
+    if (link.state !== "on") { check(); return; }
+    set({ misses: 0 });
+  }
+
+  // When a CamFrame that can save layouts connects, the missing layouts are saved by themselves, once per
+  // session (layoutPlan says which may go).
+  function seeLayouts(body) {
+    layouts.status = layoutsSupported(body) ? body : null;
+    // A problem from an earlier save goes once nothing is missing, or for an older CamFrame.
+    if (!layouts.status || (!saving() && !layoutPlan(layouts.status).rows.some((r) => r.state === "missing"))) layouts.problem = "";
+    if (layouts.status && layouts.auto !== link.session) saveLayouts();
+    changed();
+  }
+
+  // No automatic second try: a save whose answer was lost may have worked, so the status is read again instead.
+  async function saveLayouts() {
+    if (saving() || !layouts.status) return;
+    const session = link.session;
+    const current = () => link.on && link.session === session;
+    const plan = layoutPlan(layouts.status);
+    layouts.auto = session;
+    if (!plan.auto.length) { changed(); return; }
+    layouts.busy = session;
+    layouts.problem = "";
+    seq++; // a status check sent before this save says nothing about after it
+    changed();
+    let problem = "";
+    const yes = []; // what CamFrame said it saved
+    for (const scene of plan.auto) {
+      let answer = null;
+      try { answer = await call("scenes", scene); } catch { /* lost: the status says */ }
+      if (!current()) { if (layouts.busy === session) layouts.busy = -1; changed(); return; }
+      if (answer?.ok && answer.body?.scene) yes.push(answer.body.scene);
+      if (answer?.ok || answer?.body?.code === "scene-exists") continue; // saved meanwhile: the status says what it holds
+      problem = layoutProblem(answer);
+      if (answer) break;
+    }
+    seq++; // this status read is the news: a check still on its way is older
+    let body = null;
+    try { ({ body } = await call("status")); } catch { /* not there */ }
+    if (layouts.busy === session) layouts.busy = -1;
+    if (!current()) { changed(); return; }
+    if (body) { layouts.status = layoutsSupported(body) ? body : null; link.scenes = sceneNames(body, link.scenes); }
+    // The read missed: CamFrame's yes to a save counts for now (unless it answers as an older one by now).
+    else if (layouts.status) layouts.status = layoutsWithSaved(layouts.status, yes);
+    afterCheck(body); // this read is a check like any other: a miss checks again soon, an answer ends reconnecting
+    const after = layouts.status && layoutPlan(layouts.status);
+    // Nothing is claimed that the status does not show: a layout still missing after the saves says so.
+    const stillMissing = after?.rows.some((r) => plan.auto.some((w) => w.name === r.name) && r.state === "missing");
+    if (!stillMissing) problem = "";
+    else if (!problem) problem = body ? "" : layoutProblem(null); // an answered status that still lacks it is shown by the line itself
+    layouts.problem = after ? problem : "";
+    changed();
+  }
+
+  return {
+    get on() { return link.on; },
+    get state() { return link.state; },
+    get misses() { return link.misses; },
+    get session() { return link.session; },
+    get scenes() { return link.scenes; },
+    get layouts() { return layouts.status; },
+    get problem() { return layouts.problem; },
+    get saving() { return saving(); },
+    turn,
+    check,
+    cue,
+    dropCue: () => { cancel(cueTimer); },
+    sendCue,
+  };
 }
