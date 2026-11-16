@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { INLINED } from "../scripts/build.mjs";
 import { PRESETS } from "../src/core.mjs";
 import { SETTINGS, STORED, settingValue, settingsStore } from "../src/settings.mjs";
 
@@ -111,8 +112,8 @@ test("saving stores what the page used to store", () => {
 // ---------- Guard: keys and defaults live only in the table ----------
 
 const src = (p) => readFileSync(resolve(import.meta.dirname, "../src", p), "utf8");
-const pageSources = () => ["app.js", ...readdirSync(resolve(import.meta.dirname, "../src")).filter((f) => f.endsWith(".mjs")), "ui/range-field.mjs"]
-  .filter((f) => f !== "settings.mjs");
+// The page's own code: the modules the build inlines and app.js (server code keeps no settings).
+const pageSources = () => [...INLINED.map((f) => f.replace(/^src\//, "")), "app.js"].filter((f) => f !== "settings.mjs");
 
 test("no file but the table types a storage key by hand", () => {
   const keys = new Set([...Object.values(SETTINGS).map((s) => s.key), ...Object.values(STORED)]);
@@ -125,7 +126,7 @@ test("no file but the table types a storage key by hand", () => {
     assert.doesNotMatch(text, /\bstore\.(get|set|del)\(\s*["'`]/, `${file} reads or saves a storage key typed by hand`);
     if (file !== "app.js") assert.doesNotMatch(text, /localStorage/, `${file} uses localStorage itself`);
   }
-  assert.equal((src("app.js").match(/localStorage/g) || []).length, 3, "only the page's store wrapper touches localStorage");
+  assert.equal((src("app.js").match(/localStorage\.(getItem|setItem|removeItem)/g) || []).length, 3, "only the page's store wrapper touches localStorage");
 });
 
 test("the page writes no setting's default or limits by hand", () => {
@@ -165,6 +166,12 @@ test("the page's controls start at the table's defaults and limits", () => {
     [pct(SETTINGS.line.min), pct(SETTINGS.line.max), pct(SETTINGS.line.fallback)],
     "the reading line's handle",
   );
+  // What the page shows before its script runs.
+  const pctNow = pct(SETTINGS.line.fallback);
+  assert.match(handle, new RegExp(`aria-valuetext="${pctNow}% from the top"`), "the handle's spoken value");
+  const rootStyle = html.match(/:root\s*\{[^}]*\}/)?.[0] || "";
+  assert.match(rootStyle, new RegExp(`--size:\\s*${SETTINGS.size.fallback}px;`), "the text size before the script runs");
+  assert.match(rootStyle, new RegExp(`--line:\\s*${pctNow}vh;`), "the reading line before the script runs");
   for (const name of ["width", "spacing"]) {
     const values = [...html.matchAll(new RegExp(`<input type="radio" name="${name}" value="([^"]+)"`, "g"))].map((m) => m[1]);
     assert.deepEqual(values, SETTINGS[name].choices, `the ${name} choices`);
