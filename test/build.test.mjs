@@ -115,6 +115,7 @@ test("an inlined module may import from one inlined before it; the build drops t
   assert.throws(() => pageScript(["src/b.mjs"], () => 'import { X } from "./x.mjs";\n'), /not inlined before it/);
   assert.throws(() => pageScript(["src/b.mjs"], () => 'import X from "./x.mjs";\n'), /must not import anything/, "only named imports of an inlined module");
   assert.throws(() => pageScript(["src/b.mjs"], () => 'import { X } from "node:fs";\n'), /must not import anything/);
+  assert.throws(() => pageScript(["src/a.mjs", "src/b.mjs"], (file) => ({ ...files, "src/b.mjs": 'import { A as Z } from "./a.mjs";\nexport const B = Z;\n' })[file]), /an aliased import .* cannot be inlined/, "the page shares one scope: no new names");
   // The page's tab link reads the wire list this way.
   assert.ok(INLINED.indexOf("src/wire.mjs") >= 0 && INLINED.indexOf("src/wire.mjs") < INLINED.indexOf("src/relay-link.mjs"));
 });

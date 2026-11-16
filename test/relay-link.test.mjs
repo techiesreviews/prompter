@@ -154,7 +154,7 @@ test("a second press while the token is on its way does nothing", async () => {
 });
 
 test("a spare token fetched ahead is used while it is younger than ten minutes", async () => {
-  const { link, tokens, time } = setup();
+  const { link, tokens } = setup();
   link.prefetchToken();
   link.prefetchToken(); // one fetch at a time
   await flush();
@@ -170,7 +170,6 @@ test("a spare token fetched ahead is used while it is younger than ten minutes",
   await late.time.advance(SPARE_TOKEN_MS);
   assert.equal(await late.link.waitForAgent(), "tp1-tok-2", "a spare ten minutes old is dropped for a new one");
   assert.equal(late.tokens.calls.length, 2);
-  void time;
 });
 
 test("a press during the spare's fetch waits for that same fetch", async () => {
@@ -371,10 +370,29 @@ test("a revoke socket that never opens is closed after 5 s", async () => {
 
 test("each change is drawn", async () => {
   const { link, ws, draws } = setup();
-  const before = draws();
+  let seen = draws();
+  const drawn = (what) => { assert.ok(draws() > seen, what); seen = draws(); };
   await link.waitForAgent();
+  drawn("waiting");
   ws.last().open();
   ws.last().receive({ type: "agent", name: "Claude" });
+  drawn("on");
   ws.last().drop(RELAY_CLOSE.elsewhere);
-  assert.ok(draws() - before >= 3);
+  drawn("elsewhere");
+  link.useHere();
+  drawn("use this tab");
+  ws.last().drop(RELAY_CLOSE.forget);
+  drawn("forgotten");
+});
+
+test("Use this tab after the token's eight hours drops it like Disconnect MCP", async () => {
+  const { link, ws, time, store } = setup();
+  await link.waitForAgent();
+  ws.last().drop(RELAY_CLOSE.elsewhere);
+  await time.advance(TOKEN_MAX_AGE_MS);
+  link.useHere();
+  assert.deepEqual([link.state, link.token, store.get(AGENT_KEY)], ["off", null, null]);
+  assert.equal(ws.sockets.length, 2, "the only new socket carries the revoke");
+  ws.last().open();
+  assert.deepEqual(ws.last().sent, [{ type: "revoke" }]);
 });

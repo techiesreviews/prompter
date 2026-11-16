@@ -1,6 +1,8 @@
-// The live relay's wire: what the open prompter tab, the Worker and the relay say to each other, in one
-// list all three read (src/relay-link.mjs in the tab, src/worker.mjs and src/relay.mjs on the server), so
-// a renamed code or message breaks a test instead of the live link. scripts/build.mjs inlines this file
+// The live relay's wire between the open prompter tab and the server: the two paths, the socket's
+// subprotocol and close codes, and the messages on that socket, in one list all three ends read
+// (src/relay-link.mjs in the tab, src/worker.mjs and src/relay.mjs on the server), so a renamed code or
+// message breaks a test instead of the live link. (The MCP endpoint's calls into the relay, src/mcp.mjs
+// to `op` in src/relay.mjs, are server-only and not part of it.) scripts/build.mjs inlines this file
 // into the page, so keep it import-free and use only `export function`/`export const` forms.
 
 /** The WebSocket subprotocol the tab asks for and the relay answers with. */

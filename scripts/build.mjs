@@ -1,7 +1,6 @@
 #!/usr/bin/env node
-// Builds dist/: one self-contained index.html (core, follow, speech, agent, the relay's wire list and tab link, camframe,
-// the reading line, the range field + app
-// inlined, and the range field's styles), the _headers file whose
+// Builds dist/: one self-contained index.html (core, follow, speech, agent, the relay's wire list and tab
+// link, camframe, the reading line, the range field + app inlined, and the range field's styles), the _headers file whose
 // Content-Security-Policy pins that inline script's hash, and the two font files
 // (the page falls back to system fonts without them).
 // Usage: node scripts/build.mjs [outDir=dist] [--host <host> | --host=<host>]
@@ -29,7 +28,8 @@ export const UI_CSS = ["src/ui/range-field.css"];
 /** Inline the page script: the shared modules, then the app, in one function scope. */
 export function pageScript(files = INLINED, source = read) {
   const modules = files.map((file, i) => {
-    const code = source(file).replace(/^import \{[^}]*\} from "(\.\.?\/[^"]+)";[ \t]*\n/gm, (line, spec) => {
+    const code = source(file).replace(/^import \{([^}]*)\} from "(\.\.?\/[^"]+)";[ \t]*\n/gm, (line, names, spec) => {
+      if (/\bas\b/.test(names)) throw new Error(`${file}: an aliased import (${line.trim()}) cannot be inlined`);
       if (!files.slice(0, i).includes(posix.join(posix.dirname(file), spec))) throw new Error(`${file} imports ${spec}, which is not inlined before it`);
       return "";
     });
