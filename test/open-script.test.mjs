@@ -107,6 +107,24 @@ test("a script that has gone is no longer the open one, so its late answers chan
   assert.equal(scripts.current(b), false, "B, after the start screen");
 });
 
+test("only the newest request to open a script may open: a newer request, script or start screen makes an older one stale", () => {
+  const { clock } = fakeClock();
+  const scripts = openScripts({ clock });
+  const first = scripts.ask(); // a link still being unpacked
+  const second = scripts.ask(); // a second link, asked for just after
+  assert.equal(first(), false, "the first link, once the second was asked for");
+  assert.equal(second(), true);
+  scripts.open({ text: "B", sections: SECTIONS_B }); // the second link opened, before the first finished unpacking
+  assert.equal(first(), false, "the first link stays stale after the second opened");
+  const third = scripts.ask();
+  scripts.open({ text: "A", sections: SECTIONS_A }); // a script pasted while the third link unpacks
+  assert.equal(third(), false, "a script opened after the request");
+  const fourth = scripts.ask();
+  scripts.close(); // the start screen
+  assert.equal(fourth(), false, "the start screen shown after the request");
+  assert.equal(scripts.ask()(), true, "a request with nothing after it may open");
+});
+
 test("a link waiting to go on the main screen dies with its script", () => {
   const time = fakeClock();
   const scripts = openScripts({ clock: time.clock });

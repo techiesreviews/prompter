@@ -5,7 +5,7 @@
 // two more tools reach the person's open prompter tab through their relay
 // (see relay.mjs): show_script and get_open_script. Their scripts pass
 // through memory only. Without a token /mcp stays open and stateless.
-import { check, describeProblems, formatGuide, makeLink, MAX_SCRIPT_CHARS, PRESETS, savedDate } from "./core.mjs";
+import { check, describeProblems, formatGuide, isPreset, makeLink, MAX_SCRIPT_CHARS, PRESET_NAMES, savedDate } from "./core.mjs";
 import { agentInfo, fromOtherSite, memoryLimiter, refusedBy } from "./guard.mjs";
 import { checkToken } from "./token.mjs";
 
@@ -24,7 +24,7 @@ const CORS = {
   "Access-Control-Max-Age": "86400",
 };
 
-const presetSchema = { type: "string", enum: Object.keys(PRESETS), description: "Style rules: \"lex\" (strict, five-word lines) or \"default\" (softer). Default: \"default\"." };
+const presetSchema = { type: "string", enum: PRESET_NAMES, description: "Style rules: \"lex\" (strict, five-word lines) or \"default\" (softer). Default: \"default\"." };
 const markdownSchema = { type: "string", description: `The prompter script in Markdown (at most ${MAX_SCRIPT_CHARS} characters).` };
 const savedSchema = { type: "string", description: "The day the script was last saved, as YYYY-MM-DD (for example the script file's own date). The prompter's start screen shows it, so an old copy is easy to spot. Optional; without it no date is shown." };
 const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
@@ -84,7 +84,7 @@ export const PROMPTS = [
 ];
 
 function writePrompt(topic, presetName, live) {
-  const preset = PRESETS[presetName] ? presetName : "default";
+  const preset = isPreset(presetName) ? presetName : "default";
   return `Help me write a teleprompter script for a video about: ${topic}
 
 Work like this:
@@ -116,7 +116,7 @@ function toolError(message) {
 function scriptArg(args) {
   if (typeof args.markdown !== "string" || !args.markdown.trim()) return { error: "\"markdown\" must be the script text." };
   if (args.markdown.length > MAX_SCRIPT_CHARS) return { error: `The script is longer than ${MAX_SCRIPT_CHARS} characters.` };
-  if (args.preset !== undefined && !PRESETS[args.preset]) return { error: `Unknown preset "${args.preset}". Use ${Object.keys(PRESETS).join(" or ")}.` };
+  if (args.preset !== undefined && !isPreset(args.preset)) return { error: `Unknown preset "${args.preset}". Use ${PRESET_NAMES.join(" or ")}.` };
   if (args.saved !== undefined && savedDate(args.saved) === null) return { error: "\"saved\" must be a date like 2026-11-10 (year-month-day), the day the script was saved." };
   return { markdown: args.markdown, preset: args.preset || "default", saved: args.saved };
 }
@@ -140,14 +140,14 @@ async function callTool(name, args, { origin, relay }) {
     if (!r.result.open || typeof r.result.markdown !== "string") {
       return { content: [text("No script is open in the prompter: it shows the start screen.")], structuredContent: { open: false } };
     }
-    const preset = PRESETS[r.result.preset] ? r.result.preset : "default";
+    const preset = isPreset(r.result.preset) ? r.result.preset : "default";
     return {
       content: [text(`The script open in the prompter (preset "${preset}"):\n\n${r.result.markdown}`)],
       structuredContent: { open: true, preset, markdown: r.result.markdown },
     };
   }
   if (name === "get_format") {
-    if (args.preset !== undefined && !PRESETS[args.preset]) return toolError(`Unknown preset "${args.preset}".`);
+    if (args.preset !== undefined && !isPreset(args.preset)) return toolError(`Unknown preset "${args.preset}".`);
     return { content: [text(formatGuide(args.preset || "default"))] };
   }
   const input = scriptArg(args);

@@ -2,7 +2,7 @@
 // limits or choices. Reading at start-up and saving both go through it, so a default or a limit
 // changes in one place. The keys are the ones the live site has always used: renaming one would
 // lose what people saved. Inlined into the page after core.mjs (scripts/build.mjs).
-import { PRESETS } from "./core.mjs";
+import { PRESET_NAMES } from "./core.mjs";
 
 /**
  * Each setting: `key` in the store; `fallback`, its default; numbers have `min` and `max` (`whole`: rounded,
@@ -16,7 +16,7 @@ export const SETTINGS = {
   spacing: { key: "prompter-spacing", fallback: "normal", choices: ["normal", "roomy", "spacious"], quiet: true },
   // The reading line, as a share of the window height from the top; the maximum keeps it clear of the control bar.
   line: { key: "prompter-line", fallback: 0.34, min: 0.08, max: 0.75, digits: 4 },
-  preset: { key: "prompter-preset", fallback: "default", choices: Object.keys(PRESETS) },
+  preset: { key: "prompter-preset", fallback: "default", choices: PRESET_NAMES },
   camframe: { key: "prompter-camframe", fallback: false, on: "on" },
   voiceOk: { key: "prompter-voice-ok", fallback: false, on: "yes" }, // the speech notice was accepted
 };

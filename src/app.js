@@ -207,12 +207,16 @@ async function route() {
   const hash = location.hash;
   if (hash.startsWith("#s=") || hash.includes("&s=")) {
     const { data, preset: p, saved } = readHash(hash);
+    // Unpacking takes a moment: a newer link (Back, then Forward), script or start screen that comes first wins.
+    const newest = scripts.ask();
     let text;
     try { text = await decodeScript(data || ""); } catch (error) {
+      if (!newest()) return;
       showStart();
       showAlert(`This link could not be opened: ${error.message}`);
       return;
     }
+    if (!newest()) return;
     // Only a link that opens a script brings its preset; a link without &p= was made for the default one.
     if (parse(text).length) {
       preset = prefs.save("preset", p);
@@ -1128,7 +1132,10 @@ async function loadFile(file) {
   if (!file) return;
   if (file.size > MAX_DECODED_BYTES) { showAlert("That file is too large for a script."); return; }
   const saved = localDay(file.lastModified); // read now: a slow file (cloud) can take a while to read
-  if (await openScript(await file.text(), { label: `Loaded ${file.name}`, saved })) showAlert("");
+  const newest = scripts.ask();
+  const text = await file.text();
+  if (!newest()) return; // a newer file, link, script or the start screen came while it was read
+  if (await openScript(text, { label: `Loaded ${file.name}`, saved })) showAlert("");
   else showAlert(`No sections found in ${file.name}. Each section starts with a title line like: ### **INTRO · 00:00**`);
 }
 

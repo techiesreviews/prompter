@@ -240,6 +240,43 @@ test("cue resend: a cue that does not get through goes once more after 400 ms; t
   assert.equal(link.state, "on");
 });
 
+test("cue resend: a cue whose first try failed is not sent again once a new script opens (dropCue) or a newer cue goes", async () => {
+  const cam = fakeCamFrame();
+  const { link, time } = linkWith(cam);
+  link.turn(true);
+  await time.advance(0);
+  cam.calls.length = 0;
+  let fails = 1;
+  cam.reply = (path) => (path === "cue" && fails-- > 0 ? { body: "not json" } : null);
+  link.sendCue({ size: "small" });
+  await time.advance(0);
+  link.dropCue(); // a new script opened before the second try
+  await time.advance(CUE_RETRY_MS);
+  assert.deepEqual(cam.paths(), ["cue"], "the old script's cue is not sent again");
+  assert.equal(link.state, "on", "and its dropped retry counts as no miss");
+
+  // A newer cue sent while the older one waits for its second try: the older cue is not sent again.
+  cam.calls.length = 0;
+  fails = 1;
+  link.sendCue({ size: "small" });
+  await time.advance(0);
+  link.sendCue({ size: "full" });
+  await time.advance(CUE_RETRY_MS);
+  assert.deepEqual(cam.calls.map((c) => c.body), [{ size: "small" }, { size: "full" }], "the older cue's second try is dropped");
+
+  // A newer cue reaching the reading line while the older one waits for its second try: the older one is
+  // not sent again while the newer one settles, and the newer one goes once it has.
+  cam.calls.length = 0;
+  fails = 1;
+  link.sendCue({ size: "small" });
+  await time.advance(300);
+  link.cue({ size: "full" }, () => true);
+  await time.advance(CUE_RETRY_MS - 300);
+  assert.deepEqual(cam.calls.map((c) => c.body), [{ size: "small" }], "no second try for the older cue");
+  await time.advance(CUE_SETTLE_MS);
+  assert.deepEqual(cam.calls.map((c) => c.body), [{ size: "small" }, { size: "full" }], "the newer cue went after settling");
+});
+
 test("cue resend after reconnect: a cue answered while reconnecting checks the status, which connects again", async () => {
   const cam = fakeCamFrame();
   const { link, time } = linkWith(cam);

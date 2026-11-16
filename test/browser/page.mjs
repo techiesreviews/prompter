@@ -1188,6 +1188,76 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await page.evaluate(() => location.hash), "", "Back from it returns to the start screen");
   ok("a script's link that is still being packed never lands late: a newer script, or the start screen, keeps the address (no older script comes back on reload)");
 
+  // Unpacking a link's script takes a moment too. Two links opened fast in a row (Back, then Forward): only
+  // the newest may open, even when the older one finishes unpacking last; the same for the start screen.
+  const slowUnpack = () => page.evaluate(() => {
+    const Real = window.DecompressionStream;
+    window.__unpacking = false;
+    const gate = new Promise((done) => { window.__releaseUnpack = done; });
+    window.DecompressionStream = class {
+      constructor(format) {
+        window.DecompressionStream = Real; // only this one is slow
+        window.__unpacking = true;
+        const real = new Real(format);
+        this.writable = real.writable;
+        this.readable = real.readable.pipeThrough(new TransformStream({ start: () => gate }));
+      }
+    };
+  });
+  const releaseUnpack = () => page.evaluate(async () => {
+    window.__releaseUnpack();
+    for (let i = 0; i < 20; i++) await new Promise((done) => { setTimeout(done, 10); });
+  });
+  const shownTitle = () => page.locator(".section .title span").first().textContent();
+  const linkHash = async (title) => new URL(await makeLink(`### **${title} · 00:00**\n\nThe ${title.toLowerCase()} script.`, "default", base)).hash;
+  const [linkOne, linkTwo, linkThree] = await Promise.all(["LINK ONE", "LINK TWO", "LINK THREE"].map(linkHash));
+  await page.goto(`${base}/${linkOne}`);
+  await page.waitForFunction(() => document.querySelector(".section .title span")?.textContent === "LINK ONE");
+  await page.evaluate(([two, three]) => { history.pushState(null, "", two); history.pushState(null, "", three); }, [linkTwo, linkThree]);
+  await slowUnpack();
+  await page.evaluate(() => history.back()); // LINK TWO: its unpacking waits
+  await page.waitForFunction(() => window.__unpacking);
+  await page.evaluate(() => history.forward()); // LINK THREE, unpacked at once
+  await page.waitForFunction(() => document.querySelector(".section .title span")?.textContent === "LINK THREE");
+  await releaseUnpack();
+  assert.equal(await shownTitle(), "LINK THREE", "the older link never opens over the newer one");
+  assert.equal(await page.evaluate(() => location.hash), linkThree);
+  // A damaged link that fails to unpack after a newer link opened says nothing and changes nothing.
+  await page.evaluate((one) => { history.pushState(null, "", "#s=AAAA"); history.pushState(null, "", one); }, linkOne);
+  await slowUnpack();
+  await page.evaluate(() => history.back()); // the damaged link: its unpacking waits
+  await page.waitForFunction(() => window.__unpacking);
+  await page.evaluate(() => history.forward()); // LINK ONE, unpacked at once
+  await page.waitForFunction(() => document.querySelector(".section .title span")?.textContent === "LINK ONE");
+  await releaseUnpack();
+  assert.equal(await shownTitle(), "LINK ONE", "the damaged link never brings the start screen back");
+  assert.equal(await page.locator(".note-row.alert").isVisible(), false, "and shows no alert over the newer script");
+  await slowUnpack();
+  await page.evaluate(() => history.back()); // LINK TWO again: its unpacking waits
+  await page.waitForFunction(() => window.__unpacking);
+  await page.evaluate(() => { history.replaceState(null, "", location.pathname); window.dispatchEvent(new PopStateEvent("popstate")); });
+  await showsStart(page);
+  await releaseUnpack();
+  assert.equal(await page.locator(".empty").isVisible(), true, "the older link never opens over the start screen");
+  assert.equal(await page.evaluate(() => location.hash), "", "the start screen keeps its clean address");
+  // A file still being read: a script pasted meanwhile stays, and the file never opens over it.
+  await page.evaluate(() => {
+    const real = Blob.prototype.text;
+    const gate = new Promise((done) => { window.__releaseRead = done; });
+    Blob.prototype.text = async function () { Blob.prototype.text = real; await gate; return real.call(this); };
+  });
+  await page.locator(".file-input").setInputFiles({ name: "slow.md", mimeType: "text/markdown", buffer: Buffer.from("### **SLOW FILE · 00:00**\n\nThe slow file.") });
+  await pasteFromStart("PASTED MEANWHILE");
+  await page.waitForFunction(() => location.hash.startsWith("#s="));
+  const pastedLink = await page.evaluate(() => location.hash);
+  await page.evaluate(async () => {
+    window.__releaseRead();
+    for (let i = 0; i < 20; i++) await new Promise((done) => { setTimeout(done, 10); });
+  });
+  assert.equal(await shownTitle(), "PASTED MEANWHILE", "the file read before it never opens over it");
+  assert.equal(await page.evaluate(() => location.hash), pastedLink, "and the address keeps its link");
+  ok("two links opened fast in a row: only the newest opens, even when the older one finishes unpacking last (the start screen stays when it came after, a damaged older link says nothing, and a file still being read never opens over a newer script)");
+
   // Browser storage that cannot keep the last script: a short note naming it, just under Continue.
   const failSave = (failing) => page.evaluate((k) => {
     window.__setItem ||= Storage.prototype.setItem;

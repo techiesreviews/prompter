@@ -313,6 +313,14 @@ test("token: initialize passes the agent's name and version to the tab, cut shor
   assert.ok(relay.ops.every((o) => o.born === BORN), "every op carries the token's birth time");
 });
 
+test("token: an agent that sends no name is shown as \"agent\", with no version", async () => {
+  const relay = fakeRelay();
+  const r = await live("initialize", { protocolVersion: "2025-11-25", clientInfo: {} }, { relay });
+  assert.equal(r.status, 200);
+  const agent = relay.ops.find((o) => o.op === "agent");
+  assert.deepEqual([agent.name, agent.version], ["agent", ""]);
+});
+
 test("token: tools/list adds show_script and get_open_script to the open tools", async () => {
   const r = await live("tools/list");
   assert.deepEqual(r.body.result.tools.map((t) => t.name), ["get_format", "check_script", "make_prompter_link", "show_script", "get_open_script"]);
@@ -359,6 +367,21 @@ test("token: get_open_script returns the tab's script and preset, or that none i
   const none = await liveCall("get_open_script", {}, { relay: fakeRelay({ answers: { get_open_script: { open: false } } }) });
   assert.deepEqual(none.body.result.structuredContent, { open: false });
   assert.match(none.body.result.content[0].text, /start screen/);
+});
+
+test("a preset name an object has of its own (__proto__, toString) is refused or read as the default, like the settings table", async () => {
+  for (const name of ["__proto__", "toString", "hasOwnProperty", "constructor"]) {
+    assert.equal((await call("get_format", { preset: name })).isError, true, `get_format: ${name}`);
+    assert.equal((await call("check_script", { markdown: EXAMPLE_SCRIPT, preset: name })).isError, true, `check_script: ${name}`);
+    assert.equal((await call("make_prompter_link", { markdown: EXAMPLE_SCRIPT, preset: name })).isError, true, `make_prompter_link: ${name}`);
+    const refused = fakeRelay();
+    assert.equal((await liveCall("show_script", { markdown: EXAMPLE_SCRIPT, preset: name }, { relay: refused })).body.result.isError, true, `show_script: ${name}`);
+    assert.equal(refused.ops.some((o) => o.op === "call"), false, "it never reaches the tab");
+    const tab = fakeRelay({ answers: { get_open_script: { open: true, markdown: EXAMPLE_SCRIPT, preset: name } } });
+    assert.equal((await liveCall("get_open_script", {}, { relay: tab })).body.result.structuredContent.preset, "default", `get_open_script: ${name}`);
+    const prompt = (await rpc("prompts/get", { name: "write_prompter_script", arguments: { topic: "Bread", preset: name } })).result.messages[0].content.text;
+    assert.match(prompt, /get_format tool with preset "default"/, `write_prompter_script: ${name}`);
+  }
 });
 
 test("token: no tab, a slow tab and a tab error become tool errors", async () => {
