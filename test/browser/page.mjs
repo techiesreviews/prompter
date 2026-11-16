@@ -1182,6 +1182,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await pasteOver("QUICK SIX");
   await releasePack();
   assert.equal(await page.locator(".section .title span").first().textContent(), "QUICK SIX");
+  await page.waitForFunction(() => location.hash.startsWith("#s="));
   await page.goBack();
   await showsStart(page);
   assert.equal(await page.evaluate(() => location.hash), "", "Back from it returns to the start screen");
