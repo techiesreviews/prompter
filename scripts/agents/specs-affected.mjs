@@ -9,6 +9,7 @@ const either = (a, b) => new RegExp(`${a.source}|${b.source}`);
 export const REACHES = {
   "range-field": either(/^(src\/ui\/(?!.*\.md$)|test\/browser\/range-field\.mjs$)/, RUNNER),
   page: either(/^(src\/(?!.*\.md$)|fonts\/|scripts\/build\.mjs$|wrangler\.jsonc$|test\/browser\/page\.mjs$)/, RUNNER),
+  "reading-wrap": either(/^(src\/(page\.html|app\.js|core\.mjs|settings\.mjs)$|fonts\/|scripts\/build\.mjs$|test\/browser\/reading-wrap\.mjs$)/, RUNNER),
   "*": either(/^(src\/(?!.*\.md$)|test\/browser\/)/, RUNNER),
 };
 
