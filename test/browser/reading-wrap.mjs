@@ -11,7 +11,7 @@ Hello 👩🏽‍🚀 café é 中文 العربية.
 ${TOKEN}
 A real [plant guide](https://example.com/guide) here.
 
-### **LAST · 01:00**
+### **${TOKEN} · 01:00**
 
 The end.
 `;
@@ -33,7 +33,7 @@ export async function run({ browser, base, out }) {
       await page.locator('.empty [data-action="paste"]').click();
       await page.locator("#paste-text").fill(SCRIPT);
       await page.locator('[data-action="open-paste"]').click();
-      const paragraph = page.locator(".script p").filter({ hasText: TOKEN });
+      const paragraph = page.locator(".script p.say").filter({ hasText: TOKEN });
       await paragraph.waitFor();
       await page.evaluate(() => document.fonts.ready);
       const layout = await paragraph.evaluate((el) => {
@@ -54,6 +54,15 @@ export async function run({ browser, base, out }) {
       await page.screenshot({ path: file });
       screenshots.push(file);
       assert.equal(layout.text, TOKEN, "the original token is preserved exactly");
+      const titleFits = await page.locator(".title > span:first-child").last().evaluate((el) => {
+        const box = el.getBoundingClientRect();
+        const heading = el.parentElement.getBoundingClientRect();
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        return box.left >= heading.left - 1 && box.right <= heading.right + 1
+          && [...range.getClientRects()].every((r) => r.left >= box.left - 1 && r.right <= box.right + 1);
+      });
+      if (!titleFits) failures.push(`${viewport.width}px: the unbroken section title overflows its text box`);
       console.log(`PROM-01 ${viewport.width}px: ${JSON.stringify(layout)}`);
       if (layout.scrollWidth > layout.viewport + 1 || layout.lines <= 1 || !layout.fits) {
         failures.push(`${viewport.width}px: token has ${layout.lines} line(s); page ${layout.scrollWidth}px; column ${layout.column}px`);
