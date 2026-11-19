@@ -15,6 +15,9 @@ test("each change runs the browser suites it can reach, and docs run none", () =
   assert.deepEqual(reached("src/ui/range-field.css"), ["page", "range-field"], "the slider is on the page too");
   assert.deepEqual(reached("src/page.html"), ["page", "reading-wrap"]);
   assert.deepEqual(reached("src/app.js"), ["page", "reading-wrap"]);
+  assert.deepEqual(reached("src/core.mjs"), ["page", "reading-wrap"]);
+  assert.deepEqual(reached("src/settings.mjs"), ["page", "reading-wrap"]);
+  assert.deepEqual(reached("src/open-script.mjs"), ["page"]);
   assert.deepEqual(reached("fonts/inter-latin.woff2"), ["page", "reading-wrap"]);
   assert.deepEqual(reached("scripts/build.mjs"), ["page", "reading-wrap"]);
   assert.deepEqual(reached("wrangler.jsonc"), ["page"]);
