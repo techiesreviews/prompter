@@ -385,7 +385,9 @@ function placeStrip() {
     if (height <= above) return;
     if (height <= below) return bottom();
   }
-  if (below > above) bottom(); // no room either side: the larger one
+  // No room for even one-line slots on either side of the line (a tiny window): out of sight until there is,
+  // never over the line being read.
+  stripEl.dataset.place = "none";
 }
 
 function drawStrip() {
@@ -417,7 +419,11 @@ function drawStrip() {
   }
 }
 
-for (const b of stripSlots) b.addEventListener("click", () => { if (producer.use(b.dataset.kind)) drawStrip(); });
+for (const b of stripSlots) b.addEventListener("click", (e) => {
+  if (producer.use(b.dataset.kind)) drawStrip();
+  // A tap or click leaves no focus behind, so Space goes on meaning auto-scroll; keyboard focus stays.
+  if (e.detail > 0) b.blur();
+});
 window.addEventListener("resize", () => { if (!stripEl.hidden) placeStrip(); });
 new ResizeObserver(() => { if (!stripEl.hidden) placeStrip(); }).observe(main);
 
@@ -450,7 +456,7 @@ const liveLink = relayLink({
       if (input.error) return { error: input.error };
       const used = producer.push(input.slots);
       drawStrip();
-      return { result: { shown: !stripEl.hidden && !isEmpty(), used } };
+      return { result: { shown: !stripEl.hidden && !isEmpty() && stripEl.dataset.place !== "none", used } };
     },
     clear_suggestions() {
       const used = producer.clear();
@@ -1353,8 +1359,8 @@ document.addEventListener("keydown", (e) => {
   if (e.target.matches?.("input[type=range]") && k.startsWith("Arrow")) return;
   // The focused reading line keeps its keys (arrows, Page Up/Down, Home, End).
   if (e.target.closest(".line-handle") && LINE_KEYS.includes(k)) return;
-  // Space on these buttons presses them; on the control bar and the links it still means auto-scroll.
-  if (k === " " && e.target.closest(".note-row, .pop")) return;
+  // Space on these buttons (and a suggestion in the Producer's strip) presses them; on the control bar and the links it still means auto-scroll.
+  if (k === " " && e.target.closest(".note-row, .pop, .strip")) return;
   if (k === " ") { e.preventDefault(); toggleAuto(); }
   else if (k === "ArrowRight" || k === "PageDown") { e.preventDefault(); goSection(1); }
   else if (k === "ArrowLeft" || k === "PageUp") { e.preventDefault(); goSection(-1); }

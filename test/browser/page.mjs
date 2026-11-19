@@ -711,6 +711,22 @@ export async function run({ browser, base, mode, dist, out }) {
       ["hook", "Hook", "No hook right now", "Use", "false"],
     ]);
     assert.equal(await A.locator('.strip .sug[data-kind="hook"]').isDisabled(), true);
+    // Keyboard: Space on a focused suggestion uses it and leaves auto-scroll as it was; a click leaves no focus behind,
+    // so Space after a tap still means auto-scroll.
+    const autoState = () => A.locator(".dock-btn.auto").getAttribute("aria-pressed");
+    const autoBefore = await autoState();
+    await A.locator('.strip .sug[data-kind="point"]').focus();
+    await A.keyboard.press(" ");
+    assert.deepEqual([(await slotRows())[1][3], await autoState()], ["Used ✓", autoBefore], "Space uses the focused suggestion; scrolling unchanged");
+    await A.locator('.strip .sug[data-kind="question"]').click();
+    assert.equal(await A.evaluate(() => document.activeElement?.closest(".strip")), null, "a click leaves no focus in the strip");
+    assert.deepEqual((await agentCall(token, "push_suggestions", { question: "Where does WordPress keep a note of my login?", number: 7, point: "WordPress keeps a login for 2 days." })).structuredContent.used.map((u) => u.kind), ["point", "question"]);
+    // A tiny window (320×320) with no room for even one-line slots beside the line: out of sight, never over the line.
+    await A.setViewportSize({ width: 320, height: 320 });
+    await A.waitForFunction(() => document.querySelector(".strip").dataset.place === "none");
+    assert.equal(await strip.isVisible(), false);
+    await A.setViewportSize(DESKTOP.viewport);
+    await A.waitForFunction(() => document.querySelector(".strip").dataset.place === "top");
     const cleared = await agentCall(token, "clear_suggestions");
     assert.deepEqual(cleared.structuredContent, { cleared: true, used: [], asked: [] });
     await strip.waitFor({ state: "hidden" });

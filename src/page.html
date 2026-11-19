@@ -253,7 +253,7 @@
     position: fixed; z-index: 6; inset-block-start: 12px; inset-inline-end: 12px;
     inline-size: var(--strip-w, 290px); display: grid; gap: 8px; align-content: start;
   }
-  .strip[hidden], :root[data-view="empty"] .strip { display: none; }
+  .strip[hidden], .strip[data-place="none"], :root[data-view="empty"] .strip { display: none; }
   .strip:is([data-place="top"], [data-place="bottom"]) {
     --sug-h: 74px;
     inset: 8px 8px auto 8px; inline-size: auto; gap: 6px;
