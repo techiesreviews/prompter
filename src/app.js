@@ -1,8 +1,8 @@
 // Page logic. scripts/build.mjs inlines src/core.mjs, src/settings.mjs, src/follow.mjs,
-// src/open-script.mjs, src/speech.mjs, src/agent.mjs, src/wire.mjs, src/relay-link.mjs, src/camframe.mjs,
+// src/open-script.mjs, src/speech.mjs, src/agent.mjs, src/wire.mjs, src/relay-link.mjs, src/suggestions.mjs, src/camframe.mjs,
 // src/reading-line.mjs and src/ui/range-field.mjs above this file inside one function, so parse, PRESETS,
 // DEMO_SCRIPT, SETTINGS, STORED, settingValue, settingsStore, encodeScript, voiceStep, voiceStart, voiceSession, voiceAt, linkAt, openScripts, speechWords,
-// speechKeeper, connectionPrompt, agentName, RELAY_PATH, relayLink, camframeLink, cueCrossing, readingLine,
+// speechKeeper, connectionPrompt, agentName, RELAY_PATH, relayLink, readSuggestions, suggestionStrip, camframeLink, cueCrossing, readingLine,
 // rangeField … are in scope here.
 
 // ---------- Player view ----------
@@ -341,6 +341,59 @@ function showDialog(dialog) {
   dialog.showModal();
 }
 
+// ---------- The Producer's strip (src/suggestions.mjs, TOOLS-347) ----------
+// One question, one talking point and one hook the agent pushes while it is connected to the Producer.
+// It shows only while that agent is connected here and its pushes keep coming, and floats in slots of a
+// fixed size so the script never moves for it. A tap on Use marks a slot used; the agent's next push hears it.
+const producer = suggestionStrip();
+const stripEl = $(".strip");
+const stripSlots = [...stripEl.querySelectorAll(".sug")];
+const STRIP_MAX_W = 290;
+const STRIP_MIN_W = 196;
+let stripTimer = 0;
+
+// Beside the column when the room to the right of its text fits the strip (and the window is tall enough
+// for its three slots), else across the top, over text already read.
+function placeStrip() {
+  const box = main.getBoundingClientRect();
+  const room = window.innerWidth - (box.right - (parseFloat(getComputedStyle(main).paddingInlineEnd) || 0)) - 24;
+  const side = room >= STRIP_MIN_W && window.innerHeight >= 620;
+  stripEl.dataset.place = side ? "side" : "top";
+  if (side) stripEl.style.setProperty("--strip-w", `${Math.min(STRIP_MAX_W, Math.floor(room))}px`);
+  else stripEl.style.removeProperty("--strip-w");
+}
+
+function drawStrip() {
+  const show = live && liveLink.state === "on" && producer.shown();
+  clearTimeout(stripTimer);
+  // Hidden again by itself once the pushes stop.
+  if (show) stripTimer = setTimeout(drawStrip, producer.staleIn() + 50);
+  stripEl.hidden = !show;
+  if (!show) return;
+  placeStrip();
+  const slots = producer.slots;
+  for (const b of stripSlots) {
+    const s = slots[b.dataset.kind];
+    const words = s ? s.text : "Nothing right now";
+    const x = b.querySelector(".sug-x");
+    if (x.textContent !== words) {
+      // New words fade in inside the same slot.
+      x.textContent = words;
+      x.removeAttribute("data-fresh");
+      void x.offsetWidth;
+      x.setAttribute("data-fresh", "");
+    }
+    if (b.dataset.kind === "question") b.querySelector(".sug-k").textContent = s?.number ? `Question · Q${s.number}` : "Question";
+    b.disabled = !s;
+    b.setAttribute("aria-pressed", String(Boolean(s?.used)));
+    b.querySelector(".sug-use").textContent = s?.used ? "Used ✓" : "Use";
+  }
+}
+
+for (const b of stripSlots) b.addEventListener("click", () => { if (producer.use(b.dataset.kind)) drawStrip(); });
+window.addEventListener("resize", () => { if (!stripEl.hidden) placeStrip(); });
+new ResizeObserver(() => { if (!stripEl.hidden) placeStrip(); }).observe(main);
+
 // ---------- Your own agent over MCP (live relay) ----------
 // The link itself (token, socket, backoff, keepalive, tool calls) is relayLink in src/relay-link.mjs;
 // this part gives it the page's two tools and draws its state. An offline copy (file://) has no relay:
@@ -365,8 +418,25 @@ const liveLink = relayLink({
       await openScript(text, { label: `Opened from ${agentName(liveLink.info?.name)}`, saved: args.saved });
       return { result: { opened: true, sections: found } }; // this script's, even if another opened while it was packed
     },
+    push_suggestions(args) {
+      const input = readSuggestions(args);
+      if (input.error) return { error: input.error };
+      const used = producer.push(input.slots);
+      drawStrip();
+      return { result: { shown: !stripEl.hidden && !isEmpty(), used } };
+    },
+    clear_suggestions() {
+      const used = producer.clear();
+      drawStrip();
+      return { result: { used } };
+    },
   },
-  changed: () => renderAgent(),
+  changed: () => {
+    // Disconnect MCP (or the token's end) also ends the strip: nobody is left to hear its taps.
+    if (liveLink.state === "off") producer.clear();
+    renderAgent();
+    drawStrip();
+  },
 });
 // "Copied" with a check for two seconds after a copy.
 const copied = { on: false, timer: 0 };
