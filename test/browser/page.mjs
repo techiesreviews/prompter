@@ -687,10 +687,22 @@ export async function run({ browser, base, mode, dist, out }) {
     assert.ok(laptop.y > await lineTop() + 8 && laptop.y + laptop.height <= await barShown(), `1366×768 at 8%: ${JSON.stringify(laptop)}`);
     await A.locator(".line-handle").dblclick();
     await A.waitForFunction(() => document.querySelector(".strip").dataset.place === "top");
+    // A phone on its side (740×360) at the default line: no room for full slots either side, so one line each.
+    await A.setViewportSize({ width: 740, height: 360 });
+    await A.waitForFunction(() => document.querySelector(".strip").hasAttribute("data-tight"));
+    const tight = await A.evaluate(() => [...document.querySelectorAll(".strip .sug")].map((b) => [getComputedStyle(b.querySelector(".sug-x")).webkitLineClamp, b.querySelector(".sug-k").textContent, Math.round(b.getBoundingClientRect().height)]));
+    assert.ok(tight.every(([clamp, , h]) => clamp === "1" && h === 44), `one line each, 44px slots: ${JSON.stringify(tight)}`);
+    assert.deepEqual(tight.map(([, k]) => k), ["Question · Q6", "Talking point", "Hook"], "the kind stays for screen readers");
+    const tightBox = await strip.boundingBox();
+    const tightLine = await lineTop();
+    assert.ok(tightBox.y + tightBox.height <= tightLine - 8 || tightBox.y >= tightLine + 8, `clear of the line (${tightLine}): ${JSON.stringify(tightBox)}`);
+    await shot(A, "strip-tight-landscape");
     await A.setViewportSize(DESKTOP.viewport);
     // A long question with a word that has no break point still fits its slot.
     await agentCall(token, "push_suggestions", { question: `${"Why ".repeat(55)}${"x".repeat(60)}?`, number: 6, point: PUSH.point, hook: PUSH.hook });
     assert.deepEqual(await A.locator('.strip .sug[data-kind="question"]').evaluate((b) => { const x = b.querySelector(".sug-x"); const u = b.querySelector(".sug-use").getBoundingClientRect(); const r = b.getBoundingClientRect(); return [x.scrollWidth <= x.clientWidth, u.right <= r.right, Math.round(r.height)]; }), [true, true, heights[0]], "no words past the slot's edge; Use stays inside; the size stays");
+    assert.equal(await A.locator('.strip .sug[data-kind="question"]').getAttribute("title"), `${"Why ".repeat(55)}${"x".repeat(60)}?`, "cut short: the full words on hover");
+    assert.equal(await A.locator('.strip .sug[data-kind="hook"]').getAttribute("title"), null, "not cut: no hover text");
     // New words take the slot fresh; a slot left out stays, empty and switched off, at its size.
     await agentCall(token, "push_suggestions", { question: "Where does WordPress keep a note of my login?", number: 7, point: "WordPress keeps a login for 2 days." });
     assert.deepEqual(await slotRows(), [

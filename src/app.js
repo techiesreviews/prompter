@@ -401,7 +401,6 @@ function drawStrip() {
     const s = slots[b.dataset.kind];
     const words = s ? s.text : EMPTY_SLOT[b.dataset.kind];
     const x = b.querySelector(".sug-x");
-    b.title = s ? s.text : ""; // the full words for a mouse, when the slot cuts them short
     if (x.textContent !== words) {
       // New words fade in inside the same slot.
       x.textContent = words;
@@ -413,6 +412,8 @@ function drawStrip() {
     b.disabled = !s;
     b.setAttribute("aria-pressed", String(Boolean(s?.used)));
     b.querySelector(".sug-use").textContent = s?.used ? "Used ✓" : "Use";
+    // The full words on hover, only when the slot cuts them short (screen readers hear them in the name).
+    if (s && x.scrollHeight > x.clientHeight + 1) b.title = s.text; else b.removeAttribute("title");
   }
 }
 
