@@ -41,7 +41,7 @@ export function readSuggestions(args) {
 
 /**
  * The strip's state. `push(slots)` shows what readSuggestions gave (a slot with the same words as before keeps
- * its used state; a slot left out is empty) and returns the taps not reported yet; `use(kind)` marks a slot used
+ * its used state, whatever its number; a slot left out is empty) and returns the taps not reported yet; `use(kind)` marks a slot used
  * (false when empty or used already); `clear()` empties it and returns the taps not reported yet; `shown()` says
  * whether a push is fresh enough to show; `staleIn()` the time until it is not; `slots` a copy of the slots.
  */
@@ -57,7 +57,8 @@ export function suggestionStrip({ now = Date.now } = {}) {
         const s = next?.[kind];
         if (!s) continue;
         const old = slots[kind];
-        kept[kind] = { ...s, used: Boolean(old?.used && old.text === s.text && old.number === s.number) };
+        // The same words keep their state (the agent may add or drop the number on an idle round).
+        kept[kind] = { ...s, used: Boolean(old?.used && old.text === s.text) };
       }
       slots = kept;
       pushedAt = now();
