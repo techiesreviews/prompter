@@ -658,10 +658,35 @@ export async function run({ browser, base, mode, dist, out }) {
     const high = { line: await lineTop(), strip: await strip.boundingBox(), dock: await A.locator(".dock").boundingBox() };
     assert.ok(high.strip.y > high.line + 8 && high.strip.y + high.strip.height <= high.dock.y, `below the line (${high.line}) and above the bar (${high.dock.y}): ${JSON.stringify(high.strip)}`);
     await shot(A, "strip-line-high-mobile");
+    // While reading, the control bar is tucked away: a push then still leaves room for the bar to come back.
+    // (The demo's "would open on your main screen" notice sits over everything near the bar until OK.)
+    if (await A.locator(".screen-hint").isVisible()) await A.locator('.screen-hint [data-action="hint-ok"]').click();
+    await A.mouse.move(195, 120); // a mouse resting near the bottom edge keeps the bar
+    await A.evaluate(() => window.scrollBy(0, 400));
+    await A.waitForFunction(() => document.querySelector(".dock").dataset.tucked === "true");
+    await A.waitForTimeout(400);
+    await agentCall(token, "push_suggestions", PUSH);
+    const barShown = () => A.evaluate(() => document.querySelector(".dock-wrap").getBoundingClientRect().top + document.querySelector(".dock").offsetTop);
+    const tuckedBox = await strip.boundingBox();
+    assert.ok(tuckedBox.y + tuckedBox.height <= await barShown(), `above where the bar comes back: ${JSON.stringify(tuckedBox)}`);
+    await A.evaluate(() => window.scrollBy(0, -200));
+    await A.waitForFunction(() => document.querySelector(".dock").dataset.tucked === "false");
+    await A.waitForTimeout(400);
+    assert.equal(await A.evaluate(() => { const u = document.querySelector('.strip .sug[data-kind="hook"] .sug-use').getBoundingClientRect(); return document.elementFromPoint(u.x + u.width / 2, u.y + u.height / 2)?.closest(".sug")?.dataset.kind; }), "hook", "the bar back does not cover the Hook's Use");
+    await A.locator(".line-handle").focus();
     await A.keyboard.press("End");
     await A.waitForFunction(() => document.querySelector(".strip").dataset.place === "top");
     await A.locator(".line-handle").dblclick();
     await A.waitForFunction(() => Math.abs(document.querySelector(".reading-line").getBoundingClientRect().top - innerHeight * 0.34) < 2);
+    // A short laptop screen (1366×768) with the line at 8%: the one-row strip goes above the bar too.
+    await A.setViewportSize({ width: 1366, height: 768 });
+    await A.locator(".line-handle").focus();
+    await A.keyboard.press("Home");
+    await A.waitForFunction(() => document.querySelector(".strip").dataset.place === "bottom");
+    const laptop = await strip.boundingBox();
+    assert.ok(laptop.y > await lineTop() + 8 && laptop.y + laptop.height <= await barShown(), `1366×768 at 8%: ${JSON.stringify(laptop)}`);
+    await A.locator(".line-handle").dblclick();
+    await A.waitForFunction(() => document.querySelector(".strip").dataset.place === "top");
     await A.setViewportSize(DESKTOP.viewport);
     // A long question with a word that has no break point still fits its slot.
     await agentCall(token, "push_suggestions", { question: `${"Why ".repeat(55)}${"x".repeat(60)}?`, number: 6, point: PUSH.point, hook: PUSH.hook });

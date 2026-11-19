@@ -356,10 +356,13 @@ const EMPTY_SLOT = { question: "No question right now", point: "No talking point
 
 // Beside the column when the room to the right of its text fits the strip (and the window is tall enough
 // for its three slots). Else across the top, over text already read, when it fits above the reading line;
-// with the line dragged high, just above the control bar instead, so it never covers the line being read.
+// with the line dragged high, just above the control bar instead; on a short screen with neither room, the
+// slots go down to one line each. So it never covers the line being read.
 function placeStrip() {
   const box = main.getBoundingClientRect();
   const room = window.innerWidth - (box.right - (parseFloat(getComputedStyle(main).paddingInlineEnd) || 0)) - 24;
+  stripEl.toggleAttribute("data-tight", false);
+  stripEl.style.removeProperty("--strip-bottom");
   if (room >= STRIP_MIN_W && window.innerHeight >= STRIP_SIDE_MIN_H) {
     stripEl.dataset.place = "side";
     stripEl.style.setProperty("--strip-w", `${Math.min(STRIP_MAX_W, Math.floor(room))}px`);
@@ -367,13 +370,22 @@ function placeStrip() {
   }
   stripEl.style.removeProperty("--strip-w");
   stripEl.dataset.place = "top";
-  const height = stripEl.offsetHeight;
   const line = $(".reading-line").getBoundingClientRect().top;
-  const above = line - 16; // room over the read text, the strip's 8px inset and a gap above the line
-  const below = $(".dock").getBoundingClientRect().top - 8 - (line + 16); // room between the line and the control bar
-  if (height <= above || below <= above) return;
-  stripEl.dataset.place = "bottom";
-  stripEl.style.setProperty("--strip-bottom", `${Math.round(window.innerHeight - $(".dock").getBoundingClientRect().top + 8)}px`);
+  // Where the control bar sits when shown: offsetTop leaves out its tuck-away slide.
+  const bar = $(".dock-wrap").getBoundingClientRect().top + $(".dock").offsetTop;
+  const above = line - 16; // room over the read text, less the strip's 8px inset and a gap above the line
+  const below = bar - 8 - (line + 16); // room between the line and the control bar
+  const bottom = () => {
+    stripEl.dataset.place = "bottom";
+    stripEl.style.setProperty("--strip-bottom", `${Math.round(window.innerHeight - bar + 8)}px`);
+  };
+  for (const tight of [false, true]) {
+    stripEl.toggleAttribute("data-tight", tight);
+    const height = stripEl.offsetHeight;
+    if (height <= above) return;
+    if (height <= below) return bottom();
+  }
+  if (below > above) bottom(); // no room either side: the larger one
 }
 
 function drawStrip() {
@@ -389,6 +401,7 @@ function drawStrip() {
     const s = slots[b.dataset.kind];
     const words = s ? s.text : EMPTY_SLOT[b.dataset.kind];
     const x = b.querySelector(".sug-x");
+    b.title = s ? s.text : ""; // the full words for a mouse, when the slot cuts them short
     if (x.textContent !== words) {
       // New words fade in inside the same slot.
       x.textContent = words;
