@@ -575,7 +575,7 @@ export async function run({ browser, base, mode, dist, out }) {
     assert.deepEqual([await act.textContent(), await act.locator(".i-copy").isVisible()], ["Disconnect MCP", false]);
     assert.deepEqual([await A.locator(".open-btn").getAttribute("data-dot"), await A.locator(".open-btn").getAttribute("aria-label"), await A.locator(".open-btn").getAttribute("data-tip")], ["on", "Open · MCP connected to Claude", "Open a script · MCP connected to Claude"]);
     const listed = (await agentRpc(token, "tools/list")).body.result.tools.map((t) => t.name);
-    assert.deepEqual(listed, ["get_format", "check_script", "make_prompter_link", "show_script", "get_open_script"]);
+    assert.deepEqual(listed, ["get_format", "check_script", "make_prompter_link", "show_script", "get_open_script", "push_suggestions", "clear_suggestions"]);
     const shown = await agentCall(token, "show_script", { markdown: EXAMPLE_SCRIPT, preset: "lex" });
     assert.equal(shown.isError, undefined, JSON.stringify(shown).slice(0, 300));
     assert.match(shown.content[0].text, /^Opened in the prompter \(preset "lex"\)/);
@@ -595,6 +595,77 @@ export async function run({ browser, base, mode, dist, out }) {
     await A.waitForFunction(() => location.hash.endsWith("&p=lex"));
     assert.equal(await A.evaluate(() => localStorage.getItem("prompter-last-saved")), "", "a script shown without a date forgets the old one");
     ok("an agent with the copied token: initialize turns the item into Disconnect MCP (no agent row, no status updates) with a green dot on Open, its name (claude-code → Claude) in Open's label and tooltip; show_script opens the example script with the lex preset in this tab (a #s= address, remembered as the last script); get_open_script reads it back");
+
+    // The Producer's strip (TOOLS-347): hidden until the agent pushes (no dead control), three slots of a fixed
+    // size, a tap on Use marks one used and the agent's next push hears it once; the script never moves for it.
+    const strip = A.locator(".strip");
+    const slotRows = () => A.locator(".strip .sug").evaluateAll((els) => els.map((b) => [b.dataset.kind, b.querySelector(".sug-k").textContent, b.querySelector(".sug-x").textContent, b.querySelector(".sug-use").textContent, b.getAttribute("aria-pressed")]));
+    const slotHeights = () => A.locator(".strip .sug").evaluateAll((els) => els.map((b) => Math.round(b.getBoundingClientRect().height)));
+    const scriptBox = () => A.evaluate(() => { const r = document.querySelector(".script").getBoundingClientRect(); return [scrollY, r.top, r.left, r.width, r.height]; });
+    assert.equal(await strip.isHidden(), true, "no strip before the agent pushes anything");
+    const listedWithStrip = (await agentRpc(token, "tools/list")).body.result.tools.map((t) => t.name);
+    assert.deepEqual(listedWithStrip.slice(-2), ["push_suggestions", "clear_suggestions"]);
+    const before = await scriptBox();
+    const PUSH = { question: "What is a session, and what is a cookie?", number: 6, point: "The cookie is the proof of login.", hook: "No password. No 2FA code. Just one copied cookie." };
+    const pushed = await agentCall(token, "push_suggestions", PUSH);
+    assert.deepEqual(pushed.structuredContent, { shown: true, used: [], asked: [] }, JSON.stringify(pushed).slice(0, 300));
+    await strip.waitFor();
+    assert.deepEqual(await slotRows(), [
+      ["question", "Question · Q6", PUSH.question, "Use", "false"],
+      ["point", "Talking point", PUSH.point, "Use", "false"],
+      ["hook", "Hook", PUSH.hook, "Use", "false"],
+    ]);
+    const heights = await slotHeights();
+    assert.equal(new Set(heights).size, 1, `slots of one size: ${heights}`);
+    assert.deepEqual(await scriptBox(), before, "the script did not move for the strip");
+    // At 1366 wide the medium column leaves too little room beside it: the strip runs across the top, over text already read.
+    const lineTop = () => A.evaluate(() => document.querySelector(".reading-line").getBoundingClientRect().top);
+    assert.equal(await strip.getAttribute("data-place"), "top");
+    assert.ok((await strip.boundingBox()).y + (await strip.boundingBox()).height <= await lineTop(), "over the read text, above the reading line");
+    await shot(A, "strip-desktop");
+    await A.locator('.strip .sug[data-kind="question"]').click();
+    assert.deepEqual((await slotRows())[0], ["question", "Question · Q6", PUSH.question, "Used ✓", "true"]);
+    assert.deepEqual(await slotHeights(), heights, "Used ✓ keeps the slot's size");
+    assert.deepEqual(await scriptBox(), before, "a tap does not move the script");
+    await shot(A, "strip-used-desktop");
+    // The same push again (an idle round) keeps Used ✓ and reports the tap once, with the number for the Producer's Asked.
+    const heard = await agentCall(token, "push_suggestions", PUSH);
+    assert.deepEqual(heard.structuredContent, { shown: true, used: [{ kind: "question", text: PUSH.question, number: 6 }], asked: [6] });
+    assert.equal((await slotRows())[0][3], "Used ✓");
+    assert.deepEqual((await agentCall(token, "push_suggestions", PUSH)).structuredContent.used, [], "reported once");
+    // A wide window has room beside the column: the strip sits there, clear of the text.
+    await A.setViewportSize({ width: 1920, height: 1000 });
+    await A.waitForFunction(() => document.querySelector(".strip").dataset.place === "side");
+    const side = await A.evaluate(() => {
+      const main = document.querySelector(".script");
+      const textRight = main.getBoundingClientRect().right - parseFloat(getComputedStyle(main).paddingInlineEnd);
+      return [document.querySelector(".strip").getBoundingClientRect().left >= textRight, document.querySelector(".strip-head").checkVisibility()];
+    });
+    assert.deepEqual(side, [true, true], "beside the text, with Producer connected above the slots");
+    await shot(A, "strip-wide-desktop");
+    // A phone: one column of slots at the top, over text already read.
+    await A.setViewportSize({ width: 390, height: 844 });
+    await A.waitForFunction(() => document.querySelector(".strip").dataset.place === "top");
+    const phone = await A.evaluate(() => [...document.querySelectorAll(".strip .sug")].map((b) => Math.round(b.getBoundingClientRect().left)));
+    assert.equal(new Set(phone).size, 1, "one column on a phone");
+    assert.ok((await strip.boundingBox()).y + (await strip.boundingBox()).height <= await lineTop(), "above the reading line on a phone");
+    await shot(A, "strip-mobile");
+    await A.setViewportSize(DESKTOP.viewport);
+    // New words take the slot fresh; a slot left out stays, empty and switched off, at its size.
+    await agentCall(token, "push_suggestions", { question: "Where does WordPress keep a note of my login?", number: 7, point: "WordPress keeps a login for 2 days." });
+    assert.deepEqual(await slotRows(), [
+      ["question", "Question · Q7", "Where does WordPress keep a note of my login?", "Use", "false"],
+      ["point", "Talking point", "WordPress keeps a login for 2 days.", "Use", "false"],
+      ["hook", "Hook", "Nothing right now", "Use", "false"],
+    ]);
+    assert.equal(await A.locator('.strip .sug[data-kind="hook"]').isDisabled(), true);
+    const cleared = await agentCall(token, "clear_suggestions");
+    assert.deepEqual(cleared.structuredContent, { cleared: true, used: [], asked: [] });
+    await strip.waitFor({ state: "hidden" });
+    assert.equal((await agentCall(token, "push_suggestions", { question: "x", number: 0 })).isError, true, "a bad push is refused");
+    await agentCall(token, "push_suggestions", PUSH);
+    await strip.waitFor();
+    ok("the Producer's strip: hidden until the agent pushes; one question (Q6), one talking point and one hook in slots of one size; across the top over read text at 1366 wide and on a phone, beside the text at 1920 wide; a tap turns Use into Used ✓ without moving the script, and the next push reports it once (asked: [6]); new words take a slot fresh, a slot left out stays empty and off; clear_suggestions hides it");
 
     // A second tab takes over; Use this tab takes it back.
     const B = await live.newPage();
@@ -623,6 +694,7 @@ export async function run({ browser, base, mode, dist, out }) {
       ["Wait for MCP", "off", null, "Open"]);
     assert.equal(await A.evaluate(() => localStorage.getItem("prompter-agent")), null);
     assert.equal(await A.locator(".status").textContent(), "Opened from Claude", "no status line for Disconnect (the last one is from opening the script)");
+    assert.equal(await A.locator(".strip").isHidden(), true, "Disconnect MCP also ends the Producer's strip");
     let refused;
     for (let i = 0; i < 25 && refused !== 401; i++) { refused = (await agentRpc(token, "tools/list")).status; if (refused !== 401) await sleep(200); }
     assert.equal(refused, 401, "after Disconnect MCP the token gets 401");

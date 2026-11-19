@@ -57,6 +57,7 @@ const PAIRS = [
   ["dim", "panel", "lines and labels on raised surfaces"],
   ["accent", "panel", "late clock, paste errors, links, the start screen's save note"],
   ["ok", "panel", "main screen connected"],
+  ["ok", "bg", "Used ✓ on a used suggestion in the Producer's strip"],
   ["ql", "panel", "active QL box"],
   ["ql-dim", "panel", "other sections' QL box"],
   ["text", "panel-2", "hovered menu items"],
