@@ -186,7 +186,7 @@ async function callTool(name, args, { origin, relay }) {
     if (r.error) return toolError(r.error);
     const shown = r.result.shown === true;
     const report = usedFrom(r.result.used);
-    const where = shown ? "On the strip beside the script." : "Kept, but the strip is not showing: the prompter shows its start screen. It shows once a script is open.";
+    const where = shown ? "On the strip beside the script." : "Kept, but the strip is not showing: the prompter shows its start screen, or its window is too small for it. It shows once a script is open and there is room.";
     return { content: [text(`${where} ${usedLines(report)}`)], structuredContent: { shown, ...report } };
   }
   if (name === "clear_suggestions") {
