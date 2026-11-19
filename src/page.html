@@ -259,6 +259,12 @@
     inset: 8px 8px auto 8px; inline-size: auto; gap: 6px;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
   }
+  /* A short screen with no room for full slots on either side of the line: one line each. */
+  .strip[data-tight] { --sug-h: 44px; }
+  .strip[data-tight] .sug { padding-block: 4px; }
+  .strip[data-tight] .sug-k { display: none; }
+  .strip[data-tight] .sug-x { -webkit-line-clamp: 1; line-clamp: 1; }
+  .strip[data-tight] .sug-use { grid-row: 1; padding-block: 4px; }
   /* The reading line dragged high: just above the control bar (app.js sets the gap). */
   .strip[data-place="bottom"] { inset-block: auto var(--strip-bottom, 88px); }
   .strip-head {
