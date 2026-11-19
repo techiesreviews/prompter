@@ -650,13 +650,28 @@ export async function run({ browser, base, mode, dist, out }) {
     assert.equal(new Set(phone).size, 1, "one column on a phone");
     assert.ok((await strip.boundingBox()).y + (await strip.boundingBox()).height <= await lineTop(), "above the reading line on a phone");
     await shot(A, "strip-mobile");
+    // The reading line dragged high (8%): no room above it, so the strip moves just above the control bar, clear of
+    // the line; dragged low (75%) it is back on top. Double-click puts the line back at 34%.
+    await A.locator(".line-handle").focus();
+    await A.keyboard.press("Home");
+    await A.waitForFunction(() => document.querySelector(".strip").dataset.place === "bottom");
+    const high = { line: await lineTop(), strip: await strip.boundingBox(), dock: await A.locator(".dock").boundingBox() };
+    assert.ok(high.strip.y > high.line + 8 && high.strip.y + high.strip.height <= high.dock.y, `below the line (${high.line}) and above the bar (${high.dock.y}): ${JSON.stringify(high.strip)}`);
+    await shot(A, "strip-line-high-mobile");
+    await A.keyboard.press("End");
+    await A.waitForFunction(() => document.querySelector(".strip").dataset.place === "top");
+    await A.locator(".line-handle").dblclick();
+    await A.waitForFunction(() => Math.abs(document.querySelector(".reading-line").getBoundingClientRect().top - innerHeight * 0.34) < 2);
     await A.setViewportSize(DESKTOP.viewport);
+    // A long question with a word that has no break point still fits its slot.
+    await agentCall(token, "push_suggestions", { question: `${"Why ".repeat(55)}${"x".repeat(60)}?`, number: 6, point: PUSH.point, hook: PUSH.hook });
+    assert.deepEqual(await A.locator('.strip .sug[data-kind="question"]').evaluate((b) => { const x = b.querySelector(".sug-x"); const u = b.querySelector(".sug-use").getBoundingClientRect(); const r = b.getBoundingClientRect(); return [x.scrollWidth <= x.clientWidth, u.right <= r.right, Math.round(r.height)]; }), [true, true, heights[0]], "no words past the slot's edge; Use stays inside; the size stays");
     // New words take the slot fresh; a slot left out stays, empty and switched off, at its size.
     await agentCall(token, "push_suggestions", { question: "Where does WordPress keep a note of my login?", number: 7, point: "WordPress keeps a login for 2 days." });
     assert.deepEqual(await slotRows(), [
       ["question", "Question · Q7", "Where does WordPress keep a note of my login?", "Use", "false"],
       ["point", "Talking point", "WordPress keeps a login for 2 days.", "Use", "false"],
-      ["hook", "Hook", "Nothing right now", "Use", "false"],
+      ["hook", "Hook", "No hook right now", "Use", "false"],
     ]);
     assert.equal(await A.locator('.strip .sug[data-kind="hook"]').isDisabled(), true);
     const cleared = await agentCall(token, "clear_suggestions");
@@ -665,7 +680,7 @@ export async function run({ browser, base, mode, dist, out }) {
     assert.equal((await agentCall(token, "push_suggestions", { question: "x", number: 0 })).isError, true, "a bad push is refused");
     await agentCall(token, "push_suggestions", PUSH);
     await strip.waitFor();
-    ok("the Producer's strip: hidden until the agent pushes; one question (Q6), one talking point and one hook in slots of one size; across the top over read text at 1366 wide and on a phone, beside the text at 1920 wide; a tap turns Use into Used ✓ without moving the script, and the next push reports it once (asked: [6]); new words take a slot fresh, a slot left out stays empty and off; clear_suggestions hides it");
+    ok("the Producer's strip: hidden until the agent pushes; one question (Q6), one talking point and one hook in slots of one size; across the top over read text at 1366 wide and on a phone, beside the text at 1920 wide, just above the bar when the line is dragged to 8%; a tap turns Use into Used ✓ without moving the script, and the next push reports it once (asked: [6]); new words take a slot fresh, a slot left out stays empty and off; clear_suggestions hides it");
 
     // A second tab takes over; Use this tab takes it back.
     const B = await live.newPage();
@@ -678,6 +693,7 @@ export async function run({ browser, base, mode, dist, out }) {
     assert.deepEqual([await act.textContent(), await act.locator(".i-copy").isVisible(), await A.locator(".open-btn").getAttribute("data-dot"), await A.locator(".open-btn").getAttribute("aria-label")],
       ["Use this tab", false, null, "Open · MCP open in another tab"]);
     await shot(A, "mcp-elsewhere-desktop");
+    assert.equal(await A.locator(".strip").isHidden(), true, "the Producer's strip goes with the link to the other tab");
     assert.deepEqual((await agentCall(token, "get_open_script")).structuredContent, { open: false }, "calls now reach the new tab (its start screen)");
     if (!(await A.locator("#open-menu:popover-open").count())) await (await dock(A, ".open-btn")).click();
     await act.click();
@@ -685,6 +701,7 @@ export async function run({ browser, base, mode, dist, out }) {
     await B.waitForFunction(() => document.querySelector(".empty .mcp-action").dataset.state === "elsewhere");
     assert.equal(await B.locator(".empty .mcp-action").textContent(), "Use this tab");
     assert.equal((await agentCall(token, "get_open_script")).structuredContent.open, true, "back in the first tab");
+    await A.locator(".strip").waitFor();
     await B.close();
     ok("a second tab with the same token takes over (the first shows Use this tab and loses its dot; calls go to the new tab); Use this tab takes it back");
 

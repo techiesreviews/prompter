@@ -350,17 +350,30 @@ const stripEl = $(".strip");
 const stripSlots = [...stripEl.querySelectorAll(".sug")];
 const STRIP_MAX_W = 290;
 const STRIP_MIN_W = 196;
+const STRIP_SIDE_MIN_H = 620; // three 150px slots, the heading and the control bar
 let stripTimer = 0;
+const EMPTY_SLOT = { question: "No question right now", point: "No talking point right now", hook: "No hook right now" };
 
 // Beside the column when the room to the right of its text fits the strip (and the window is tall enough
-// for its three slots), else across the top, over text already read.
+// for its three slots). Else across the top, over text already read, when it fits above the reading line;
+// with the line dragged high, just above the control bar instead, so it never covers the line being read.
 function placeStrip() {
   const box = main.getBoundingClientRect();
   const room = window.innerWidth - (box.right - (parseFloat(getComputedStyle(main).paddingInlineEnd) || 0)) - 24;
-  const side = room >= STRIP_MIN_W && window.innerHeight >= 620;
-  stripEl.dataset.place = side ? "side" : "top";
-  if (side) stripEl.style.setProperty("--strip-w", `${Math.min(STRIP_MAX_W, Math.floor(room))}px`);
-  else stripEl.style.removeProperty("--strip-w");
+  if (room >= STRIP_MIN_W && window.innerHeight >= STRIP_SIDE_MIN_H) {
+    stripEl.dataset.place = "side";
+    stripEl.style.setProperty("--strip-w", `${Math.min(STRIP_MAX_W, Math.floor(room))}px`);
+    return;
+  }
+  stripEl.style.removeProperty("--strip-w");
+  stripEl.dataset.place = "top";
+  const height = stripEl.offsetHeight;
+  const line = $(".reading-line").getBoundingClientRect().top;
+  const above = line - 16; // room over the read text, the strip's 8px inset and a gap above the line
+  const below = $(".dock").getBoundingClientRect().top - 8 - (line + 16); // room between the line and the control bar
+  if (height <= above || below <= above) return;
+  stripEl.dataset.place = "bottom";
+  stripEl.style.setProperty("--strip-bottom", `${Math.round(window.innerHeight - $(".dock").getBoundingClientRect().top + 8)}px`);
 }
 
 function drawStrip() {
@@ -374,7 +387,7 @@ function drawStrip() {
   const slots = producer.slots;
   for (const b of stripSlots) {
     const s = slots[b.dataset.kind];
-    const words = s ? s.text : "Nothing right now";
+    const words = s ? s.text : EMPTY_SLOT[b.dataset.kind];
     const x = b.querySelector(".sug-x");
     if (x.textContent !== words) {
       // New words fade in inside the same slot.
@@ -548,6 +561,7 @@ function setLine(frac, keepText = false) {
   const pct = Math.round(lineFrac * 100);
   handle.setAttribute("aria-valuenow", String(pct));
   handle.setAttribute("aria-valuetext", `${pct}% from the top`);
+  if (!stripEl.hidden) placeStrip(); // the strip keeps clear of the line
   if (keepText && delta) {
     window.scrollBy(0, delta);
     lastScrollY = window.scrollY; // not a scroll by the reader: the bar stays

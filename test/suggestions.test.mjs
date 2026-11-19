@@ -34,6 +34,9 @@ test("the strip shows what was pushed, a tap uses a slot once, and the next push
   ]);
   assert.deepEqual([strip.slots.question.used, strip.slots.point.used, strip.slots.hook.used], [true, false, true], "unchanged slots keep their state");
   assert.deepEqual(strip.push(readSuggestions({ question: "What is a session?", number: 6, point: "P1", hook: "H1" }).slots), [], "reported once only");
+  // The same words with the number dropped (or changed) stay used and are not reported again.
+  assert.deepEqual(strip.push({ question: { text: "What is a session?" }, hook: { text: "H1" } }), []);
+  assert.deepEqual([strip.slots.question, strip.use("question")], [{ text: "What is a session?", used: true }, false]);
   // New words take the slot fresh; a slot left out is empty.
   strip.push(readSuggestions({ question: "Where is it kept?", number: 7, point: "P2" }).slots);
   assert.deepEqual([strip.slots.question.used, strip.slots.point.used, strip.slots.hook], [false, false, undefined]);
