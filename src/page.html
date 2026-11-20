@@ -301,10 +301,11 @@
   .strip[data-tight]:not([data-place="side"]) .sug-use { grid-row: 1; padding-block: 4px; }
   /* The full words without a mouse: keyboard focus, or a touch held on a slot that cuts them short (app.js
      sets data-open), opens it over the page from its own track; the other slots and the script stay put.
-     Above the control bar it opens upward. After the tight rules above, so these win. */
+     Above the control bar it opens upward. app.js gives each slot its room (--sug-open-max) up to the reading
+     line or the window's edge; past that its words scroll. After the tight rules above, so these win. */
   .sug:is(:focus-visible, [data-open]) {
     position: relative; z-index: 1; align-self: start; block-size: auto; min-block-size: var(--sug-h);
-    max-block-size: calc(100dvh - 16px); overflow-y: auto; overscroll-behavior: contain;
+    max-block-size: var(--sug-open-max, calc(100dvh - 16px)); overflow-y: auto; overscroll-behavior: contain;
   }
   .strip[data-place="bottom"] .sug:is(:focus-visible, [data-open]) { align-self: end; }
   .strip .sug:is(:focus-visible, [data-open]) .sug-x { display: block; -webkit-line-clamp: none; line-clamp: none; }

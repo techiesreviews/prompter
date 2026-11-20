@@ -397,7 +397,6 @@ function drawStrip() {
   if (show) stripTimer = setTimeout(drawStrip, producer.staleIn() + 50);
   stripEl.hidden = !show;
   if (!show) return;
-  placeStrip();
   const slots = producer.slots;
   for (const b of stripSlots) {
     const s = slots[b.dataset.kind];
@@ -415,52 +414,73 @@ function drawStrip() {
     b.setAttribute("aria-pressed", String(Boolean(s?.used)));
     b.querySelector(".sug-use").textContent = s?.used ? "Used ✓" : "Use";
   }
-  markCut();
+  fitStrip();
 }
 
 // The full words on hover, only when the slot cuts them short (screen readers hear them in the name); the title
-// also marks the slots a held touch opens. Again after each placement, since a new size cuts differently; a slot
-// open right now keeps what it had.
+// also marks the slots a held touch opens. Again after each placement, since a new size cuts differently. A slot
+// open right now cannot be measured: it keeps a title with its current words until it closes.
 function markCut() {
   const slots = producer.slots;
   for (const b of stripSlots) {
-    if (b.matches(":focus-visible, [data-open]")) continue;
     const s = slots[b.dataset.kind];
+    if (s && b.matches(":focus-visible, [data-open]")) { b.title = s.text; continue; }
     const x = b.querySelector(".sug-x");
     if (s && x.scrollHeight > x.clientHeight + 1) b.title = s.text; else b.removeAttribute("title");
   }
 }
 
-function fitStrip() {
-  placeStrip();
-  markCut();
+// An opened slot never reaches the reading line (across the top or above the bar) or the window's edge (beside
+// the text): each gets the room it has, and its words scroll inside past that.
+function capOpen() {
+  const place = stripEl.dataset.place;
+  const line = $(".reading-line").getBoundingClientRect().top;
+  for (const b of stripSlots) {
+    const r = b.getBoundingClientRect();
+    const room = place === "bottom" ? r.bottom - (line + 8) : (place === "side" ? window.innerHeight : line) - 8 - r.top;
+    b.style.setProperty("--sug-open-max", `${Math.max(0, Math.floor(room))}px`);
+  }
 }
 
+function fitStrip() {
+  placeStrip();
+  capOpen();
+  markCut();
+}
+stripEl.addEventListener("focusout", () => requestAnimationFrame(markCut));
+
 // On touch, holding a slot whose words are cut short opens it to all of them (data-open; keyboard focus does
-// the same in CSS). Letting go uses nothing, so a quick tap stays the one way to use it; a swipe the browser
-// takes over for scrolling ends the hold too.
+// the same in CSS). Letting go uses nothing, so a quick tap stays the one way to use it. A swipe the browser
+// takes over ends the hold, except inside an opened slot that still has words to scroll to: that one stays open
+// until the next press anywhere.
 const HOLD_MS = 450;
 let hold = null;
 let holdEndedAt = -Infinity;
-function endHold() {
+function endHold(e) {
   if (!hold) return;
+  const open = hold.slot.hasAttribute("data-open");
+  if (e?.type === "pointercancel" && open && hold.slot.scrollHeight > hold.slot.clientHeight + 1) return;
   clearTimeout(hold.timer);
-  if (hold.slot.hasAttribute("data-open")) {
+  if (open) {
     hold.slot.removeAttribute("data-open");
     holdEndedAt = performance.now();
   }
   hold = null;
+  markCut();
 }
 for (const b of stripSlots) {
   b.addEventListener("pointerdown", (e) => {
     endHold();
+    holdEndedAt = -Infinity; // a press after a hold always counts, even when the browser sent no click for the hold
     if (e.pointerType === "mouse" || !b.title) return;
     hold = { slot: b, timer: setTimeout(() => b.setAttribute("data-open", ""), HOLD_MS) };
   });
   b.addEventListener("contextmenu", (e) => { if (hold) e.preventDefault(); });
 }
-stripEl.addEventListener("pointerup", endHold);
-stripEl.addEventListener("pointercancel", endHold);
+// On the window, so a pen lifted (or a press) outside the strip ends a hold too.
+window.addEventListener("pointerdown", (e) => { if (!e.target.closest?.(".sug")) endHold(); }, true);
+window.addEventListener("pointerup", endHold);
+window.addEventListener("pointercancel", endHold);
 
 for (const b of stripSlots) b.addEventListener("click", (e) => {
   // The click a held slot sends as the finger lifts uses nothing.

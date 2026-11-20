@@ -705,10 +705,20 @@ export async function run({ browser, base, mode, dist, out }) {
     await A.waitForTimeout(700);
     assert.deepEqual(await tightHook.evaluate((b) => { const x = b.querySelector(".sug-x"); return [x.scrollHeight <= x.clientHeight + 1, b.getBoundingClientRect().height > 44]; }), [true, true], "held: the whole hook");
     assert.deepEqual(await A.locator('.strip .sug:not([data-kind="hook"])').evaluateAll((els) => els.map((b) => JSON.stringify(b.getBoundingClientRect()))), tightRest, "held: the other slots stay put");
+    const heldBox = await tightHook.boundingBox();
+    assert.ok(heldBox.y + heldBox.height <= tightLine - 8, `held open, still clear of the line (${tightLine}): ${JSON.stringify(heldBox)}`);
     await shot(A, "strip-tight-held-landscape");
     await tightHook.dispatchEvent("pointerup", { pointerType: "touch", isPrimary: true, pointerId: 8 });
     await tightHook.dispatchEvent("click");
     assert.deepEqual([Math.round((await tightHook.boundingBox()).height), await tightHook.getAttribute("aria-pressed")], [44, "false"], "let go: one line again, not used");
+    // A hold the browser sends no click for, then at once a quick tap: the tap uses it.
+    await tightHook.dispatchEvent("pointerdown", { pointerType: "touch", isPrimary: true, pointerId: 9 });
+    await A.waitForTimeout(700);
+    await tightHook.dispatchEvent("pointerup", { pointerType: "touch", isPrimary: true, pointerId: 9 });
+    await tightHook.dispatchEvent("pointerdown", { pointerType: "touch", isPrimary: true, pointerId: 10 });
+    await tightHook.dispatchEvent("pointerup", { pointerType: "touch", isPrimary: true, pointerId: 10 });
+    await tightHook.dispatchEvent("click");
+    assert.equal(await tightHook.getAttribute("aria-pressed"), "true", "a quick tap after a hold uses the slot");
     await A.setViewportSize(DESKTOP.viewport);
     // A long question with a word that has no break point still fits its slot.
     await agentCall(token, "push_suggestions", { question: `${"Why ".repeat(55)}${"x".repeat(60)}?`, number: 6, point: PUSH.point, hook: PUSH.hook });
@@ -728,7 +738,11 @@ export async function run({ browser, base, mode, dist, out }) {
     assert.ok(focusOpen[0] && focusOpen[1] > heights[0], `keyboard focus shows the whole question: ${focusOpen}`);
     assert.deepEqual([await otherSlots(), await scriptBox()], [othersBefore, scriptBeforeOpen], "the other slots and the script stay put");
     await shot(A, "strip-focus-open-desktop");
+    // New words while it has focus: once focus leaves, its hover title has the new words.
+    const longQ2 = `${"How ".repeat(60)}?`;
+    await agentCall(token, "push_suggestions", { question: longQ2, number: 6, point: PUSH.point, hook: PUSH.hook });
     await A.keyboard.press("Tab");
+    assert.equal(await longQ.getAttribute("title"), longQ2, "new words while focused: the title follows");
     assert.deepEqual(await longOpen(), [false, heights[0]], "focus gone: the slot is its size again");
     await longQ.dispatchEvent("pointerdown", { pointerType: "touch", isPrimary: true, pointerId: 7 });
     await A.waitForTimeout(700);
