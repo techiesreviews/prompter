@@ -420,11 +420,12 @@ function drawStrip() {
 // The full words on hover, only when the slot cuts them short (screen readers hear them in the name); the title
 // also marks the slots a held touch opens. Again after each placement, since a new size cuts differently. A slot
 // open right now cannot be measured: it keeps a title with its current words until it closes.
+const SLOT_OPEN = ":is(:focus-visible, [data-open]):not([data-shut])";
 function markCut() {
   const slots = producer.slots;
   for (const b of stripSlots) {
     const s = slots[b.dataset.kind];
-    if (s && b.matches(":focus-visible, [data-open]")) { b.title = s.text; continue; }
+    if (s && b.matches(SLOT_OPEN)) { b.title = s.text; continue; }
     const x = b.querySelector(".sug-x");
     if (s && x.scrollHeight > x.clientHeight + 1) b.title = s.text; else b.removeAttribute("title");
   }
@@ -448,6 +449,17 @@ function fitStrip() {
   markCut();
 }
 stripEl.addEventListener("focusout", () => requestAnimationFrame(markCut));
+// Escape closes an opened slot (data-shut) without using it, and the focus stays on it; it opens again the next
+// time it takes focus or is pressed.
+for (const b of stripSlots) {
+  b.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || !b.matches(SLOT_OPEN)) return;
+    e.preventDefault();
+    b.setAttribute("data-shut", "");
+    markCut();
+  });
+  b.addEventListener("blur", () => b.removeAttribute("data-shut"));
+}
 
 // On touch, holding a slot whose words are cut short opens it to all of them (data-open; keyboard focus does
 // the same in CSS). Letting go uses nothing, so a quick tap stays the one way to use it. A swipe the browser
@@ -471,6 +483,7 @@ function endHold(e) {
 for (const b of stripSlots) {
   b.addEventListener("pointerdown", (e) => {
     endHold();
+    b.removeAttribute("data-shut");
     holdEndedAt = -Infinity; // a press after a hold always counts, even when the browser sent no click for the hold
     if (e.pointerType === "mouse" || !b.title) return;
     hold = { slot: b, timer: setTimeout(() => b.setAttribute("data-open", ""), HOLD_MS) };
