@@ -697,12 +697,47 @@ export async function run({ browser, base, mode, dist, out }) {
     const tightLine = await lineTop();
     assert.ok(tightBox.y + tightBox.height <= tightLine - 8 || tightBox.y >= tightLine + 8, `clear of the line (${tightLine}): ${JSON.stringify(tightBox)}`);
     await shot(A, "strip-tight-landscape");
+    // One-line slots cut the hook short: a held touch opens it to all its words, and letting go uses nothing.
+    const tightHook = A.locator('.strip .sug[data-kind="hook"]');
+    const tightRest = await A.locator('.strip .sug:not([data-kind="hook"])').evaluateAll((els) => els.map((b) => JSON.stringify(b.getBoundingClientRect())));
+    assert.equal(await tightHook.getAttribute("title"), PUSH.hook, "one line cuts the hook short");
+    await tightHook.dispatchEvent("pointerdown", { pointerType: "touch", isPrimary: true, pointerId: 8 });
+    await A.waitForTimeout(700);
+    assert.deepEqual(await tightHook.evaluate((b) => { const x = b.querySelector(".sug-x"); return [x.scrollHeight <= x.clientHeight + 1, b.getBoundingClientRect().height > 44]; }), [true, true], "held: the whole hook");
+    assert.deepEqual(await A.locator('.strip .sug:not([data-kind="hook"])').evaluateAll((els) => els.map((b) => JSON.stringify(b.getBoundingClientRect()))), tightRest, "held: the other slots stay put");
+    await shot(A, "strip-tight-held-landscape");
+    await tightHook.dispatchEvent("pointerup", { pointerType: "touch", isPrimary: true, pointerId: 8 });
+    await tightHook.dispatchEvent("click");
+    assert.deepEqual([Math.round((await tightHook.boundingBox()).height), await tightHook.getAttribute("aria-pressed")], [44, "false"], "let go: one line again, not used");
     await A.setViewportSize(DESKTOP.viewport);
     // A long question with a word that has no break point still fits its slot.
     await agentCall(token, "push_suggestions", { question: `${"Why ".repeat(55)}${"x".repeat(60)}?`, number: 6, point: PUSH.point, hook: PUSH.hook });
     assert.deepEqual(await A.locator('.strip .sug[data-kind="question"]').evaluate((b) => { const x = b.querySelector(".sug-x"); const u = b.querySelector(".sug-use").getBoundingClientRect(); const r = b.getBoundingClientRect(); return [x.scrollWidth <= x.clientWidth, u.right <= r.right, Math.round(r.height)]; }), [true, true, heights[0]], "no words past the slot's edge; Use stays inside; the size stays");
     assert.equal(await A.locator('.strip .sug[data-kind="question"]').getAttribute("title"), `${"Why ".repeat(55)}${"x".repeat(60)}?`, "cut short: the full words on hover");
     assert.equal(await A.locator('.strip .sug[data-kind="hook"]').getAttribute("title"), null, "not cut: no hover text");
+    // The full words without a mouse too: keyboard focus opens a cut-short slot, and on touch holding it does,
+    // with letting go using nothing (a tap stays final). It opens over the page, so the other slots and the script stay put.
+    const longQ = A.locator('.strip .sug[data-kind="question"]');
+    const longOpen = () => longQ.evaluate((b) => { const x = b.querySelector(".sug-x"); return [x.scrollHeight <= x.clientHeight + 1, Math.round(b.getBoundingClientRect().height)]; });
+    const otherSlots = () => A.locator('.strip .sug:not([data-kind="question"])').evaluateAll((els) => els.map((b) => JSON.stringify(b.getBoundingClientRect())));
+    const othersBefore = await otherSlots();
+    const scriptBeforeOpen = await scriptBox();
+    await A.locator('.strip .sug[data-kind="point"]').focus();
+    await A.keyboard.press("Shift+Tab");
+    const focusOpen = await longOpen();
+    assert.ok(focusOpen[0] && focusOpen[1] > heights[0], `keyboard focus shows the whole question: ${focusOpen}`);
+    assert.deepEqual([await otherSlots(), await scriptBox()], [othersBefore, scriptBeforeOpen], "the other slots and the script stay put");
+    await shot(A, "strip-focus-open-desktop");
+    await A.keyboard.press("Tab");
+    assert.deepEqual(await longOpen(), [false, heights[0]], "focus gone: the slot is its size again");
+    await longQ.dispatchEvent("pointerdown", { pointerType: "touch", isPrimary: true, pointerId: 7 });
+    await A.waitForTimeout(700);
+    const holdOpen = await longOpen();
+    assert.ok(holdOpen[0] && holdOpen[1] > heights[0], `holding shows the whole question: ${holdOpen}`);
+    assert.deepEqual([await otherSlots(), await scriptBox()], [othersBefore, scriptBeforeOpen], "held open: the other slots and the script stay put");
+    await longQ.dispatchEvent("pointerup", { pointerType: "touch", isPrimary: true, pointerId: 7 });
+    await longQ.dispatchEvent("click");
+    assert.deepEqual([await longOpen(), await longQ.getAttribute("aria-pressed")], [[false, heights[0]], "false"], "letting go closes it and uses nothing");
     // New words take the slot fresh; a slot left out stays, empty and switched off, at its size.
     await agentCall(token, "push_suggestions", { question: "Where does WordPress keep a note of my login?", number: 7, point: "WordPress keeps a login for 2 days." });
     assert.deepEqual(await slotRows(), [

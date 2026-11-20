@@ -252,12 +252,14 @@
     --sug-h: 150px;
     position: fixed; z-index: 6; inset-block-start: 12px; inset-inline-end: 12px;
     inline-size: var(--strip-w, 290px); display: grid; gap: 8px; align-content: start;
+    /* Tracks of the slot's size (the heading's own above), so a slot opened to its full words moves no other. */
+    grid-template-rows: auto; grid-auto-rows: var(--sug-h);
   }
   .strip[hidden], .strip[data-place="none"], :root[data-view="empty"] .strip { display: none; }
   .strip:is([data-place="top"], [data-place="bottom"]) {
     --sug-h: 74px;
     inset: 8px 8px auto 8px; inline-size: auto; gap: 6px;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); grid-template-rows: none;
   }
   /* The reading line dragged high: just above the control bar (app.js sets the gap). */
   .strip[data-place="bottom"] { inset-block: auto var(--strip-bottom, 88px); }
@@ -272,7 +274,7 @@
     block-size: var(--sug-h); padding: 9px 9px 10px 12px; overflow: hidden;
     font: inherit; color: var(--text); text-align: start; background: var(--panel);
     border: 0; border-radius: var(--radius); box-shadow: var(--shadow); cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
+    -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
   }
   .sug:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .sug-k {
@@ -297,6 +299,15 @@
   .strip[data-tight]:not([data-place="side"]) .sug { grid-template-rows: auto; padding-block: 4px; }
   .strip[data-tight]:not([data-place="side"]) .sug-x { align-self: center; -webkit-line-clamp: 1; line-clamp: 1; }
   .strip[data-tight]:not([data-place="side"]) .sug-use { grid-row: 1; padding-block: 4px; }
+  /* The full words without a mouse: keyboard focus, or a touch held on a slot that cuts them short (app.js
+     sets data-open), opens it over the page from its own track; the other slots and the script stay put.
+     Above the control bar it opens upward. After the tight rules above, so these win. */
+  .sug:is(:focus-visible, [data-open]) {
+    position: relative; z-index: 1; align-self: start; block-size: auto; min-block-size: var(--sug-h);
+    max-block-size: calc(100dvh - 16px); overflow-y: auto; overscroll-behavior: contain;
+  }
+  .strip[data-place="bottom"] .sug:is(:focus-visible, [data-open]) { align-self: end; }
+  .strip .sug:is(:focus-visible, [data-open]) .sug-x { display: block; -webkit-line-clamp: none; line-clamp: none; }
   /* Used: the slot goes quiet (the page colour, so the script never shows through) and says so. */
   .sug[aria-pressed="true"] { background: var(--bg); box-shadow: inset 0 0 0 1px var(--border); cursor: default; }
   .sug[aria-pressed="true"] .sug-x { color: var(--dim); }
