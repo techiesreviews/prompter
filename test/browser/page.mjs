@@ -703,7 +703,7 @@ export async function run({ browser, base, mode, dist, out }) {
     assert.equal(await tightHook.getAttribute("title"), PUSH.hook, "one line cuts the hook short");
     await tightHook.dispatchEvent("pointerdown", { pointerType: "touch", isPrimary: true, pointerId: 8 });
     await A.waitForTimeout(700);
-    assert.deepEqual(await tightHook.evaluate((b) => { const x = b.querySelector(".sug-x"); return [x.scrollHeight <= x.clientHeight + 1, b.getBoundingClientRect().height > 44]; }), [true, true], "held: the whole hook");
+    assert.deepEqual(await tightHook.evaluate((b) => { const x = b.querySelector(".sug-x"); return [x.scrollHeight <= x.clientHeight + 1 && b.scrollHeight <= b.clientHeight + 1, b.getBoundingClientRect().height > 44]; }), [true, true], "held: the whole hook");
     assert.deepEqual(await A.locator('.strip .sug:not([data-kind="hook"])').evaluateAll((els) => els.map((b) => JSON.stringify(b.getBoundingClientRect()))), tightRest, "held: the other slots stay put");
     const heldBox = await tightHook.boundingBox();
     assert.ok(heldBox.y + heldBox.height <= tightLine - 8, `held open, still clear of the line (${tightLine}): ${JSON.stringify(heldBox)}`);
@@ -728,7 +728,7 @@ export async function run({ browser, base, mode, dist, out }) {
     // The full words without a mouse too: keyboard focus opens a cut-short slot, and on touch holding it does,
     // with letting go using nothing (a tap stays final). It opens over the page, so the other slots and the script stay put.
     const longQ = A.locator('.strip .sug[data-kind="question"]');
-    const longOpen = () => longQ.evaluate((b) => { const x = b.querySelector(".sug-x"); return [x.scrollHeight <= x.clientHeight + 1, Math.round(b.getBoundingClientRect().height)]; });
+    const longOpen = () => longQ.evaluate((b) => { const x = b.querySelector(".sug-x"); return [x.scrollHeight <= x.clientHeight + 1 && b.scrollHeight <= b.clientHeight + 1, Math.round(b.getBoundingClientRect().height)]; });
     const otherSlots = () => A.locator('.strip .sug:not([data-kind="question"])').evaluateAll((els) => els.map((b) => JSON.stringify(b.getBoundingClientRect())));
     const othersBefore = await otherSlots();
     const scriptBeforeOpen = await scriptBox();
