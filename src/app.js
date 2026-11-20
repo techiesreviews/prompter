@@ -414,18 +414,64 @@ function drawStrip() {
     b.disabled = !s;
     b.setAttribute("aria-pressed", String(Boolean(s?.used)));
     b.querySelector(".sug-use").textContent = s?.used ? "Used ✓" : "Use";
-    // The full words on hover, only when the slot cuts them short (screen readers hear them in the name).
+  }
+  markCut();
+}
+
+// The full words on hover, only when the slot cuts them short (screen readers hear them in the name); the title
+// also marks the slots a held touch opens. Again after each placement, since a new size cuts differently; a slot
+// open right now keeps what it had.
+function markCut() {
+  const slots = producer.slots;
+  for (const b of stripSlots) {
+    if (b.matches(":focus-visible, [data-open]")) continue;
+    const s = slots[b.dataset.kind];
+    const x = b.querySelector(".sug-x");
     if (s && x.scrollHeight > x.clientHeight + 1) b.title = s.text; else b.removeAttribute("title");
   }
 }
 
+function fitStrip() {
+  placeStrip();
+  markCut();
+}
+
+// On touch, holding a slot whose words are cut short opens it to all of them (data-open; keyboard focus does
+// the same in CSS). Letting go uses nothing, so a quick tap stays the one way to use it; a swipe the browser
+// takes over for scrolling ends the hold too.
+const HOLD_MS = 450;
+let hold = null;
+let holdEndedAt = -Infinity;
+function endHold() {
+  if (!hold) return;
+  clearTimeout(hold.timer);
+  if (hold.slot.hasAttribute("data-open")) {
+    hold.slot.removeAttribute("data-open");
+    holdEndedAt = performance.now();
+  }
+  hold = null;
+}
+for (const b of stripSlots) {
+  b.addEventListener("pointerdown", (e) => {
+    endHold();
+    if (e.pointerType === "mouse" || !b.title) return;
+    hold = { slot: b, timer: setTimeout(() => b.setAttribute("data-open", ""), HOLD_MS) };
+  });
+  b.addEventListener("contextmenu", (e) => { if (hold) e.preventDefault(); });
+}
+stripEl.addEventListener("pointerup", endHold);
+stripEl.addEventListener("pointercancel", endHold);
+
 for (const b of stripSlots) b.addEventListener("click", (e) => {
-  if (producer.use(b.dataset.kind)) drawStrip();
+  // The click a held slot sends as the finger lifts uses nothing.
+  const held = performance.now() - holdEndedAt < 600;
+  holdEndedAt = -Infinity;
+  if (!held && producer.use(b.dataset.kind)) drawStrip();
   // A tap or click leaves no focus behind, so Space goes on meaning auto-scroll; keyboard focus stays.
   if (e.detail > 0) b.blur();
 });
-window.addEventListener("resize", () => { if (!stripEl.hidden) placeStrip(); });
-new ResizeObserver(() => { if (!stripEl.hidden) placeStrip(); }).observe(main);
+window.addEventListener("resize", () => { if (!stripEl.hidden) fitStrip(); });
+new ResizeObserver(() => { if (!stripEl.hidden) fitStrip(); }).observe(main);
 
 // ---------- Your own agent over MCP (live relay) ----------
 // The link itself (token, socket, backoff, keepalive, tool calls) is relayLink in src/relay-link.mjs;
@@ -581,7 +627,7 @@ function setLine(frac, keepText = false) {
   const pct = Math.round(lineFrac * 100);
   handle.setAttribute("aria-valuenow", String(pct));
   handle.setAttribute("aria-valuetext", `${pct}% from the top`);
-  if (!stripEl.hidden) placeStrip(); // the strip keeps clear of the line
+  if (!stripEl.hidden) fitStrip(); // the strip keeps clear of the line
   if (keepText && delta) {
     window.scrollBy(0, delta);
     lastScrollY = window.scrollY; // not a scroll by the reader: the bar stays
