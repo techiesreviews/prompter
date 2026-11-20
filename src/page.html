@@ -302,13 +302,15 @@
   /* The full words without a mouse: keyboard focus, or a touch held on a slot that cuts them short (app.js
      sets data-open), opens it over the page from its own track; the other slots and the script stay put.
      Above the control bar it opens upward. app.js gives each slot its room (--sug-open-max) up to the reading
-     line or the window's edge; past that its words scroll. After the tight rules above, so these win. */
-  .sug:is(:focus-visible, [data-open]) {
+     line or the window's edge; past that its words scroll. Escape shuts it (data-shut) until it next takes focus
+     or a press. After the tight rules above, so these win. */
+  .sug:is(:focus-visible, [data-open]):not([data-shut]) {
     position: relative; z-index: 1; align-self: start; block-size: auto; min-block-size: var(--sug-h);
     max-block-size: var(--sug-open-max, calc(100dvh - 16px)); overflow-y: auto; overscroll-behavior: contain;
   }
-  .strip[data-place="bottom"] .sug:is(:focus-visible, [data-open]) { align-self: end; }
-  .strip .sug:is(:focus-visible, [data-open]) .sug-x { display: block; -webkit-line-clamp: none; line-clamp: none; }
+  .strip[data-place="bottom"] .sug:is(:focus-visible, [data-open]):not([data-shut]) { align-self: end; }
+  /* Words not clipped inside: at its full height the text keeps its grid row from shrinking, so the slot scrolls. */
+  .strip .sug:is(:focus-visible, [data-open]):not([data-shut]) .sug-x { display: block; overflow: visible; -webkit-line-clamp: none; line-clamp: none; }
   /* Used: the slot goes quiet (the page colour, so the script never shows through) and says so. */
   .sug[aria-pressed="true"] { background: var(--bg); box-shadow: inset 0 0 0 1px var(--border); cursor: default; }
   .sug[aria-pressed="true"] .sug-x { color: var(--dim); }

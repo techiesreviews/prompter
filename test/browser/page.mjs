@@ -719,6 +719,25 @@ export async function run({ browser, base, mode, dist, out }) {
     await tightHook.dispatchEvent("pointerup", { pointerType: "touch", isPrimary: true, pointerId: 10 });
     await tightHook.dispatchEvent("click");
     assert.equal(await tightHook.getAttribute("aria-pressed"), "true", "a quick tap after a hold uses the slot");
+    // The longest hook (300 characters) held open here has more words than room up to the line: the slot scrolls
+    // and none of its words are cut off inside it (the last ones are there to scroll to).
+    const maxHook = `${"Hook ".repeat(59)}end.`;
+    await agentCall(token, "push_suggestions", { ...PUSH, hook: maxHook });
+    await A.waitForFunction((t) => document.querySelector('.strip .sug[data-kind="hook"]').title === t, maxHook);
+    await tightHook.dispatchEvent("pointerdown", { pointerType: "touch", isPrimary: true, pointerId: 11 });
+    await A.waitForTimeout(700);
+    const maxOpen = await tightHook.evaluate((b) => {
+      const x = b.querySelector(".sug-x");
+      b.scrollTop = b.scrollHeight;
+      return [x.scrollHeight <= x.clientHeight + 1, b.scrollHeight > b.clientHeight + 1, x.getBoundingClientRect().bottom <= b.getBoundingClientRect().bottom + 1];
+    });
+    assert.deepEqual(maxOpen, [true, true, true], "the longest hook: its words scroll inside the slot, none cut off");
+    const maxBox = await tightHook.boundingBox();
+    assert.ok(maxBox.y + maxBox.height <= tightLine - 8, `the longest hook held open, still clear of the line (${tightLine}): ${JSON.stringify(maxBox)}`);
+    await shot(A, "strip-tight-longest-held-landscape");
+    await tightHook.dispatchEvent("pointerup", { pointerType: "touch", isPrimary: true, pointerId: 11 });
+    await tightHook.dispatchEvent("click");
+    assert.equal(Math.round((await tightHook.boundingBox()).height), 44, "let go: one line again");
     await A.setViewportSize(DESKTOP.viewport);
     // A long question with a word that has no break point still fits its slot.
     await agentCall(token, "push_suggestions", { question: `${"Why ".repeat(55)}${"x".repeat(60)}?`, number: 6, point: PUSH.point, hook: PUSH.hook });
@@ -738,6 +757,9 @@ export async function run({ browser, base, mode, dist, out }) {
     assert.ok(focusOpen[0] && focusOpen[1] > heights[0], `keyboard focus shows the whole question: ${focusOpen}`);
     assert.deepEqual([await otherSlots(), await scriptBox()], [othersBefore, scriptBeforeOpen], "the other slots and the script stay put");
     await shot(A, "strip-focus-open-desktop");
+    // Escape closes what focus opened, uses nothing and leaves the focus where it was.
+    await A.keyboard.press("Escape");
+    assert.deepEqual([await longOpen(), await longQ.getAttribute("aria-pressed"), await longQ.evaluate((b) => b === document.activeElement)], [[false, heights[0]], "false", true], "Escape: closed, not used, still focused");
     // New words while it has focus: once focus leaves, its hover title has the new words.
     const longQ2 = `${"How ".repeat(60)}?`;
     await agentCall(token, "push_suggestions", { question: longQ2, number: 6, point: PUSH.point, hook: PUSH.hook });
@@ -752,6 +774,31 @@ export async function run({ browser, base, mode, dist, out }) {
     await longQ.dispatchEvent("pointerup", { pointerType: "touch", isPrimary: true, pointerId: 7 });
     await longQ.dispatchEvent("click");
     assert.deepEqual([await longOpen(), await longQ.getAttribute("aria-pressed")], [[false, heights[0]], "false"], "letting go closes it and uses nothing");
+    // Beside the text on the shortest window and nearly the narrowest strip, the longest hook opened from the last
+    // slot has more words than room to the window's edge: the slot scrolls, and none of its words are cut off inside it.
+    await A.setViewportSize({ width: 1920, height: 620 });
+    await A.waitForFunction(() => document.querySelector(".strip").dataset.place === "side");
+    const sideRoom = await A.evaluate(() => { const m = document.querySelector(".script"); return innerWidth - (m.getBoundingClientRect().right - parseFloat(getComputedStyle(m).paddingInlineEnd)) - 24; });
+    await A.setViewportSize({ width: 1920 - 2 * Math.floor(sideRoom - 205), height: 620 });
+    await A.waitForFunction(() => { const s = document.querySelector(".strip"); return s.dataset.place === "side" && s.getBoundingClientRect().width < 230; });
+    const sideHook = A.locator('.strip .sug[data-kind="hook"]');
+    const sideMax = `${"Hook ".repeat(59)}end.`;
+    await agentCall(token, "push_suggestions", { question: longQ2, number: 6, point: PUSH.point, hook: sideMax });
+    await A.waitForFunction((t) => document.querySelector('.strip .sug[data-kind="hook"]').title === t, sideMax);
+    await sideHook.dispatchEvent("pointerdown", { pointerType: "touch", isPrimary: true, pointerId: 12 });
+    await A.waitForTimeout(700);
+    const sideOpen = await sideHook.evaluate((b) => {
+      const x = b.querySelector(".sug-x");
+      b.scrollTop = b.scrollHeight;
+      return [x.scrollHeight <= x.clientHeight + 1, b.scrollHeight > b.clientHeight + 1, x.getBoundingClientRect().bottom <= b.getBoundingClientRect().bottom + 1, b.getBoundingClientRect().bottom <= innerHeight - 8 + 1];
+    });
+    assert.deepEqual(sideOpen, [true, true, true, true], "beside the text: the longest hook scrolls inside its slot, none cut off, inside the window");
+    await shot(A, "strip-side-longest-held-desktop");
+    await sideHook.dispatchEvent("pointerup", { pointerType: "touch", isPrimary: true, pointerId: 12 });
+    await sideHook.dispatchEvent("click");
+    assert.equal(await sideHook.getAttribute("aria-pressed"), "false", "letting go uses nothing");
+    await A.setViewportSize(DESKTOP.viewport);
+    await A.waitForFunction(() => document.querySelector(".strip").dataset.place !== "side");
     // New words take the slot fresh; a slot left out stays, empty and switched off, at its size.
     await agentCall(token, "push_suggestions", { question: "Where does WordPress keep a note of my login?", number: 7, point: "WordPress keeps a login for 2 days." });
     assert.deepEqual(await slotRows(), [
