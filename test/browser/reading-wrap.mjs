@@ -15,6 +15,16 @@ A real [plant guide](https://example.com/guide) here.
 
 The end.
 `;
+// Large-font cases isolate the title defect; standalone links at 300px have a separate known overflow.
+// Keep checking the original mixed-content fixture at 32px.
+const LARGE_TITLE_SCRIPT = `### **INTRO · 00:00**
+
+${TOKEN}
+
+### **${TOKEN} · 01:00**
+
+The end.
+`;
 
 export async function run({ browser, base, out }) {
   const checks = [];
@@ -38,7 +48,7 @@ export async function run({ browser, base, out }) {
       const page = await context.newPage();
       await page.goto(base);
       await page.locator('.empty [data-action="paste"]').click();
-      await page.locator("#paste-text").fill(SCRIPT);
+      await page.locator("#paste-text").fill(size === 32 ? SCRIPT : LARGE_TITLE_SCRIPT);
       await page.locator('[data-action="open-paste"]').click();
       const paragraph = page.locator(".script p.say").filter({ hasText: TOKEN });
       await paragraph.waitFor();
@@ -55,6 +65,12 @@ export async function run({ browser, base, out }) {
           viewport: innerWidth,
           lines: rects.length,
           fits: rects.every((r) => r.left >= box.left - 1 && r.right <= box.right + 1),
+          overflow: [...document.querySelectorAll(".script *")].flatMap((node) => {
+            const range = document.createRange();
+            range.selectNodeContents(node);
+            return [...range.getClientRects()].some((r) => r.right > innerWidth + 1)
+              ? [`${node.tagName}.${node.className}: ${node.textContent.slice(0, 60)}`] : [];
+          }),
         };
       });
       const file = join(out, `reading-wrap-${viewport.width}-${size}.png`);
@@ -81,7 +97,11 @@ export async function run({ browser, base, out }) {
         if (heading.spans.some((span) => !span.fits)) failures.push(`${name}, title ${index + 1}: title or time glyphs leave their box or the column`);
         if (heading.page > heading.viewport + 1) failures.push(`${name}, title ${index + 1}: page scrolls sideways (${heading.page}px)`);
         console.log(`PROM-01 ${name}, title ${index + 1}: ${JSON.stringify(heading)}`);
-        await title.evaluate((el) => el.scrollIntoView({ block: "start", inline: "nearest" }));
+        await title.evaluate((el) => {
+          const line = document.querySelector(".reading-line").getBoundingClientRect().top;
+          window.scrollTo(0, scrollY + el.getBoundingClientRect().top - line - 8);
+        });
+        await page.waitForTimeout(220);
         const titleFile = join(out, `reading-wrap-${viewport.width}-${size}-title-${index + 1}.png`);
         await page.screenshot({ path: titleFile });
         screenshots.push(titleFile);

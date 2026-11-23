@@ -160,13 +160,13 @@
   .section.active { --c-say: var(--text); --c-ql: var(--ql); --c-next: var(--next); --c-now: var(--accent); --c-link: var(--muted); }
   .section :is(p, .title) { transition: color 200ms ease-out, border-color 200ms ease-out; }
   .title {
-    display: flex; align-items: center; gap: 0.35em 0.8em;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 0.35em 0.8em;
     margin: 0 0 0.6em; font: 500 max(13px, 0.3em)/1.3 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--c-say);
   }
   .title::before { content: ""; flex: none; inline-size: 0.6em; block-size: 0.6em; border-radius: 50%; background: var(--c-now); }
-  .title > span:first-child { min-inline-size: 0; }
+  .title > span:first-child { min-inline-size: min(100%, 12em); overflow-wrap: break-word; }
   .time:empty { display: none; }
-  .time { flex: none; margin-inline-start: auto; color: var(--muted); background: var(--chip); border-radius: 999px; padding: 0.2em 0.7em; font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
+  .time { flex: none; max-inline-size: 100%; font-size: min(1em, 2rem); overflow-wrap: anywhere; margin-inline-start: auto; color: var(--muted); background: var(--chip); border-radius: 999px; padding: 0.2em 0.7em; font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
   .script p { margin: 0 0 calc(0.25em + var(--room)); }
   .bullet::before { content: "• "; color: var(--c-now); }
   .next { color: var(--c-next); }
