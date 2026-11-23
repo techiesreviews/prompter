@@ -14,6 +14,10 @@ A real [plant guide](https://example.com/guide) here.
 ### **${TOKEN} · 01:00**
 
 The end.
+
+### **3 · WHY YOUR SOIL NEEDS MORE COMPOST EVERY SPRING · 12:00**
+
+Keep the title beside its dot.
 `;
 // Large-font cases isolate the title defect; standalone links at 300px have a separate known overflow.
 // Keep checking the original mixed-content fixture at 32px.
@@ -24,6 +28,10 @@ ${TOKEN}
 ### **${TOKEN} · 01:00**
 
 The end.
+
+### **3 · WHY YOUR SOIL NEEDS MORE COMPOST EVERY SPRING · 12:00**
+
+Keep the title beside its dot.
 `;
 
 export async function run({ browser, base, out }) {
@@ -91,8 +99,17 @@ export async function run({ browser, base, out }) {
             const character = range.getBoundingClientRect().width;
             return { width: box.width, character, fits: within(box, column) && glyphsFit };
           });
-          return { spans, page: document.documentElement.scrollWidth, viewport: innerWidth };
+          const text = el.children[0].getBoundingClientRect();
+          const time = el.children[1].getBoundingClientRect();
+          const centeredOffset = Math.max(0, (time.height - text.height) / 2);
+          return {
+            spans,
+            firstRow: text.top <= column.top + centeredOffset + 1,
+            page: document.documentElement.scrollWidth,
+            viewport: innerWidth,
+          };
         });
+        if (!heading.firstRow) failures.push(`${name}, title ${index + 1}: title leaves the dot alone on an earlier row`);
         if (heading.spans[0].width + 1 < heading.spans[0].character) failures.push(`${name}, title ${index + 1}: title span is narrower than one character`);
         if (heading.spans.some((span) => !span.fits)) failures.push(`${name}, title ${index + 1}: title or time glyphs leave their box or the column`);
         if (heading.page > heading.viewport + 1) failures.push(`${name}, title ${index + 1}: page scrolls sideways (${heading.page}px)`);
