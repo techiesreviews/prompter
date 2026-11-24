@@ -170,7 +170,6 @@ export function relayLink({
     return link.token;
   }
 
-  // Use this tab: take the link back from the newer tab.
   function useHere() {
     link.state = "waiting";
     connect();
