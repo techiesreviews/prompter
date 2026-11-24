@@ -1,11 +1,6 @@
-// Page logic. scripts/build.mjs inlines src/core.mjs, src/settings.mjs, src/follow.mjs,
-// src/open-script.mjs, src/speech.mjs, src/agent.mjs, src/wire.mjs, src/relay-link.mjs, src/suggestions.mjs, src/camframe.mjs,
-// src/reading-line.mjs and src/ui/range-field.mjs above this file inside one function, so parse, PRESETS,
-// DEMO_SCRIPT, SETTINGS, STORED, settingValue, settingsStore, encodeScript, voiceStep, voiceStart, voiceSession, voiceAt, linkAt, openScripts, speechWords,
-// speechKeeper, connectionPrompt, agentName, RELAY_PATH, relayLink, readSuggestions, suggestionStrip, camframeLink, cueCrossing, readingLine,
-// rangeField … are in scope here.
+// Page logic. scripts/build.mjs inlines the modules in its INLINED list above this file inside one
+// function, so their exports are in scope here without imports.
 
-// ---------- Player view ----------
 // The main-screen window shows a YouTube video full size via this same page.
 if (location.hash.startsWith("#player=")) {
   const q = new URLSearchParams(location.hash.slice(1));
@@ -25,7 +20,6 @@ if (location.hash.startsWith("#player=")) {
   return;
 }
 
-// ---------- Fonts ----------
 // Inter and Roboto Mono (SIL Open Font License 1.1, fonts/OFL.txt) come from
 // /fonts/ when the page is served. An offline copy opened from a file uses the
 // system fonts, so it never asks for a file that is not there.
@@ -108,7 +102,6 @@ const camframe = camframeLink({ fetch, clock: window, visible: () => document.vi
 // The line under the Camera cues list: the words last read out, and the read-out still due.
 const layoutsSay = { said: "", timer: 0 };
 
-// ---------- Opening scripts ----------
 const isEmpty = () => root.dataset.view === "empty";
 const plainAddress = () => location.pathname + location.search;
 
@@ -237,7 +230,6 @@ async function route() {
   showStart();
 }
 
-// ---------- Rendering ----------
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const SPOKEN = new Set(["say", "bullet", "next", "now"]);
 const OPENS_AT_LINE = "opens on the main screen when it reaches the reading line";
@@ -303,7 +295,6 @@ function render() {
   updateActive();
 }
 
-// ---------- Popovers and dialogs ----------
 // Open and Settings are native popovers (light dismiss, Escape) anchored above
 // their bar buttons with CSS anchor positioning. Where the browser has none,
 // placeAbove() puts them there by hand.
@@ -341,8 +332,7 @@ function showDialog(dialog) {
   dialog.showModal();
 }
 
-// ---------- The Producer's strip (src/suggestions.mjs, TOOLS-347) ----------
-// One question, one talking point and one hook the agent pushes while it is connected to the Producer.
+// The Producer's strip (its state is suggestionStrip in src/suggestions.mjs): one question, one talking point and one hook the agent pushes while it is connected to the Producer.
 // It shows only while that agent is connected here and its pushes keep coming, and floats in slots of a
 // fixed size so the script never moves for it. A tap on Use marks a slot used; the agent's next push hears it.
 const producer = suggestionStrip();
@@ -506,9 +496,8 @@ for (const b of stripSlots) b.addEventListener("click", (e) => {
 window.addEventListener("resize", () => { if (!stripEl.hidden) fitStrip(); });
 new ResizeObserver(() => { if (!stripEl.hidden) fitStrip(); }).observe(main);
 
-// ---------- Your own agent over MCP (live relay) ----------
-// The link itself (token, socket, backoff, keepalive, tool calls) is relayLink in src/relay-link.mjs;
-// this part gives it the page's two tools and draws its state. An offline copy (file://) has no relay:
+// The live relay link itself (token, socket, backoff, keepalive, tool calls) is relayLink in src/relay-link.mjs;
+// the code below gives it the page's two tools and draws its state. An offline copy (file://) has no relay:
 // its Copy MCP copies the open server's message, which answers with a link instead.
 const live = /^https?:$/.test(location.protocol);
 const liveLink = relayLink({
@@ -615,8 +604,7 @@ for (const type of ["pointerenter", "focus", "pointerdown"]) startMcp.addEventLi
 if (live) liveLink.start();
 renderAgent();
 
-// ---------- Reading line ----------
-// Dragged anywhere along it (or moved with the keys when focused) to camera height and
+// The reading line is dragged anywhere along it (or moved with the keys when focused) to camera height and
 // remembered on this device as a share of the window height. It is set on
 // :root as --line in px; the page's CSS and `reading` (src/reading-line.mjs: what is at
 // the line, bring this to the line) use that one value.
@@ -719,8 +707,6 @@ handle.addEventListener("keydown", (e) => {
   moveLine(e.key === "Home" ? LINE.min : e.key === "End" ? LINE.max : (pct + LINE_STEPS[e.key]) / 100, true);
 });
 
-// ---------- Active section ----------
-
 /** The place under the reading line moved (the line, a section jump, line spacing): all that follows it, from one look. */
 function followLine() {
   const at = reading.look();
@@ -747,7 +733,6 @@ function updateActive(look = reading.look()) {
   if (at) scripts.settle(() => showLink(at.s, at.l, false), SETTLE_MS); else scripts.unsettle();
 }
 
-// ---------- CamFrame link ----------
 // A camera cue line that reaches the reading line goes to CamFrame once per
 // pass down (auto-scroll, scrolling by hand, Follow my voice and section jumps
 // all scroll the page). Failures only change the CamFrame button in Settings.
@@ -791,7 +776,6 @@ function drawCamframe() {
   if (was !== camframe.state && ((camframe.state === "on" && was !== "reconnecting") || camframe.state === "lost")) setStatus(`${name}.`);
 }
 
-// ---------- Main screen ----------
 function connected() { return mainWin && !mainWin.closed; }
 
 // The main screen's button in Settings (orange while connected); the Settings button shows a dot then.
@@ -920,7 +904,6 @@ function hideHint() {
 function lost() { showAlert("Main screen window lost. Connect it again in Settings, or click a link button."); }
 function blocked() { showAlert("No window could open. Allow pop-ups for this page."); }
 
-// ---------- Clock ----------
 const fmt = (sec) => `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`;
 
 function updateClock() {
@@ -941,7 +924,6 @@ function startClock() {
 }
 setInterval(updateClock, 1000);
 
-// ---------- Auto-scroll ----------
 function tick(ts) {
   if (!autoOn) return;
   if (lastFrame) window.scrollBy(0, (speed * (ts - lastFrame)) / 1000);
@@ -984,7 +966,6 @@ function setSpeed(v) {
   showSpeed(speed);
 }
 
-// ---------- Text size and column ----------
 function setSize(px) {
   px = prefs.save("size", px);
   root.style.setProperty("--size", px + "px");
@@ -1032,7 +1013,6 @@ function goSection(delta) {
   followLine(); // at once, so quick repeated presses keep moving
 }
 
-// ---------- Follow my voice ----------
 // The browser's speech recognition turns the voice into words (Chrome sends
 // the audio to Google for that, unless it can do it on this device); the
 // script itself never leaves the page.
@@ -1157,7 +1137,6 @@ const VOICE_ERRORS = {
   "start-failed": "Follow my voice could not start in this browser; try Chrome or Edge. Follow my voice is off.",
 };
 
-// ---------- Link, paste and copy ----------
 function publicBase() {
   return /^https?:$/.test(location.protocol) ? location.origin + location.pathname : `${SITE}/`;
 }
@@ -1322,7 +1301,6 @@ async function loadFile(file) {
   else showAlert(`No sections found in ${file.name}. Each section starts with a title line like: ### **INTRO · 00:00**`);
 }
 
-// ---------- Events ----------
 window.addEventListener("scroll", () => reading.ask(), { passive: true });
 for (const type of ["pointerdown", "keydown", "wheel", "touchstart"]) {
   window.addEventListener(type, () => { cueArmed = true; }, { capture: true, passive: true });
@@ -1452,7 +1430,6 @@ document.addEventListener("keydown", (e) => {
   else if (/^[1-9]$/.test(k)) showLink(scripts.now.active, Number(k) - 1, true);
 });
 
-// ---------- Start ----------
 voiceBtn.hidden = !Recognition;
 setLine(prefs.read("line"));
 setSpeed(speed);
