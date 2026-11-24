@@ -332,7 +332,8 @@ function showDialog(dialog) {
   dialog.showModal();
 }
 
-// The Producer's strip (its state is suggestionStrip in src/suggestions.mjs): one question, one talking point and one hook the agent pushes while it is connected to the Producer.
+// The Producer's strip (its state is suggestionStrip in src/suggestions.mjs): one question, one talking
+// point and one hook the agent pushes while it is connected to the Producer.
 // It shows only while that agent is connected here and its pushes keep coming, and floats in slots of a
 // fixed size so the script never moves for it. A tap on Use marks a slot used; the agent's next push hears it.
 const producer = suggestionStrip();

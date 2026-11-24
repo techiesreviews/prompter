@@ -32,7 +32,8 @@ export function relayBackoff(retry, random) {
  * Read: `state` (off, waiting for the agent, on once it said hello or called, elsewhere when a newer tab
  * took the link), `info` (the agent's { name, version }, or null), `token`, `failed` (the last token fetch
  * got nothing). Do: `start()` (picks up a kept token, starts the keepalive and the age check),
- * `prefetchToken()`, `waitForAgent(busy)` (resolves to the token to copy, or null), `useHere()`, `disconnect()`.
+ * `prefetchToken()`, `waitForAgent(busy)` (resolves to the token to copy, or null), `useHere()` (Use this tab:
+ * take the link back from the newer tab), `disconnect()`.
  */
 export function relayLink({
   WebSocket = globalThis.WebSocket, fetch = globalThis.fetch, clock = globalThis, now = Date.now, random = Math.random,

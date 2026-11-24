@@ -3,7 +3,7 @@
 Two layout Scenes the Prompter saves in CamFrame for Lex's livestream cue lines (fleet issue
 techiesreviews/fleet#4; Lex's decisions of 2026-11-04). CamFrame's side is its Prompter link API 2
 (`docs/prompter-link-api.md` in the CamFrame repo). Code: `layoutPlan` and its helpers in
-`src/camframe.mjs`, the glue in `src/app.js` (Camera layouts section); what is checked: the layout
+`src/camframe.mjs`, the glue in `src/app.js` (`drawCamframe`, `layoutsSay` and the paste window's Camera cues line); what is checked: the layout
 tests in `test/camframe.test.mjs` and the Camera layouts block in `test/browser/page.mjs`.
 
 ## The two layouts
