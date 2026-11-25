@@ -7,10 +7,13 @@ import { clientKey, RATE_LIMIT } from "./limiter.mjs";
 /** The client a limit counts against: its address grouped as limiter.mjs does (one IPv6 /64 is one client). */
 export const clientOf = (request) => clientKey(request.headers.get("cf-connecting-ip") || "local");
 
-/** True when a browser sent the request from another website (an Origin that is not this site's, "null" included). */
-export function fromOtherSite(request) {
+/**
+ * True when a browser sent the request from another website (an Origin that is not this site's, "null"
+ * included), unless it is one of the exact origins the route names in `allowed`.
+ */
+export function fromOtherSite(request, allowed = []) {
   const origin = request.headers.get("Origin");
-  return Boolean(origin) && origin !== new URL(request.url).origin;
+  return Boolean(origin) && origin !== new URL(request.url).origin && !allowed.includes(origin);
 }
 
 /** Asks each limiter in turn (a missing one is skipped): the first refusal, or null when all allow it. */

@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  RELAY_EXPIRY_CHECK_MS, RELAY_KEEPALIVE_MS, SPARE_TOKEN_MS, relayBackoff, relayLink,
+  RELAY_EXPIRY_CHECK_MS, RELAY_KEEPALIVE_MS, SPARE_TOKEN_MS, producerToken, relayBackoff, relayLink,
 } from "../src/relay-link.mjs";
 import { RELAY_CLOSE, TOKEN_MAX_AGE_MS, TOKEN_PATH } from "../src/wire.mjs";
 import { STORED } from "../src/settings.mjs";
@@ -396,4 +396,55 @@ test("Use this tab after the token's eight hours drops it like Disconnect MCP", 
   assert.equal(ws.sockets.length, 2, "the only new socket carries the revoke");
   ws.last().open();
   assert.deepEqual(ws.last().sent, [{ type: "revoke" }]);
+});
+
+const HANDED = `tp1-${"m0abcdef1"}-${"A".repeat(43)}`;
+
+test("producerToken: the token in a #producer= address, the shape a token has, or null", () => {
+  assert.equal(producerToken(`#producer=${HANDED}`), HANDED);
+  for (const hash of ["", "#", "#producer=", "#producer=nope", `#producer=${HANDED}&s=x`, `#s=abc`, `#demo`, `#producer=tp1-${"x".repeat(200)}`, `#producer=${HANDED}<script>`]) {
+    assert.equal(producerToken(hash), null, hash);
+  }
+});
+
+test("opened from the Producer: the handed token is kept and connected as Wait for MCP does, and says it came from the Producer", async () => {
+  const { link, ws, store, tokens, time } = setup();
+  link.start();
+  link.adopt(HANDED);
+  assert.deepEqual([link.state, link.token, link.producer, tokens.calls.length], ["waiting", HANDED, true, 0], "no token of its own is fetched");
+  assert.deepEqual(JSON.parse(store.get(STORED.agent)), { token: HANDED, createdAt: time.now(), producer: true });
+  assert.deepEqual(ws.last().protocols, ["prompter", `t.${HANDED}`]);
+  ws.last().open();
+  ws.last().receive({ type: "agent", name: "Claude Code" });
+  assert.deepEqual([link.state, link.info.name], ["on", "Claude Code"]);
+  // The same link again (a reload of the old address) changes nothing.
+  link.adopt(HANDED);
+  assert.deepEqual([link.state, ws.sockets.length], ["on", 1]);
+  // Wait for MCP afterwards copies that same token.
+  assert.equal(await link.waitForAgent(), HANDED);
+  assert.equal(tokens.calls.length, 0);
+});
+
+test("a reload keeps the Producer's link; Disconnect MCP forgets it", async () => {
+  const time = fakeClock();
+  const s = setup({ store: fakeStore({ [STORED.agent]: JSON.stringify({ token: HANDED, createdAt: time.now(), producer: true }) }) });
+  s.link.start();
+  assert.deepEqual([s.link.state, s.link.token, s.link.producer], ["waiting", HANDED, true]);
+  s.link.disconnect();
+  assert.deepEqual([s.link.state, s.link.token, s.link.producer, s.store.get(STORED.agent)], ["off", null, false, null]);
+});
+
+test("a new Producer link replaces the token this tab had: the old one is revoked", async () => {
+  const { link, ws } = setup();
+  await link.waitForAgent();
+  const old = ws.last();
+  old.open();
+  link.adopt(HANDED);
+  assert.deepEqual(old.sent, [{ type: "revoke" }], "the old token's agent is refused from now on");
+  assert.deepEqual([link.state, link.token, link.producer], ["waiting", HANDED, true]);
+  assert.deepEqual(ws.last().protocols, ["prompter", `t.${HANDED}`]);
+  // A token from Wait for MCP is not the Producer's.
+  link.disconnect();
+  await link.waitForAgent();
+  assert.equal(link.producer, false);
 });

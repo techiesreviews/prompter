@@ -384,46 +384,63 @@ test("a preset name an object has of its own (__proto__, toString) is refused or
   }
 });
 
-test("token: push_suggestions sends the cleaned question, talking point and hook to the tab and reports what the host used", async () => {
-  const relay = fakeRelay({ answers: { push_suggestions: { shown: true, used: [{ kind: "question", text: "What is a session?", number: 6 }, { kind: "hook", text: "No password." }] } } });
-  const r = await liveCall("push_suggestions", { question: " What is a\nsession? ", number: 6, point: "The cookie is the proof.", hook: "No password." }, { relay });
+test("token: push_suggestions sends the cleaned items to the tab and reports what the host used and skipped", async () => {
+  const relay = fakeRelay({ answers: { push_suggestions: {
+    shown: true,
+    used: [{ kind: "next", text: "What is a session?", number: 6 }, { kind: "point", text: "No password." }],
+    skipped: [{ kind: "question", text: "Old one?", number: 2 }],
+  } } });
+  const items = [{ kind: "next", text: " What is a\nsession? ", number: 6 }, { kind: "point", text: "The cookie is the proof." }, { kind: "audience", text: "Do you use 2FA?" }];
+  const r = await liveCall("push_suggestions", { items }, { relay });
   const call = relay.ops.find((o) => o.op === "call");
-  assert.deepEqual([call.tool, call.args, call.timeout], ["push_suggestions", { question: "What is a session?", number: 6, point: "The cookie is the proof.", hook: "No password." }, 10_000]);
+  assert.deepEqual([call.tool, call.args, call.timeout], ["push_suggestions", { items: [{ kind: "next", text: "What is a session?", number: 6 }, items[1], items[2]] }, 10_000]);
   assert.equal(r.body.result.isError, undefined);
-  assert.deepEqual(r.body.result.structuredContent, { shown: true, used: [{ kind: "question", text: "What is a session?", number: 6 }, { kind: "hook", text: "No password." }], asked: [6] });
-  assert.match(r.body.result.content[0].text, /used: question 6[\s\S]*asked: \[6\]/i, "the agent is told to pass the used question numbers on as asked");
-  const quiet = await liveCall("push_suggestions", { hook: "Only a hook" }, { relay: fakeRelay({ answers: { push_suggestions: { shown: true, used: [] } } }) });
-  assert.deepEqual(quiet.body.result.structuredContent, { shown: true, used: [], asked: [] });
-  const hidden = await liveCall("push_suggestions", { hook: "Only a hook" }, { relay: fakeRelay({ answers: { push_suggestions: { shown: false, used: [] } } }) });
-  assert.match(hidden.body.result.content[0].text, /start screen/, "says why the strip is not showing");
+  assert.deepEqual(r.body.result.structuredContent, {
+    shown: true,
+    used: [{ kind: "next", text: "What is a session?", number: 6 }, { kind: "point", text: "No password." }],
+    skipped: [{ kind: "question", text: "Old one?", number: 2 }],
+    asked: [6],
+  });
+  assert.match(r.body.result.content[0].text, /used: question 6[\s\S]*skipped: question 2[\s\S]*asked: \[6\]/i, "the agent is told to pass the used question numbers on as asked");
+  const quiet = await liveCall("push_suggestions", { items: [{ kind: "steer", text: "Back to logins?" }] }, { relay: fakeRelay({ answers: { push_suggestions: { shown: true, used: [], skipped: [] } } }) });
+  assert.deepEqual(quiet.body.result.structuredContent, { shown: true, used: [], skipped: [], asked: [] });
+  const done = await liveCall("push_suggestions", { items: [{ kind: "steer", text: "Back to logins?" }] }, { relay: fakeRelay({ answers: { push_suggestions: { shown: false, used: [], skipped: [] } } }) });
+  assert.match(done.body.result.content[0].text, /nothing new is waiting/i, "says why nothing shows");
 });
 
 test("token: push_suggestions refuses a bad push before the tab hears it; the tab's answer is cleaned", async () => {
-  for (const bad of [{}, { number: 4 }, { question: "Q?", number: -1 }, { point: "x".repeat(400) }]) {
+  for (const bad of [{}, { items: [] }, { question: "The old shape", number: 4 }, { items: [{ kind: "hook", text: "Old kind" }] }, { items: [{ kind: "point", text: "P", number: 3 }] }, { items: [{ kind: "question", text: "x".repeat(400) }] }]) {
     const relay = fakeRelay();
     const r = await liveCall("push_suggestions", bad, { relay });
     assert.equal(r.body.result.isError, true, JSON.stringify(bad));
     assert.equal(relay.ops.some((o) => o.op === "call"), false, "never reaches the tab");
   }
-  const messy = fakeRelay({ answers: { push_suggestions: { shown: "yes", used: [{ kind: "question", text: "x".repeat(5000), number: 2 }, { kind: "nope", text: "?" }, "junk", { kind: "point", text: 5 }] } } });
-  const r = await liveCall("push_suggestions", { question: "Q?", number: 2 }, { relay: messy });
-  assert.deepEqual([r.body.result.structuredContent.shown, r.body.result.structuredContent.used.length, r.body.result.structuredContent.used[0].text.length, r.body.result.structuredContent.asked], [false, 1, 300, [2]]);
+  const messy = fakeRelay({ answers: { push_suggestions: {
+    shown: "yes",
+    used: [{ kind: "question", text: "x".repeat(5000), number: 2 }, { kind: "nope", text: "?" }, "junk", { kind: "point", text: 5 }, { kind: "point", text: "P", number: 4 }],
+    skipped: "junk",
+  } } });
+  const r = await liveCall("push_suggestions", { items: [{ kind: "question", text: "Q?", number: 2 }] }, { relay: messy });
+  const out = r.body.result.structuredContent;
+  assert.deepEqual([out.shown, out.used.length, out.used[0].text.length, out.used[1], out.skipped, out.asked], [false, 2, 300, { kind: "point", text: "P" }, [], [2]]);
 });
 
-test("token: clear_suggestions hides the strip and reports the last taps", async () => {
-  const relay = fakeRelay({ answers: { clear_suggestions: { used: [{ kind: "question", text: "Q?", number: 9 }] } } });
+test("token: clear_suggestions hides the cues and reports the last taps", async () => {
+  const relay = fakeRelay({ answers: { clear_suggestions: { used: [{ kind: "question", text: "Q?", number: 9 }], skipped: [{ kind: "audience", text: "A?" }] } } });
   const r = await liveCall("clear_suggestions", {}, { relay });
-  assert.deepEqual([relay.ops.find((o) => o.op === "call").tool, r.body.result.structuredContent], ["clear_suggestions", { cleared: true, used: [{ kind: "question", text: "Q?", number: 9 }], asked: [9] }]);
+  assert.deepEqual([relay.ops.find((o) => o.op === "call").tool, r.body.result.structuredContent], ["clear_suggestions", { cleared: true, used: [{ kind: "question", text: "Q?", number: 9 }], skipped: [{ kind: "audience", text: "A?" }], asked: [9] }]);
   const closed = await liveCall("clear_suggestions", {}, { relay: fakeRelay({ tab: false }) });
   assert.deepEqual([closed.body.result.isError, closed.body.result.content[0].text], [true, NOT_OPEN]);
 });
 
-test("token: the live instructions name the Producer's strip and where its words may come from", async () => {
+test("token: the live instructions name the Producer's cues and where their words may come from", async () => {
   const r = await live("initialize", { protocolVersion: "2025-11-25", clientInfo: { name: "claude-code" } });
   assert.match(r.body.result.instructions, /push_suggestions[\s\S]*only from the show plan or from what was said/);
   const push = (await live("tools/list")).body.result.tools.find((t) => t.name === "push_suggestions");
   assert.match(push.description, /Producer/);
   assert.match(push.description, /never invent/i);
+  assert.deepEqual(push.inputSchema.properties.items.items.properties.kind.enum, ["question", "next", "steer", "point", "audience"]);
+  assert.equal(push.inputSchema.properties.items.maxItems, 3);
   assert.deepEqual([push.annotations.readOnlyHint, push.annotations.idempotentHint], [false, true]);
 });
 

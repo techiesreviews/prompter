@@ -1,83 +1,149 @@
-// The Producer's suggestions strip (TOOLS-347): while the person's own agent is connected to both their
-// Producer and this prompter, it pushes one question, one talking point and one hook here (push_suggestions);
-// a tap on Use marks one used, and the agent's next push or clear_suggestions hears which, so a used
-// question counts as Asked on the Producer. The words live in this tab's memory only and are never stored.
-// The strip hides by itself when no push came for STRIP_STALE_MS (the agent, and with it the Producer, went
-// quiet), so it never stays up as a dead control. The Worker (src/mcp.mjs) checks a push with readSuggestions
-// before the tab hears it. scripts/build.mjs inlines this file into the page, so keep it import-free and
-// use only `export function`/`export const` forms.
+// The Producer's cues on the prompter (TOOLS-464): while the person's own agent is connected to both their
+// Producer and this prompter, it pushes what to say next here (push_suggestions): a question (with its
+// number on the Producer when it is a prepared one), the next prepared question, a way to steer back, a
+// talking point or an audience question. At most SUGGESTIONS_WAITING wait, the newest on top; the page shows
+// them as one small cue pill at the reading line that opens the newest in a box. Use marks one used (a used
+// prepared question counts as Asked on the Producer), Skip passes it; the agent's next push or
+// clear_suggestions hears which. The words live in this tab's memory only and are never stored. The cues
+// hide by themselves when no push came for SUGGESTION_STALE_MS (the agent, and with it the Producer, went
+// quiet), so nothing dead stays up. The Worker (src/mcp.mjs) checks a push with readSuggestions before the
+// tab hears it. scripts/build.mjs inlines this file into the page, so keep it import-free and use only
+// `export function`/`export const` forms.
 
-/** The strip's three slots, in their order on screen. */
-export const SUGGESTION_KINDS = ["question", "point", "hook"];
-/** The most characters one slot takes (a prepared question on the Producer is at most 300). */
+/** The kinds of cue: a question, the next prepared question, steer back, a talking point, an audience question. */
+export const SUGGESTION_KINDS = ["question", "next", "steer", "point", "audience"];
+/** The kinds that may carry the prepared question's number on the Producer. */
+const NUMBERED = ["question", "next"];
+/** The most characters one cue takes (a prepared question on the Producer is at most 300). */
 export const SUGGESTION_MAX_CHARS = 300;
-/** The strip hides this long after the last push; the agent pushes on every Producer round (at most ~30 s apart). */
-export const STRIP_STALE_MS = 2 * 60 * 1000;
+/** The most cues waiting at once (and so the most in one push); a newer one pushes the oldest off. */
+export const SUGGESTIONS_WAITING = 3;
+/** The cues hide this long after the last push; the agent pushes on every Producer round (at most ~30 s apart). */
+export const SUGGESTION_STALE_MS = 2 * 60 * 1000;
+/** How many used or skipped cues the queue remembers, so an idle round's same push does not bring them back. */
+const DONE_KEPT = 50;
 
 const oneLine = (v) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim() : null);
+const plain = (v) => Boolean(v) && typeof v === "object" && !Array.isArray(v);
+const copy = ({ kind, text, number }) => ({ kind, text, ...(number !== undefined ? { number } : {}) });
 
 /**
- * An agent's push as `{ slots }` (`question: { text, number? }`, `point: { text }`, `hook: { text }`, each only
- * when given), or `{ error }` with a plain reason. `number` is the prepared question's number on the Producer.
+ * An agent's push as `{ items }` (each `{ kind, text, number? }`, most important first, on one line), or
+ * `{ error }` with a plain reason. `number` is a prepared question's number on the Producer.
  */
 export function readSuggestions(args) {
-  if (!args || typeof args !== "object" || Array.isArray(args)) return { error: "Send a question, a talking point or a hook." };
-  const slots = {};
-  for (const kind of SUGGESTION_KINDS) {
-    if (args[kind] === undefined) continue;
-    const text = oneLine(args[kind]);
-    if (!text) return { error: `"${kind}" must be a line of text.` };
-    if (text.length > SUGGESTION_MAX_CHARS) return { error: `"${kind}" is longer than ${SUGGESTION_MAX_CHARS} characters.` };
-    slots[kind] = { text };
+  const shape = `Send "items": 1 to ${SUGGESTIONS_WAITING} of { kind, text, number? }, kind one of ${SUGGESTION_KINDS.join(", ")}.`;
+  if (!plain(args) || !Array.isArray(args.items) || Object.keys(args).some((k) => k !== "items")) return { error: shape };
+  if (!args.items.length || args.items.length > SUGGESTIONS_WAITING) return { error: shape };
+  const items = [];
+  for (const item of args.items) {
+    if (!plain(item) || Object.keys(item).some((k) => !["kind", "text", "number"].includes(k))) return { error: shape };
+    if (!SUGGESTION_KINDS.includes(item.kind)) return { error: `"kind" must be one of ${SUGGESTION_KINDS.join(", ")}.` };
+    const text = oneLine(item.text);
+    if (!text) return { error: "Each item's \"text\" must be a line of text." };
+    if (text.length > SUGGESTION_MAX_CHARS) return { error: `An item's "text" is longer than ${SUGGESTION_MAX_CHARS} characters.` };
+    const out = { kind: item.kind, text };
+    if (item.number !== undefined) {
+      if (!NUMBERED.includes(item.kind)) return { error: "\"number\" goes with a \"question\" or \"next\": the prepared question's number on the Producer." };
+      if (!Number.isSafeInteger(item.number) || item.number < 1) return { error: "\"number\" must be a prepared question's number, 1 or more." };
+      out.number = item.number;
+    }
+    items.push(out);
   }
-  if (args.number !== undefined) {
-    if (!slots.question) return { error: "\"number\" goes with a \"question\": the prepared question's number on the Producer." };
-    if (!Number.isSafeInteger(args.number) || args.number < 1) return { error: "\"number\" must be a prepared question's number, 1 or more." };
-    slots.question.number = args.number;
-  }
-  if (!Object.keys(slots).length) return { error: "Send a question, a talking point or a hook." };
-  return { slots };
+  return { items };
 }
 
 /**
- * The strip's state. `push(slots)` shows what readSuggestions gave (a slot with the same words as before keeps
- * its used state, whatever its number; a slot left out is empty) and returns the taps not reported yet; `use(kind)` marks a slot used
- * (false when empty or used already); `clear()` empties it and returns the taps not reported yet; `shown()` says
- * whether a push is fresh enough to show; `staleIn()` the time until it is not; `slots` a copy of the slots.
+ * The cues waiting, newest first, and the box that shows one of them.
+ * - `push(items, showing)` adds what readSuggestions gave, the first of them on top. A cue already waiting
+ *   keeps its place (only its kind and number follow the push); a used or skipped one stays away. Past
+ *   SUGGESTIONS_WAITING the oldest go, but never the one being read while the box shows (`showing`, by
+ *   default whether it was opened), and the box stays on it. Returns `{ added, used, skipped }`: how many
+ *   are new, and the taps not reported yet.
+ * - `open()` shows the newest in the box; `move(step)` goes to a newer (-1) or older (+1) one; `close()`.
+ * - `use()` takes the shown cue as used and closes the box; `skip()` passes it and shows the next (closing
+ *   when none is left). Each returns the cue, or null when there is none.
+ * - `clear()` empties it all (a new show: a used cue may come again) and returns the taps not reported yet.
+ * - `boxOpen(liveShow)`: the box shows when it was opened, or by itself when no script is open (`liveShow`).
+ * - `shown()` whether a push is fresh enough to show; `staleIn()` the time until it is not.
+ * - `items`, `at` and `current` (the cue in the box): copies.
  */
-export function suggestionStrip({ now = Date.now } = {}) {
-  let slots = {};
+export function suggestionQueue({ now = Date.now } = {}) {
+  let items = [];
+  let at = 0;
+  let opened = false;
   let pushedAt = null;
-  let unreported = [];
-  const take = () => { const used = unreported; unreported = []; return used; };
+  let done = [];
+  let used = [];
+  let skipped = [];
+  const take = () => {
+    const sent = { used, skipped };
+    used = [];
+    skipped = [];
+    return sent;
+  };
+  const finish = (into) => {
+    const item = items[at];
+    if (!item) return null;
+    items.splice(at, 1);
+    done.push(item.text);
+    if (done.length > DONE_KEPT) done.shift();
+    into.push(copy(item));
+    at = Math.min(at, Math.max(0, items.length - 1));
+    if (!items.length) opened = false;
+    return copy(item);
+  };
   return {
-    push(next) {
-      const kept = {};
-      for (const kind of SUGGESTION_KINDS) {
-        const s = next?.[kind];
-        if (!s) continue;
-        const old = slots[kind];
-        // The same words keep their state (the agent may add or drop the number on an idle round).
-        kept[kind] = { ...s, used: Boolean(old?.used && old.text === s.text) };
+    push(next, showing = opened) {
+      const reading = showing ? items[at] : null;
+      const fresh = [];
+      for (const item of next) {
+        if (done.includes(item.text) || fresh.some((f) => f.text === item.text)) continue;
+        const waiting = items.find((i) => i.text === item.text);
+        if (waiting) {
+          waiting.kind = item.kind;
+          waiting.number = item.number;
+        } else fresh.push(copy(item));
       }
-      slots = kept;
+      items = [...fresh, ...items];
+      for (let i = items.length - 1; items.length > SUGGESTIONS_WAITING && i >= 0; i--) {
+        if (items[i] !== reading) items.splice(i, 1);
+      }
+      at = reading ? items.indexOf(reading) : 0;
       pushedAt = now();
-      return take();
+      return { added: fresh.length, ...take() };
     },
-    use(kind) {
-      const s = slots[kind];
-      if (!s || s.used) return false;
-      s.used = true;
-      unreported.push({ kind, text: s.text, ...(s.number !== undefined ? { number: s.number } : {}) });
-      return true;
+    open() {
+      opened = items.length > 0;
+      at = 0;
     },
+    move(step) {
+      at = Math.min(Math.max(0, at + step), Math.max(0, items.length - 1));
+    },
+    close() {
+      opened = false;
+      at = 0;
+    },
+    use() {
+      const item = finish(used);
+      opened = false;
+      at = 0;
+      return item;
+    },
+    skip: () => finish(skipped),
     clear() {
-      slots = {};
+      items = [];
+      at = 0;
+      opened = false;
       pushedAt = null;
+      done = [];
       return take();
     },
-    shown: (t = now()) => pushedAt !== null && t - pushedAt < STRIP_STALE_MS && SUGGESTION_KINDS.some((k) => slots[k]),
-    staleIn: (t = now()) => (pushedAt === null ? 0 : Math.max(0, pushedAt + STRIP_STALE_MS - t)),
-    get slots() { return Object.fromEntries(Object.entries(slots).map(([k, s]) => [k, { ...s }])); },
+    boxOpen: (liveShow) => items.length > 0 && (opened || Boolean(liveShow)),
+    shown: (t = now()) => pushedAt !== null && t - pushedAt < SUGGESTION_STALE_MS && items.length > 0,
+    staleIn: (t = now()) => (pushedAt === null ? 0 : Math.max(0, pushedAt + SUGGESTION_STALE_MS - t)),
+    get items() { return items.map(copy); },
+    get at() { return at; },
+    get current() { return items[at] ? copy(items[at]) : null; },
   };
 }

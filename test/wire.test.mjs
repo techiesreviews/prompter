@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  RELAY_CLOSE, RELAY_MESSAGES, RELAY_PATH, RELAY_PROTOCOL, RELAY_TOKEN_PREFIX, TOKEN_MAX_AGE_MS, TOKEN_PATH,
+  PRODUCER_MESSAGES, RELAY_CLOSE, RELAY_MESSAGES, RELAY_PATH, RELAY_PROTOCOL, RELAY_TOKEN_PREFIX, TOKEN_MAX_AGE_MS, TOKEN_PATH,
   readRelayMessage, relayMessage, relayProtocols,
 } from "../src/wire.mjs";
 import { MAX_AGE_MS } from "../src/token.mjs";
@@ -21,6 +21,17 @@ test("the wire's names and numbers", () => {
   assert.equal(MAX_AGE_MS, TOKEN_MAX_AGE_MS, "the Worker's token age is the wire's");
   assert.deepEqual(relayProtocols("tp1-abc"), ["prompter", "t.tp1-abc"], "the token travels as a subprotocol, never in the URL");
   assert.deepEqual(Object.keys(RELAY_MESSAGES).toSorted(), ["agent", "call", "ping", "pong", "ready", "result", "revoke"]);
+  // The Producer page types these two names on its side (TOOLS-464): changing one breaks its "Connected" line.
+  assert.deepEqual(PRODUCER_MESSAGES, { link: "prompter:link", disconnect: "prompter:disconnect" });
+});
+
+test("the tab talks to its Producer opener by the wire's names, at the Producer's exact addresses only", () => {
+  const app = source("app.js");
+  assert.doesNotMatch(app, /["'`]prompter:(link|disconnect)["'`]/, "the names come from PRODUCER_MESSAGES");
+  assert.match(app, /PRODUCER_ORIGINS\.includes\(e\.origin\)/, "a message from any other site is ignored");
+  assert.match(app, /e\.source !== window\.opener/, "only the page that opened this tab is heard");
+  assert.match(app, /postMessage\(\{ type: PRODUCER_MESSAGES\.link, state \}, origin\)/, "the tab says only its state, to a named address, never \"*\"");
+  assert.doesNotMatch(app, /postMessage\([^)]*["'`]\*["'`]/, "never to any address");
 });
 
 test("a message keeps its type and only the fields the list names for it", () => {

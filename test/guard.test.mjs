@@ -9,10 +9,11 @@ import { newToken } from "../src/token.mjs";
 
 const { default: worker } = await import("../src/worker.mjs");
 const { agentInfo, clientOf, fromOtherSite } = await import("../src/guard.mjs");
-const { relayProtocols } = await import("../src/wire.mjs");
+const { PRODUCER_ORIGINS, relayProtocols } = await import("../src/wire.mjs");
 
 const SITE = "https://prompter.techies.tools";
 const EVIL = "https://evil.example";
+const PRODUCER = "https://producer.techies.tools";
 
 function env(extra = {}) {
   return {
@@ -156,7 +157,36 @@ test("clientOf: the limiters' client key from cf-connecting-ip, grouped as limit
 
 test("fromOtherSite: only an Origin that is not this site's counts", () => {
   const req = (origin) => new Request(`${SITE}/api/relay`, origin ? { headers: { Origin: origin } } : {});
-  assert.deepEqual([req(), req(SITE), req(EVIL), req("null"), req(`${SITE}:8443`)].map(fromOtherSite), [false, false, true, true, true]);
+  assert.deepEqual([req(), req(SITE), req(EVIL), req("null"), req(`${SITE}:8443`)].map((r) => fromOtherSite(r)), [false, false, true, true, true]);
+  // A route may name other sites it takes (the Producer's, for a new token); those exact origins only.
+  const allowed = [PRODUCER];
+  assert.deepEqual([req(PRODUCER), req(`${PRODUCER}.evil.example`), req("https://evil.producer.techies.tools"), req(EVIL)].map((r) => fromOtherSite(r, allowed)), [false, true, true, true]);
+});
+
+test("PRODUCER_ORIGINS: the Producer's live and preview addresses, exact, https, no wildcard", () => {
+  assert.deepEqual(PRODUCER_ORIGINS, ["https://producer.techies.tools", "https://preview-producer.techies.tools"]);
+});
+
+test("/api/agent-token: the Producer's page may ask for a token (CORS for its own address only); other routes still refuse it", async () => {
+  const token = ROUTES.find((r) => r.name === "/api/agent-token");
+  for (const origin of PRODUCER_ORIGINS) {
+    const res = await call(token, { ip: v4()(1), origin });
+    assert.equal(res.status, 200, origin);
+    assert.match((await res.json()).token, /^tp1-/);
+    assert.deepEqual([res.headers.get("Access-Control-Allow-Origin"), res.headers.get("Vary")], [origin, "Origin"]);
+    const pre = await worker.fetch(new Request(`${SITE}/api/agent-token`, { method: "OPTIONS", headers: { Origin: origin, "Access-Control-Request-Method": "POST", "cf-connecting-ip": v4()(1) } }), env());
+    assert.equal(pre.status, 204);
+    assert.deepEqual([pre.headers.get("Access-Control-Allow-Origin"), pre.headers.get("Access-Control-Allow-Methods"), pre.headers.get("Vary")], [origin, "POST", "Origin"]);
+  }
+  const own = await call(token, { ip: v4()(1), origin: SITE });
+  assert.equal(own.headers.get("Access-Control-Allow-Origin"), null, "this site needs no CORS header");
+  const evil = await call(token, { ip: v4()(1), origin: EVIL });
+  assert.deepEqual([evil.status, evil.headers.get("Access-Control-Allow-Origin")], [403, null]);
+  const evilPre = await worker.fetch(new Request(`${SITE}/api/agent-token`, { method: "OPTIONS", headers: { Origin: EVIL, "Access-Control-Request-Method": "POST" } }), env());
+  assert.deepEqual([evilPre.status, evilPre.headers.get("Access-Control-Allow-Origin")], [403, null]);
+  for (const name of ["/api/relay", "/mcp with an agent token"]) {
+    assert.equal((await call(ROUTES.find((r) => r.name === name), { ip: v4()(1), origin: PRODUCER })).status, 403, `${name} stays this site's only`);
+  }
 });
 
 test("agentInfo: the agent's name and version, cut to 60 and 30 characters, always strings", () => {

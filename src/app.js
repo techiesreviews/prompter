@@ -134,6 +134,7 @@ async function openScript(text, { fromLink = false, remember = true, label = "",
   window.scrollTo(0, 0);
   render();
   setStatus(label);
+  drawAsk(); // a cue that showed by itself over the start screen waits behind the pill now
   if (!fromLink) {
     script.pushOwed = fromStart;
     let url;
@@ -193,6 +194,7 @@ function showStart() {
   root.dataset.view = "empty";
   $(".empty").hidden = false;
   window.scrollTo(0, 0);
+  drawAsk(); // no script: a waiting cue shows by itself
 }
 
 async function route() {
@@ -332,170 +334,131 @@ function showDialog(dialog) {
   dialog.showModal();
 }
 
-// The Producer's strip (its state is suggestionStrip in src/suggestions.mjs): one question, one talking
-// point and one hook the agent pushes while it is connected to the Producer.
-// It shows only while that agent is connected here and its pushes keep coming, and floats in slots of a
-// fixed size so the script never moves for it. A tap on Use marks a slot used; the agent's next push hears it.
-const producer = suggestionStrip();
-const stripEl = $(".strip");
-const stripSlots = [...stripEl.querySelectorAll(".sug")];
-const STRIP_MAX_W = 290;
-const STRIP_MIN_W = 196;
-const STRIP_SIDE_MIN_H = 620; // three 150px slots, the heading and the control bar
-let stripTimer = 0;
-const EMPTY_SLOT = { question: "No question right now", point: "No talking point right now", hook: "No hook right now" };
+// The Producer's cues (TOOLS-464; their queue is suggestionQueue in src/suggestions.mjs): what the agent
+// pushes while it is connected to the person's Producer and to this tab, newest first, at most three.
+// A pill in the kind's colour at the end of the reading line says one is waiting; a tap or Enter opens it
+// in a box over the dimmed script (by itself when no script is open: a live show). In the box, ← → and
+// Page Up/Down move between the waiting ones (what a clicker sends), Enter uses one and Esc skips it.
+// While the box shows, auto-scroll and Follow my voice wait, then go on from the same place.
+// It shows only while that agent is connected here and its pushes keep coming, so it is never a dead control.
+const ask = suggestionQueue();
+const askPill = $(".ask-pill");
+const askBox = $(".ask-box");
+const askVeil = $(".ask-veil");
+const askText = $(".ask-text");
+const askDots = $(".ask-dots");
+const askWhere = $(".ask-where");
+const ASK_KINDS = {
+  question: ["?", "Question"],
+  next: ["?", "Question"],
+  steer: ["↩", "Steer back"],
+  point: ["★", "Talking point"],
+  audience: ["@", "Audience"],
+};
+let askTimer = 0;
+let askShowing = false; // the box is on screen
+let askSaid = ""; // the cue last read out, so moving to another reads that one
+let askNewest = ""; // the newest cue the pill showed, so a new one nudges it
+let askPausedAuto = false; // auto-scroll was on when the box came up
+let voiceHeld = 0; // speech results of this session heard while the box showed: never followed
 
-// Beside the column when the room to the right of its text fits the strip (and the window is tall enough
-// for its three slots). Else across the top, over text already read, when it fits above the reading line;
-// with the line dragged high, just above the control bar instead; on a short screen with neither room, the
-// slots go down to one line each. So it never covers the line being read.
-function placeStrip() {
-  const box = main.getBoundingClientRect();
-  const room = window.innerWidth - (box.right - (parseFloat(getComputedStyle(main).paddingInlineEnd) || 0)) - 24;
-  stripEl.toggleAttribute("data-tight", false);
-  stripEl.style.removeProperty("--strip-bottom");
-  if (room >= STRIP_MIN_W && window.innerHeight >= STRIP_SIDE_MIN_H) {
-    stripEl.dataset.place = "side";
-    stripEl.style.setProperty("--strip-w", `${Math.min(STRIP_MAX_W, Math.floor(room))}px`);
-    return;
-  }
-  stripEl.style.removeProperty("--strip-w");
-  stripEl.dataset.place = "top";
-  const line = $(".reading-line").getBoundingClientRect().top;
-  // Where the control bar sits when shown: offsetTop leaves out its tuck-away slide.
-  const bar = $(".dock-wrap").getBoundingClientRect().top + $(".dock").offsetTop;
-  const above = line - 16; // room over the read text, less the strip's 8px inset and a gap above the line
-  const below = bar - 8 - (line + 16); // room between the line and the control bar
-  const bottom = () => {
-    stripEl.dataset.place = "bottom";
-    stripEl.style.setProperty("--strip-bottom", `${Math.round(window.innerHeight - bar + 8)}px`);
-  };
-  for (const tight of [false, true]) {
-    stripEl.toggleAttribute("data-tight", tight);
-    const height = stripEl.offsetHeight;
-    if (height <= above) return;
-    if (height <= below) return bottom();
-  }
-  // No room for even one-line slots on either side of the line (a tiny window): out of sight until there is,
-  // never over the line being read.
-  stripEl.dataset.place = "none";
-}
+const askLive = () => live && liveLink.state === "on" && ask.shown();
 
-function drawStrip() {
-  const show = live && liveLink.state === "on" && producer.shown();
-  clearTimeout(stripTimer);
+function drawAsk() {
+  const show = askLive();
+  clearTimeout(askTimer);
   // Hidden again by itself once the pushes stop.
-  if (show) stripTimer = setTimeout(drawStrip, producer.staleIn() + 50);
-  stripEl.hidden = !show;
-  if (!show) return;
-  const slots = producer.slots;
-  for (const b of stripSlots) {
-    const s = slots[b.dataset.kind];
-    const words = s ? s.text : EMPTY_SLOT[b.dataset.kind];
-    const x = b.querySelector(".sug-x");
-    if (x.textContent !== words) {
-      // New words fade in inside the same slot.
-      x.textContent = words;
-      x.removeAttribute("data-fresh");
-      void x.offsetWidth;
-      x.setAttribute("data-fresh", "");
+  if (show) askTimer = setTimeout(drawAsk, ask.staleIn() + 50);
+  else ask.close();
+  const items = show ? ask.items : [];
+  const box = show && ask.boxOpen(isEmpty());
+  askPill.hidden = !show || box || isEmpty();
+  if (items.length) {
+    const [mark, name] = ASK_KINDS[items[0].kind];
+    const more = items.length - 1;
+    askPill.dataset.kind = items[0].kind;
+    askPill.querySelector(".ask-pill-mark").textContent = mark;
+    askPill.querySelector(".ask-pill-name").textContent = name;
+    askPill.querySelector(".ask-more").textContent = more ? `+${more}` : "";
+    askPill.setAttribute("aria-label", `${name} from the Producer${more ? `, ${more} more waiting` : ""}. Open it`);
+    if (items[0].text !== askNewest && !askPill.hidden) {
+      askPill.removeAttribute("data-fresh");
+      void askPill.offsetWidth; // the nudge plays again
+      askPill.setAttribute("data-fresh", "");
+      setStatus(`${name} from the Producer`);
     }
-    if (b.dataset.kind === "question") b.querySelector(".sug-k").textContent = s?.number ? `Question · Q${s.number}` : "Question";
-    b.disabled = !s;
-    b.setAttribute("aria-pressed", String(Boolean(s?.used)));
-    b.querySelector(".sug-use").textContent = s?.used ? "Used ✓" : "Use";
   }
-  fitStrip();
+  askNewest = items[0]?.text ?? "";
+  const was = askShowing;
+  askShowing = box;
+  askBox.hidden = !box;
+  askVeil.hidden = !box;
+  if (box) {
+    const cur = ask.current;
+    const name = ASK_KINDS[cur.kind][1];
+    askBox.dataset.kind = cur.kind;
+    askBox.setAttribute("aria-label", `${name} from the Producer`);
+    askText.textContent = cur.text;
+    askDots.replaceChildren(...(items.length > 1 ? items.map((_, i) => {
+      const dot = document.createElement("span");
+      dot.toggleAttribute("data-on", i === ask.at);
+      return dot;
+    }) : []));
+    askWhere.textContent = items.length > 1 ? `${ask.at + 1} of ${items.length}` : "";
+    if (cur.text !== askSaid) setStatus(`${name}: ${cur.text}${items.length > 1 ? `. ${ask.at + 1} of ${items.length}` : ""}`);
+    askSaid = cur.text;
+  } else askSaid = "";
+  if (box && !was) {
+    hideHint(); // it sits above the dock and would cover the box's Skip and Use on a phone
+    askPausedAuto = autoOn;
+    setAuto(false);
+  } else if (!box && was) {
+    if (askPausedAuto && !isEmpty()) setAuto(true);
+    askPausedAuto = false;
+    // Focus in the box goes back to the pill, or off, so Space means auto-scroll again.
+    if (askBox.contains(document.activeElement)) {
+      if (askPill.hidden) document.activeElement.blur(); else askPill.focus({ preventScroll: true });
+    }
+  }
 }
 
-// The full words on hover, only when the slot cuts them short (screen readers hear them in the name); the title
-// also marks the slots a held touch opens. Again after each placement, since a new size cuts differently. A slot
-// open right now cannot be measured: it keeps a title with its current words until it closes.
-const SLOT_OPEN = ":is(:focus-visible, [data-open]):not([data-shut])";
-function markCut() {
-  const slots = producer.slots;
-  for (const b of stripSlots) {
-    const s = slots[b.dataset.kind];
-    if (s && b.matches(SLOT_OPEN)) { b.title = s.text; continue; }
-    const x = b.querySelector(".sug-x");
-    if (s && x.scrollHeight > x.clientHeight + 1) b.title = s.text; else b.removeAttribute("title");
-  }
+function askOpen() {
+  ask.open();
+  drawAsk();
+  if (askShowing) askBox.focus({ preventScroll: true });
 }
+function askUse() { if (ask.use()) drawAsk(); }
+function askSkip() { if (ask.skip()) drawAsk(); }
 
-// An opened slot never reaches the reading line (across the top or above the bar) or the window's edge (beside
-// the text): each gets the room it has, and its words scroll inside past that.
-function capOpen() {
-  const place = stripEl.dataset.place;
-  const line = $(".reading-line").getBoundingClientRect().top;
-  for (const b of stripSlots) {
-    const r = b.getBoundingClientRect();
-    const room = place === "bottom" ? r.bottom - (line + 8) : (place === "side" ? window.innerHeight : line) - 8 - r.top;
-    b.style.setProperty("--sug-open-max", `${Math.max(0, Math.floor(room))}px`);
-  }
-}
-
-function fitStrip() {
-  placeStrip();
-  capOpen();
-  markCut();
-}
-stripEl.addEventListener("focusout", () => requestAnimationFrame(markCut));
-// Escape closes an opened slot (data-shut) without using it, and the focus stays on it; it opens again the next
-// time it takes focus or is pressed.
-for (const b of stripSlots) {
-  b.addEventListener("keydown", (e) => {
-    if (e.key !== "Escape" || !b.matches(SLOT_OPEN)) return;
+// The box's keys, before the page's own: a clicker's Page Up/Down and the arrows move between the waiting
+// cues instead of the sections. Returns true when it took the key.
+function askKey(e) {
+  if (!askShowing && askPill.hidden) return false;
+  if (document.querySelector("dialog[open], :popover-open") || e.metaKey || e.ctrlKey || e.altKey) return false;
+  if (e.target.closest?.("textarea, select, input, .pop")) return false;
+  const k = e.key;
+  const onButton = Boolean(e.target.closest?.("button, a"));
+  if (!askShowing) {
+    if (k !== "Enter" || onButton) return false;
     e.preventDefault();
-    b.setAttribute("data-shut", "");
-    markCut();
-  });
-  b.addEventListener("blur", () => b.removeAttribute("data-shut"));
-}
-
-// On touch, holding a slot whose words are cut short opens it to all of them (data-open; keyboard focus does
-// the same in CSS). Letting go uses nothing, so a quick tap stays the one way to use it. A swipe the browser
-// takes over ends the hold, except inside an opened slot that still has words to scroll to: that one stays open
-// until the next press anywhere.
-const HOLD_MS = 450;
-let hold = null;
-let holdEndedAt = -Infinity;
-function endHold(e) {
-  if (!hold) return;
-  const open = hold.slot.hasAttribute("data-open");
-  if (e?.type === "pointercancel" && open && hold.slot.scrollHeight > hold.slot.clientHeight + 1) return;
-  clearTimeout(hold.timer);
-  if (open) {
-    hold.slot.removeAttribute("data-open");
-    holdEndedAt = performance.now();
+    askOpen();
+    return true;
   }
-  hold = null;
-  markCut();
+  if (k === "Escape") askSkip();
+  else if (k === "ArrowRight" || k === "PageDown") { ask.move(1); drawAsk(); }
+  else if (k === "ArrowLeft" || k === "PageUp") { ask.move(-1); drawAsk(); }
+  else if (k === "ArrowDown" || k === "ArrowUp") askText.scrollBy({ top: (k === "ArrowDown" ? 0.8 : -0.8) * askText.clientHeight }); // a long cue
+  else if (k === "Enter" || k === " ") {
+    if (onButton) return false; // Use and Skip (and the control bar) press as buttons do
+    if (k === "Enter") askUse();
+  } else return false;
+  e.preventDefault();
+  return true;
 }
-for (const b of stripSlots) {
-  b.addEventListener("pointerdown", (e) => {
-    endHold();
-    b.removeAttribute("data-shut");
-    holdEndedAt = -Infinity; // a press after a hold always counts, even when the browser sent no click for the hold
-    if (e.pointerType === "mouse" || !b.title) return;
-    hold = { slot: b, timer: setTimeout(() => b.setAttribute("data-open", ""), HOLD_MS) };
-  });
-  b.addEventListener("contextmenu", (e) => { if (hold) e.preventDefault(); });
-}
-// On the window, so a pen lifted (or a press) outside the strip ends a hold too.
-window.addEventListener("pointerdown", (e) => { if (!e.target.closest?.(".sug")) endHold(); }, true);
-window.addEventListener("pointerup", endHold);
-window.addEventListener("pointercancel", endHold);
 
-for (const b of stripSlots) b.addEventListener("click", (e) => {
-  // The click a held slot sends as the finger lifts uses nothing.
-  const held = performance.now() - holdEndedAt < 600;
-  holdEndedAt = -Infinity;
-  if (!held && producer.use(b.dataset.kind)) drawStrip();
-  // A tap or click leaves no focus behind, so Space goes on meaning auto-scroll; keyboard focus stays.
-  if (e.detail > 0) b.blur();
-});
-window.addEventListener("resize", () => { if (!stripEl.hidden) fitStrip(); });
-new ResizeObserver(() => { if (!stripEl.hidden) fitStrip(); }).observe(main);
+askPill.addEventListener("click", askOpen);
+// A tap beside the box closes it; the cue waits behind the pill. With no script open there is nothing to go back to.
+askVeil.addEventListener("click", () => { if (!isEmpty()) { ask.close(); drawAsk(); } });
 
 // The live relay link itself (token, socket, backoff, keepalive, tool calls) is relayLink in src/relay-link.mjs;
 // the code below gives it the page's two tools and draws its state. An offline copy (file://) has no relay:
@@ -523,22 +486,44 @@ const liveLink = relayLink({
     push_suggestions(args) {
       const input = readSuggestions(args);
       if (input.error) return { error: input.error };
-      const used = producer.push(input.slots);
-      drawStrip();
-      return { result: { shown: !stripEl.hidden && !isEmpty() && stripEl.dataset.place !== "none", used } };
+      const { used, skipped } = ask.push(input.items, askShowing);
+      drawAsk();
+      return { result: { shown: askLive(), used, skipped } }; // shown: something waits for the host
     },
     clear_suggestions() {
-      const used = producer.clear();
-      drawStrip();
-      return { result: { used } };
+      const { used, skipped } = ask.clear();
+      drawAsk();
+      return { result: { used, skipped } };
     },
   },
   changed: () => {
-    // Disconnect MCP (or the token's end) also ends the strip: nobody is left to hear its taps.
-    if (liveLink.state === "off") producer.clear();
+    // Disconnect MCP (or the token's end) also ends the cues: nobody is left to hear what was used.
+    if (liveLink.state === "off") ask.clear();
     renderAgent();
-    drawStrip();
+    drawAsk();
+    tellProducer();
   },
+});
+
+// Opened from the Producer (one click sets up both): it tells the Producer page that opened this tab how
+// the link is (never the token), so it can say "Connected: Producer + Prompter", and its Disconnect ends
+// this tab's link too. Only that page, at its own address, hears it or is heard.
+let producerOpener = null;
+let toldProducer = "";
+function tellProducer() {
+  if (!producerOpener && liveLink.producer && window.opener) producerOpener = window.opener;
+  if (!producerOpener) return;
+  const state = liveLink.state;
+  if (state === toldProducer) return;
+  toldProducer = state;
+  for (const origin of PRODUCER_ORIGINS) {
+    try { producerOpener.postMessage({ type: PRODUCER_MESSAGES.link, state }, origin); } catch { /* closed */ }
+  }
+  if (state === "off") producerOpener = null; // the link ended: the next one starts fresh
+}
+window.addEventListener("message", (e) => {
+  if (!PRODUCER_ORIGINS.includes(e.origin) || !e.source || e.source !== window.opener) return;
+  if (e.data?.type === PRODUCER_MESSAGES.disconnect && liveLink.producer && liveLink.state !== "off") liveLink.disconnect();
 });
 // "Copied" with a check for two seconds after a copy.
 const copied = { on: false, timer: 0 };
@@ -563,7 +548,8 @@ function renderAgent() {
     const el = act.querySelector(".mcp-label");
     if (el.textContent !== label) el.textContent = label;
   }
-  const where = s === "on" ? ` · MCP connected to ${name}` : s === "waiting" ? " · waiting for MCP" : s === "elsewhere" ? " · MCP open in another tab" : "";
+  const linked = liveLink.producer && (s === "on" || s === "waiting") ? ", linked to your Producer" : "";
+  const where = (s === "on" ? ` · MCP connected to ${name}` : s === "waiting" ? " · waiting for MCP" : s === "elsewhere" ? " · MCP open in another tab" : "") + linked;
   if (s === "on" || s === "waiting") openBtn.dataset.dot = s; else delete openBtn.dataset.dot;
   openBtn.setAttribute("aria-label", `Open${where}`);
   openBtn.dataset.tip = `Open a script${where}`;
@@ -602,8 +588,14 @@ $("#open-menu").addEventListener("toggle", (e) => {
 });
 const startMcp = $(".empty .mcp-action");
 for (const type of ["pointerenter", "focus", "pointerdown"]) startMcp.addEventListener(type, prefetchToken);
+// The Producer opened this tab with its token (`#producer=`): taken off the address at once (so it is not in
+// the history, a bookmark or a copied link), then connected as Wait for MCP's would be.
+const handed = live ? producerToken(location.hash) : null;
+if (handed) history.replaceState(null, "", plainAddress());
 if (live) liveLink.start();
+if (handed) liveLink.adopt(handed);
 renderAgent();
+tellProducer();
 
 // The reading line is dragged anywhere along it (or moved with the keys when focused) to camera height and
 // remembered on this device as a share of the window height. It is set on
@@ -649,7 +641,6 @@ function setLine(frac, keepText = false) {
   const pct = Math.round(lineFrac * 100);
   handle.setAttribute("aria-valuenow", String(pct));
   handle.setAttribute("aria-valuetext", `${pct}% from the top`);
-  if (!stripEl.hidden) fitStrip(); // the strip keeps clear of the line
   if (keepText && delta) {
     window.scrollBy(0, delta);
     lastScrollY = window.scrollY; // not a scroll by the reader: the bar stays
@@ -889,7 +880,7 @@ function hideToast() {
 
 // Once per page: a link would have opened by itself, but no main screen is connected.
 function showHint(label) {
-  if (hintShown) return;
+  if (hintShown || askShowing) return; // never over a Producer's cue box; it may come once the box closes
   hintShown = true;
   $(".hint-text").textContent = `“${label}” would open on your main screen now. Connect a main screen and links open by themselves.`;
   hintEl.hidden = false;
@@ -1070,7 +1061,7 @@ function newRecognition(local) {
 }
 const voiceKeeper = Recognition && speechKeeper({
   make: newRecognition,
-  onSession() { scripts.now.voice = voiceSession(scripts.now.voice); }, // a new session numbers its results from 0 again
+  onSession() { scripts.now.voice = voiceSession(scripts.now.voice); voiceHeld = 0; }, // a new session numbers its results from 0 again
   onResult: onVoiceResult,
   onReconnecting(on) { if (on) showToast(RECONNECTING); else hideToast(); },
   onLocalFailed() { voiceLocal = false; }, // its language pack went away: ask again next time
@@ -1111,6 +1102,13 @@ function stopVoice(message = "") {
 // which link its label opens; the page marks that line and opens that link.
 function onVoiceResult(e) {
   const script = scripts.now;
+  // While the Producer's cue box shows, the host reads it, not the script: what is heard then is never
+  // followed, and following goes on from the same line once the box closes.
+  if (askShowing) { voiceHeld = e.results.length; return; }
+  if (voiceHeld) {
+    script.voice = { ...script.voice, final: Math.max(script.voice.final, voiceHeld) };
+    voiceHeld = 0;
+  }
   const results = Array.from(e.results, (r) => ({ transcript: r[0].transcript, isFinal: r.isFinal }));
   const { voice, line, link } = voiceStep(script.voiceLines, script.voice, results, { links: voiceLinkCandidates(), shownUrl: script.shownUrl });
   script.voice = voice;
@@ -1387,6 +1385,8 @@ document.addEventListener("click", (e) => {
   else if (action === "hint-ok") hideHint();
   else if (action === "voice-ok") { prefs.save("voiceOk", true); startVoice(); }
   else if (action === "voice-cancel") { voiceNotice.hidden = true; }
+  else if (action === "ask-use") askUse();
+  else if (action === "ask-skip") askSkip();
 });
 // One file input for the start screen and the Open menu.
 fileInput.addEventListener("change", () => {
@@ -1410,6 +1410,7 @@ document.addEventListener("drop", (e) => {
 // Back to an entry without a script link shows the start screen.
 window.addEventListener("popstate", () => { showAlert(""); route(); });
 document.addEventListener("keydown", (e) => {
+  if (askKey(e)) return; // the Producer's cue box, open or waiting, takes its keys first
   if (isEmpty() || document.querySelector("dialog[open]") || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.target.closest("textarea, select, input:not([type=range])")) return;
   const k = e.key;
@@ -1417,8 +1418,8 @@ document.addEventListener("keydown", (e) => {
   if (e.target.matches?.("input[type=range]") && k.startsWith("Arrow")) return;
   // The focused reading line keeps its keys (arrows, Page Up/Down, Home, End).
   if (e.target.closest(".line-handle") && LINE_KEYS.includes(k)) return;
-  // Space on these buttons (and a suggestion in the Producer's strip) presses them; on the control bar and the links it still means auto-scroll.
-  if (k === " " && e.target.closest(".note-row, .pop, .strip")) return;
+  // Space on these buttons (and Use and Skip in the Producer's cue box) presses them; on the control bar and the links it still means auto-scroll.
+  if (k === " " && e.target.closest(".note-row, .pop, .ask-box")) return;
   if (k === " ") { e.preventDefault(); toggleAuto(); }
   else if (k === "ArrowRight" || k === "PageDown") { e.preventDefault(); goSection(1); }
   else if (k === "ArrowLeft" || k === "PageUp") { e.preventDefault(); goSection(-1); }
