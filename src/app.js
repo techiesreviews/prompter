@@ -360,7 +360,8 @@ let askShowing = false; // the box is on screen
 let askSaid = ""; // the cue last read out, so moving to another reads that one
 let askNewest = ""; // the newest cue the pill showed, so a new one nudges it
 let askPausedAuto = false; // auto-scroll was on when the box came up
-let voiceHeld = 0; // speech results of this session heard while the box showed: never followed
+let voiceHold = null; // what this session heard while the box showed (voiceHeld in src/follow.mjs): never followed
+let voiceSkip = null; // the same, once the box closed, until the phrase it cut into is finished
 
 const askLive = () => live && liveLink.state === "on" && ask.shown();
 
@@ -425,14 +426,16 @@ function drawAsk() {
 }
 
 // The pill sits at the end of the reading line where there is room right of the text column, else just
-// above the line (over text already read), so it never covers the line being read.
+// above the line (over text already read), so it never covers the line being read. On the start screen
+// (a live show set aside) it waits in the top corner, clear of the start card.
 function placePill() {
   if (askPill.hidden) return;
   const right = main.getBoundingClientRect().right - parseFloat(getComputedStyle(main).paddingInlineEnd);
   const room = document.documentElement.clientWidth - right;
-  askPill.dataset.place = isEmpty() || room >= askPill.offsetWidth + 16 + 12 ? "line" : "above";
+  askPill.dataset.place = isEmpty() ? "corner" : room >= askPill.offsetWidth + 16 + 12 ? "line" : "above";
 }
 new ResizeObserver(placePill).observe(main);
+window.addEventListener("resize", placePill); // the column keeps its width while the window narrows
 
 function askOpen() {
   ask.open();
@@ -1089,7 +1092,7 @@ function newRecognition(local) {
 }
 const voiceKeeper = Recognition && speechKeeper({
   make: newRecognition,
-  onSession() { scripts.now.voice = voiceSession(scripts.now.voice); voiceHeld = 0; }, // a new session numbers its results from 0 again
+  onSession() { scripts.now.voice = voiceSession(scripts.now.voice); voiceHold = null; voiceSkip = null; }, // a new session numbers its results from 0 again
   onResult: onVoiceResult,
   onReconnecting(on) { if (on) showToast(RECONNECTING); else hideToast(); },
   onLocalFailed() { voiceLocal = false; }, // its language pack went away: ask again next time
@@ -1132,12 +1135,17 @@ function onVoiceResult(e) {
   const script = scripts.now;
   // While the Producer's cue box shows, the host reads it, not the script: what is heard then is never
   // followed, and following goes on from the same line once the box closes.
-  if (askShowing) { voiceHeld = Array.prototype.filter.call(e.results, (r) => r.isFinal).length; return; } // the phrase in progress is still followed after
-  if (voiceHeld) {
-    script.voice = { ...script.voice, final: Math.max(script.voice.final, voiceHeld) };
-    voiceHeld = 0;
+  let results = Array.from(e.results, (r) => ({ transcript: r[0].transcript, isFinal: r.isFinal }));
+  if (askShowing) { voiceHold = voiceHeld(results); return; }
+  if (voiceHold) {
+    script.voice = { ...script.voice, final: Math.max(script.voice.final, voiceHold.at) };
+    voiceSkip = voiceHold;
+    voiceHold = null;
   }
-  const results = Array.from(e.results, (r) => ({ transcript: r[0].transcript, isFinal: r.isFinal }));
+  if (voiceSkip) {
+    results = voiceUnheld(results, voiceSkip);
+    if (results[voiceSkip.at]?.isFinal) voiceSkip = null; // that phrase is followed now, once
+  }
   const { voice, line, link } = voiceStep(script.voiceLines, script.voice, results, { links: voiceLinkCandidates(), shownUrl: script.shownUrl });
   script.voice = voice;
   const cur = main.querySelector("p.cur");

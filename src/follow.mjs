@@ -213,6 +213,27 @@ export function voiceAt(voice, line) {
 }
 
 /**
+ * What was heard while the Producer's cue box showed (the host reads the cue, not the script), from that
+ * event's `results` (each `{ transcript, isFinal }`): `at`, the first result not yet finished, and
+ * `chars`, how much of it had been heard. None of it is followed after (voiceUnheld).
+ */
+export function voiceHeld(results) {
+  const at = results.filter((r) => r.isFinal).length;
+  const open = results[at];
+  return { at, chars: open && !open.isFinal ? open.transcript.length : 0 };
+}
+
+/**
+ * `results` without what voiceHeld said was heard while the box showed: the phrase in progress then goes
+ * on from where it was (a word cut in two there is dropped whole). The results before `at` are left out
+ * by starting the voice's `final` at `at`.
+ */
+export function voiceUnheld(results, held) {
+  if (!held.chars || !results[held.at]) return results;
+  return results.map((r, i) => (i === held.at ? { ...r, transcript: r.transcript.slice(held.chars).replace(/^\S*/, "") } : r));
+}
+
+/**
  * One speech recognition event, followed. `lines` are the spoken lines' speechWords (as for
  * followWords), `voice` the open script's state (voiceStart or an earlier step), `results` all of this
  * session's results so far, each `{ transcript, isFinal }`. `links` are the link candidates whose label

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { DEMO_SCRIPT, parse } from "../src/core.mjs";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { commonWord, followStart, followWords, heardLink, sameWord, speechWords, voiceAt, voiceSession, voiceStart, voiceStep } from "../src/follow.mjs";
+import { commonWord, followStart, followWords, heardLink, sameWord, speechWords, voiceAt, voiceHeld, voiceSession, voiceStart, voiceStep, voiceUnheld } from "../src/follow.mjs";
 
 const script = [
   "Writing scripts takes too long.",
@@ -313,4 +313,23 @@ test("app.js only feeds results in and draws: the follow decisions live here", (
     assert.ok(!new RegExp(`\\b${name}\\(`).test(app), `app.js calls ${name} itself`);
   }
   assert.match(app, /\bvoiceStep\(/);
+});
+
+test("words heard while the Producer's cue box shows are never followed, also the rest of a phrase begun then", () => {
+  const start = voiceStart(0);
+  // The box shows: the host reads the cue aloud ("one question keeps you focused" is also a later line).
+  const during = [said("writing scripts takes too long"), said("one question keeps you focused", false)];
+  const held = voiceHeld(during);
+  assert.deepEqual(held, { at: 1, chars: "one question keeps you focused".length });
+  // The box closes; the phrase begun during it ends, then the host goes on with the script.
+  const after = [said("writing scripts takes too long"), said("one question keeps you focused reading them")];
+  const voice = { ...start, final: Math.max(start.final, held.at) };
+  const { line } = voiceStep(lines, voice, voiceUnheld(after, held));
+  assert.equal(line, 1, "only the words after the cue count: \"reading them\" is line 1, the cue's words move nothing");
+  assert.ok(voiceStep(lines, voice, after).line >= 6, "without it, the cue's words would jump far down the script");
+  // A word cut in two at the box's closing is dropped whole; a clean cut keeps the next word.
+  assert.equal(voiceUnheld([said("one question keepsake reading")], { at: 0, chars: 16 })[0].transcript, " reading");
+  assert.equal(voiceUnheld([said("one question keeps reading")], { at: 0, chars: 18 })[0].transcript, " reading");
+  assert.deepEqual(voiceUnheld(after, { at: 2, chars: 0 }), after, "nothing in progress: nothing to cut");
+  assert.deepEqual(voiceHeld([said("done")]), { at: 1, chars: 0 });
 });

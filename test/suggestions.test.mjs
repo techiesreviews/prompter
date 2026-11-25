@@ -62,6 +62,17 @@ test("in a live show, closing the box sets it aside until it is opened again or 
   assert.equal(box.boxOpen(true), true, "a new item shows it by itself again");
   box.use();
   assert.equal(box.boxOpen(true), true, "Use moves on to the next, still shown by itself");
+  // Gone quiet while set aside: the page closes it without setting it aside (close(false)), so when
+  // the pushes come back (the same items, a new show round) a live show's box shows by itself again.
+  let t = 0;
+  const quiet = suggestionQueue({ now: () => t });
+  quiet.push([q("Q1")]);
+  quiet.close();
+  t = SUGGESTION_STALE_MS;
+  assert.equal(quiet.shown(), false);
+  quiet.close(false);
+  quiet.push([q("Q1")]);
+  assert.deepEqual([quiet.shown(), quiet.boxOpen(true)], [true, true], "back by itself after going quiet");
 });
 
 test("the box opens on the newest, moves between the waiting items, and a new item never moves it off the one being read", () => {
