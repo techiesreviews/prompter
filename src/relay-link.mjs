@@ -17,12 +17,12 @@ export const RELAY_KEEPALIVE_MS = 45_000;
 export const RELAY_EXPIRY_CHECK_MS = 60_000;
 
 /**
- * The token the Producer hands over when it opens this page linked (`#producer=<token>`, one click sets up
- * both), or null when the address has none or it is not shaped like a token (the relay checks the rest).
+ * The token the Producer page posts to the tab it opened to link (one click sets up both), or null when it
+ * is not shaped like a token (the relay checks the rest). Never read from the address: a link anyone can
+ * send would tie the tab to their agent.
  */
-export function producerToken(hash) {
-  const m = /^#producer=(tp1-[0-9a-z]{4,12}-[A-Za-z0-9_-]{20,64})$/.exec(String(hash ?? ""));
-  return m ? m[1] : null;
+export function producerToken(value) {
+  return typeof value === "string" && /^tp1-[0-9a-z]{4,12}-[A-Za-z0-9_-]{20,64}$/.test(value) ? value : null;
 }
 
 /** The wait before reconnect number `retry` (from 0): 1 s doubling to at most 30 s, a quarter either way. */

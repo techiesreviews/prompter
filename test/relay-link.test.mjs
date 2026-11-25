@@ -400,10 +400,10 @@ test("Use this tab after the token's eight hours drops it like Disconnect MCP", 
 
 const HANDED = `tp1-${"m0abcdef1"}-${"A".repeat(43)}`;
 
-test("producerToken: the token in a #producer= address, the shape a token has, or null", () => {
-  assert.equal(producerToken(`#producer=${HANDED}`), HANDED);
-  for (const hash of ["", "#", "#producer=", "#producer=nope", `#producer=${HANDED}&s=x`, `#s=abc`, `#demo`, `#producer=tp1-${"x".repeat(200)}`, `#producer=${HANDED}<script>`]) {
-    assert.equal(producerToken(hash), null, hash);
+test("producerToken: the token the Producer page posts, the shape a token has, or null (never from an address)", () => {
+  assert.equal(producerToken(HANDED), HANDED);
+  for (const value of ["", "nope", `#producer=${HANDED}`, `${HANDED}&s=x`, `tp1-${"x".repeat(200)}`, `${HANDED}<script>`, null, undefined, 42, { token: HANDED }, [HANDED]]) {
+    assert.equal(producerToken(value), null, String(value));
   }
 });
 
