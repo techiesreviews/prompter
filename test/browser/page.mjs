@@ -701,6 +701,16 @@ export async function run({ browser, base, mode, dist, out }) {
     assert.deepEqual((await agentCall(token, "push_suggestions", { items: [Q6] })).structuredContent, { shown: true, used: [{ kind: "question", text: Q6.text, number: 6 }], skipped: [], asked: [6] });
     assert.deepEqual((await agentCall(token, "push_suggestions", { items: [Q6] })).structuredContent.used, [], "reported once, and a used one does not come back");
     assert.deepEqual(await pillRow(), ["steer", "↩Steer back", "Steer back from the Producer. Open it"]);
+    // Space on the focused pill opens it too, and does not start auto-scroll; a tap beside sets it back.
+    await pill.focus();
+    await A.keyboard.press(" ");
+    await askBox.waitFor();
+    assert.equal(await A.locator(".dock-btn.auto").getAttribute("aria-pressed"), "false", "Space opened the cue, it did not start auto-scroll");
+    await A.mouse.click(12, 12);
+    await askBox.waitFor({ state: "hidden" });
+    // On touch screens the pill, Skip and Use are 44px targets.
+    const touchRule = await A.evaluate(() => [...document.styleSheets].flatMap((sheet) => [...sheet.cssRules]).some((r) => r.media?.mediaText === "(pointer: coarse)" && [...r.cssRules].some((x) => /\.ask-pill/.test(x.selectorText) && /\.ask-foot \.btn/.test(x.selectorText) && x.style.minBlockSize === "44px")));
+    assert.equal(touchRule, true, "44px touch targets for the pill, Skip and Use");
     // The longest cue (300 characters) on a phone: the box stays inside the window, its words all there.
     await A.setViewportSize({ width: 390, height: 844 });
     await agentCall(token, "push_suggestions", { items: [{ kind: "point", text: `${"Word ".repeat(59)}end.` }] });
@@ -749,6 +759,14 @@ export async function run({ browser, base, mode, dist, out }) {
       await A.mouse.click(8, 8);
       await askBox.waitFor({ state: "hidden" });
     }
+    // The reading line dragged to the top of a phone on its side: the pill goes low on the right, whole, clear of the line.
+    const handlePct = await A.locator(".line-handle").getAttribute("aria-valuenow");
+    await A.locator(".line-handle").focus();
+    await A.keyboard.press("Home");
+    const low = await pill.evaluate((p) => { const r = p.getBoundingClientRect(); const line = document.querySelector(".reading-line").getBoundingClientRect().top; return [p.dataset.place, r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth, r.top > line + 40]; });
+    assert.deepEqual(low, ["low", true, true], "the line at the top: the pill low on the right, all of it in view");
+    for (let i = 0; i < Math.round((Number(handlePct) - 8) / 10); i++) await A.keyboard.press("PageDown");
+    await A.evaluate(() => document.activeElement?.blur());
     await A.setViewportSize(DESKTOP.viewport);
     const cleared = await agentCall(token, "clear_suggestions");
     assert.deepEqual(cleared.structuredContent, { cleared: true, used: [], skipped: [longLink], asked: [] });
@@ -906,6 +924,19 @@ export async function run({ browser, base, mode, dist, out }) {
     let gone;
     for (let i = 0; i < 25 && gone !== 401; i++) { gone = (await agentRpc(handed, "tools/list")).status; if (gone !== 401) await sleep(200); }
     assert.equal(gone, 401, "the Producer's token is revoked");
+    // The Producer's Disconnect before its token came: the tab takes no token after.
+    const { token: late } = await (await fetch(`${base}/api/agent-token`, { method: "POST" })).json();
+    await producer.evaluate(() => { window.heard = []; });
+    const [P2] = await Promise.all([
+      setup.waitForEvent("page"),
+      producer.evaluate(([url, token]) => { window.handOut = token; window.prompterTab = window.open(url, "_blank"); }, [`${base}/#producer`, late]),
+    ]);
+    watch(P2, "prompter, Disconnect before the token");
+    await producer.waitForFunction(() => window.heard.some(([, d]) => d?.type === "prompter:ready"));
+    await producer.evaluate(([url]) => window.prompterTab.postMessage({ type: "prompter:disconnect" }, url), [base]);
+    await sleep(1500); // the stand-in's token comes after a second
+    assert.deepEqual([await state(P2, ".empty .mcp-action"), await P2.evaluate(() => localStorage.getItem("prompter-agent"))], ["off", null], "the late token is not taken");
+    await P2.close();
     // A link anyone could send, with a real token in the address, connects nothing: the token never comes from there.
     const { token: sent } = await (await fetch(`${base}/api/agent-token`, { method: "POST" })).json();
     const lone = await setup.newPage();
@@ -929,7 +960,7 @@ export async function run({ browser, base, mode, dist, out }) {
     await sleep(300);
     assert.deepEqual([await state(E, ".empty .mcp-action"), await evil.evaluate(() => window.heard.length)], ["off", 0], "another site hears nothing and cannot hand a token");
     await setup.close();
-    ok("one click from the Producer: /api/agent-token answers its address (CORS) and refuses others; #producer leaves the address at once, the tab says ready to the Producer only and takes the token from its answer, connects (waiting, then on), Open says linked to your Producer; the opener hears ready/waiting/on/off, never the token; a live show shows the first question by itself; the Producer's Disconnect ends the link and revokes the token; a token in a sent link and another site's messages are ignored");
+    ok("one click from the Producer: /api/agent-token answers its address (CORS) and refuses others; #producer leaves the address at once, the tab says ready to the Producer only and takes the token from its answer, connects (waiting, then on), Open says linked to your Producer; the opener hears ready/waiting/on/off, never the token; a live show shows the first question by itself; the Producer's Disconnect ends the link and revokes the token, and before the token comes, none is taken; a token in a sent link and another site's messages are ignored");
   }
 
   // Paste from the Open popover.
@@ -1902,9 +1933,27 @@ export async function run({ browser, base, mode, dist, out }) {
     });
     await c.mouse.click(12, 12); // a tap beside closes the box
     await c.locator(".ask-box").waitFor({ state: "hidden" });
-    await c.evaluate(() => { const s = window.__speech; s.results.splice(-2, 2); s.say("one question keeps you focused too long reading"); });
+    // The phrase begun while the box showed ends after it closed: none of it is followed.
+    await c.evaluate(() => { const s = window.__speech; s.results.splice(-2, 2); s.say("one question keeps you focused"); });
+    await c.waitForTimeout(300);
+    assert.match(await c.locator("p.cur").textContent(), /Writing scripts/, "the rest of the cue's phrase never moves the script");
+    // The host goes on with the script: followed from where they were.
+    await c.evaluate(() => window.__speech.say("too long reading"));
     await c.waitForFunction(() => /Reading them/.test(document.querySelector("p.cur")?.textContent || ""));
-    assert.match(await c.locator("p.cur").textContent(), /Reading them/, "only the words after the box count: the cue's words never move the script");
+    await viaSettings(c, ".voice"); // off
+    await c.keyboard.press("Escape");
+    // Auto-scroll on, a cue opens (scrolling waits), Follow my voice turned on meanwhile: auto-scroll stays off after.
+    await (await dock(c, ".auto")).click();
+    await agentCall(cueToken, "push_suggestions", { items: [{ kind: "steer", text: "Back to the demo." }] });
+    await c.locator(".ask-pill").click();
+    await c.locator(".ask-box").waitFor();
+    await viaSettings(c, ".voice");
+    if (await c.locator('[data-action="voice-ok"]').isVisible()) await c.locator('[data-action="voice-ok"]').click();
+    await c.locator('.ask-box [data-action="ask-skip"]').click();
+    await c.locator('.ask-box[data-kind="point"]').waitFor(); // the cue read aloud before still waited
+    await c.locator('.ask-box [data-action="ask-skip"]').click();
+    await c.locator(".ask-box").waitFor({ state: "hidden" });
+    assert.deepEqual([await c.locator("#settings .voice").getAttribute("aria-pressed"), await c.locator(".dock-btn.auto").getAttribute("aria-pressed")], ["true", "false"], "voice on: auto-scroll does not come back");
     await viaSettings(c, ".voice"); // off
     await c.keyboard.press("Escape");
     // Auto-scroll on, the box open (scrolling waits), then the pushes stop: after two minutes the box and the
@@ -1918,7 +1967,7 @@ export async function run({ browser, base, mode, dist, out }) {
     await c.locator(".ask-box").waitFor({ state: "hidden" });
     assert.deepEqual([await c.locator(".ask-pill").isHidden(), await c.locator(".dock-btn.auto").getAttribute("aria-pressed")], [true, "true"], "gone quiet: no box, no pill, scrolling goes on");
     await cued.close();
-    ok("the Producer's cues with Follow my voice: words heard while the box shows (split or not) are never followed, and following goes on after; the box and pill hide by themselves two minutes after the last push, and auto-scroll goes on");
+    ok("the Producer's cues with Follow my voice: words heard while the box shows (split or not), and the rest of a phrase begun then, are never followed, and following goes on after; voice turned on while a cue waits keeps auto-scroll off; the box and pill hide by themselves two minutes after the last push, and auto-scroll goes on");
   }
 
   // ---- Links open at the point where they are talked about ----

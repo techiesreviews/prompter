@@ -272,6 +272,8 @@
   /* No room right of the text (a phone, a full-width column): just above the
      reading line, over text already read, so the line itself stays clear. */
   .ask-pill[data-place="above"] { translate: 0 calc(-100% - 10px); }
+  /* The line dragged too near the top for that (a phone on its side): low on the right, above the control bar. */
+  .ask-pill[data-place="low"] { inset-block: auto calc(88px + env(safe-area-inset-bottom, 0px)); translate: none; }
   .ask-pill[data-place="corner"] { inset-block-start: calc(16px + env(safe-area-inset-top, 0px)); inset-inline-end: calc(16px + env(safe-area-inset-right, 0px)); translate: none; }
   /* A start card taller than a small phone starts below the corner pill. */
   :root:has(.ask-pill[data-place="corner"]:not([hidden])) .empty { padding-block-start: 72px; }
@@ -296,13 +298,13 @@
   }
   .ask-foot { display: flex; align-items: center; gap: 10px; }
   .ask-dots { display: flex; gap: 8px; margin-inline-end: auto; }
+  @media (pointer: coarse) { .ask-pill, .ask-foot .btn { min-block-size: 44px; } } /* 44px targets on phones */
   .ask-dots span { inline-size: 10px; block-size: 10px; border-radius: 50%; background: var(--chip-hover); }
   .ask-dots span[data-on] { background: var(--kind); }
   @media (prefers-reduced-motion: no-preference) {
-    .ask-pill[data-fresh] { animation: ask-nudge 420ms var(--ease-out); }
+    .ask-pill[data-fresh] { animation: ask-in 180ms var(--ease-out); }
     .ask-box:not([hidden]), .ask-veil:not([hidden]) { animation: ask-in 180ms var(--ease-out); }
   }
-  @keyframes ask-nudge { 0% { scale: 0.6; opacity: 0; } 60% { scale: 1.08; opacity: 1; } 100% { scale: 1; } }
   @keyframes ask-in { from { opacity: 0; } }
 
   /* Floating control bar, notices and status at the bottom centre. */

@@ -360,7 +360,7 @@ let askShowing = false; // the box is on screen
 let askSaid = ""; // the cue last read out, so moving to another reads that one
 let askNewest = ""; // the newest cue the pill showed, so a new one nudges it
 let askPausedAuto = false; // auto-scroll was on when the box came up
-let voiceHold = 0; // the words this session heard while the box showed (voiceHeld in src/follow.mjs): never followed
+let voiceHold = 0; // the results this session began while the box showed (voiceHeld in src/follow.mjs): never followed
 
 const askLive = () => live && liveLink.state === "on" && ask.shown();
 
@@ -417,7 +417,7 @@ function drawAsk() {
     // the button that had it (Disconnect MCP, say).
     askBox.focus({ preventScroll: true });
   } else if (!box && was) {
-    if (askPausedAuto && !isEmpty()) setAuto(true);
+    if (askPausedAuto && !isEmpty() && !voiceOn) setAuto(true); // voice turned on meanwhile: auto-scroll stays off
     askPausedAuto = false;
     // Focus in the box goes off (not to the pill: no ring on it), so Space means auto-scroll again and Enter opens the pill.
     if (askBox.contains(document.activeElement)) document.activeElement.blur();
@@ -425,13 +425,15 @@ function drawAsk() {
 }
 
 // The pill sits at the end of the reading line where there is room right of the text column, else just
-// above the line (over text already read), so it never covers the line being read. On the start screen
-// (a live show set aside) it waits in the top corner, clear of the start card.
+// above the line (over text already read), or low on the right above the control bar when the line is
+// dragged too high for that (over text still far off), so it never covers the line being read. On the start screen (a live show set aside) it waits in the top
+// corner, clear of the start card.
 function placePill() {
   if (askPill.hidden) return;
   const right = main.getBoundingClientRect().right - parseFloat(getComputedStyle(main).paddingInlineEnd);
   const room = document.documentElement.clientWidth - right;
-  askPill.dataset.place = isEmpty() ? "corner" : room >= askPill.offsetWidth + 16 + 12 ? "line" : "above";
+  const above = parseFloat(getComputedStyle(root).getPropertyValue("--line")) - 10 - askPill.offsetHeight;
+  askPill.dataset.place = isEmpty() ? "corner" : room >= askPill.offsetWidth + 16 + 12 ? "line" : above >= 8 ? "above" : "low";
 }
 new ResizeObserver(placePill).observe(main);
 window.addEventListener("resize", placePill); // the column keeps its width while the window narrows
@@ -542,6 +544,7 @@ let producerWaiting = false;
 window.addEventListener("message", (e) => {
   if (!PRODUCER_ORIGINS.includes(e.origin) || !e.source || e.source !== window.opener) return;
   const type = e.data?.type;
+  if (type === PRODUCER_MESSAGES.disconnect) producerWaiting = false; // Disconnect both before the token came: none is taken after
   if (type === PRODUCER_MESSAGES.token && producerWaiting) {
     const token = producerToken(e.data.token);
     if (token) {
@@ -668,6 +671,7 @@ function setLine(frac, keepText = false) {
   const y = Math.round(viewHeight() * lineFrac);
   const delta = reading.place(y);
   root.style.setProperty("--line", `${y}px`);
+  placePill(); // dragged high, the pill goes low
   const pct = Math.round(lineFrac * 100);
   handle.setAttribute("aria-valuenow", String(pct));
   handle.setAttribute("aria-valuetext", `${pct}% from the top`);
@@ -973,6 +977,12 @@ function toggleAuto() {
     autoBtn.setAttribute("data-show-tip", "");
     clearTimeout(autoTipTimer);
     autoTipTimer = setTimeout(() => autoBtn.removeAttribute("data-show-tip"), 2000);
+    return;
+  }
+  // The Producer's cue box shows: the script waits, so Play sets what happens when it closes.
+  if (askShowing) {
+    askPausedAuto = !askPausedAuto;
+    setStatus(askPausedAuto ? "Auto-scroll goes on when the cue closes." : "Auto-scroll stays off when the cue closes.");
     return;
   }
   setAuto(!autoOn);
@@ -1445,8 +1455,8 @@ document.addEventListener("keydown", (e) => {
   if (e.target.matches?.("input[type=range]") && k.startsWith("Arrow")) return;
   // The focused reading line keeps its keys (arrows, Page Up/Down, Home, End).
   if (e.target.closest(".line-handle") && LINE_KEYS.includes(k)) return;
-  // Space on these buttons (and Use and Skip in the Producer's cue box) presses them; on the control bar and the links it still means auto-scroll.
-  if (k === " " && e.target.closest(".note-row, .pop, .ask-box")) return;
+  // Space on these buttons (and the Producer's cue pill, and Use and Skip in its box) presses them; on the control bar and the links it still means auto-scroll.
+  if (k === " " && e.target.closest(".note-row, .pop, .ask-box, .ask-pill")) return;
   if (k === " ") { e.preventDefault(); toggleAuto(); }
   else if (k === "ArrowRight" || k === "PageDown") { e.preventDefault(); goSection(1); }
   else if (k === "ArrowLeft" || k === "PageUp") { e.preventDefault(); goSection(-1); }

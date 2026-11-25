@@ -213,28 +213,23 @@ export function voiceAt(voice, line) {
 }
 
 /**
- * How many words this speech session had heard by the last result event while the Producer's cue box
- * showed (the host reads the cue then, not the script), from that event's `results` (each `{ transcript,
- * isFinal }`): finished and unfinished results alike, however the speech service splits them.
+ * How many results of this speech session were begun by the last result event while the Producer's cue
+ * box showed (the host reads the cue then, not the script), from that event's `results`: the finished
+ * ones, plus one for the phrase still being heard, which the speech service may show as several
+ * unfinished results but ends as one.
  */
 export function voiceHeld(results) {
-  return results.reduce((n, r) => n + speechWords(r.transcript).length, 0);
+  const finished = results.filter((r) => r.isFinal).length;
+  return finished + (finished < results.length ? 1 : 0);
 }
 
 /**
- * `results` without the first `held` words of the session (voiceHeld): a result heard all while the box
- * showed is left empty, and the one it cut into keeps only the words after. Applied to every later event
- * of the same session, so none of them is ever followed, nor opens a link.
+ * `results` with the first `held` of the session (voiceHeld) left empty: each phrase begun before the
+ * box closed stays empty also as it goes on and ends after. Applied to every later event of the same
+ * session, so none of their words is ever followed, nor opens a link; the next phrase is followed.
  */
 export function voiceUnheld(results, held) {
-  let drop = held;
-  return results.map((r) => {
-    if (drop <= 0) return r;
-    const words = speechWords(r.transcript);
-    const cut = Math.min(drop, words.length);
-    drop -= cut;
-    return { ...r, transcript: words.slice(cut).join(" ") };
-  });
+  return results.map((r, i) => (i < held ? { ...r, transcript: "" } : r));
 }
 
 /**
