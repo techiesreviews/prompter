@@ -272,7 +272,9 @@
   /* No room right of the text (a phone, a full-width column): just above the
      reading line, over text already read, so the line itself stays clear. */
   .ask-pill[data-place="above"] { translate: 0 calc(-100% - 10px); }
-  .ask-pill[data-place="corner"] { inset-block-start: calc(16px + env(safe-area-inset-top, 0px)); translate: none; }
+  .ask-pill[data-place="corner"] { inset-block-start: calc(16px + env(safe-area-inset-top, 0px)); inset-inline-end: calc(16px + env(safe-area-inset-right, 0px)); translate: none; }
+  /* A start card taller than a small phone starts below the corner pill. */
+  :root:has(.ask-pill[data-place="corner"]:not([hidden])) .empty { padding-block-start: 72px; }
   /* The Reconnecting note goes above the pill rather than over it. */
   :root:has(.ask-pill:not([hidden])) .toast { transform: translateY(calc(-100% - 34px)); }
   :root:has(.ask-pill[data-place="above"]:not([hidden])) .toast { transform: translateY(calc(-100% - 60px)); }

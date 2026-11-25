@@ -360,8 +360,7 @@ let askShowing = false; // the box is on screen
 let askSaid = ""; // the cue last read out, so moving to another reads that one
 let askNewest = ""; // the newest cue the pill showed, so a new one nudges it
 let askPausedAuto = false; // auto-scroll was on when the box came up
-let voiceHold = null; // what this session heard while the box showed (voiceHeld in src/follow.mjs): never followed
-let voiceSkip = null; // the same, once the box closed, until the phrase it cut into is finished
+let voiceHold = 0; // the words this session heard while the box showed (voiceHeld in src/follow.mjs): never followed
 
 const askLive = () => live && liveLink.state === "on" && ask.shown();
 
@@ -1092,7 +1091,7 @@ function newRecognition(local) {
 }
 const voiceKeeper = Recognition && speechKeeper({
   make: newRecognition,
-  onSession() { scripts.now.voice = voiceSession(scripts.now.voice); voiceHold = null; voiceSkip = null; }, // a new session numbers its results from 0 again
+  onSession() { scripts.now.voice = voiceSession(scripts.now.voice); voiceHold = 0; }, // a new session numbers its results from 0 again
   onResult: onVoiceResult,
   onReconnecting(on) { if (on) showToast(RECONNECTING); else hideToast(); },
   onLocalFailed() { voiceLocal = false; }, // its language pack went away: ask again next time
@@ -1135,17 +1134,9 @@ function onVoiceResult(e) {
   const script = scripts.now;
   // While the Producer's cue box shows, the host reads it, not the script: what is heard then is never
   // followed, and following goes on from the same line once the box closes.
-  let results = Array.from(e.results, (r) => ({ transcript: r[0].transcript, isFinal: r.isFinal }));
-  if (askShowing) { voiceHold = voiceHeld(results); return; }
-  if (voiceHold) {
-    script.voice = { ...script.voice, final: Math.max(script.voice.final, voiceHold.at) };
-    voiceSkip = voiceHold;
-    voiceHold = null;
-  }
-  if (voiceSkip) {
-    results = voiceUnheld(results, voiceSkip);
-    if (results[voiceSkip.at]?.isFinal) voiceSkip = null; // that phrase is followed now, once
-  }
+  const heard = Array.from(e.results, (r) => ({ transcript: r[0].transcript, isFinal: r.isFinal }));
+  if (askShowing) { voiceHold = voiceHeld(heard); return; }
+  const results = voiceUnheld(heard, voiceHold);
   const { voice, line, link } = voiceStep(script.voiceLines, script.voice, results, { links: voiceLinkCandidates(), shownUrl: script.shownUrl });
   script.voice = voice;
   const cur = main.querySelector("p.cur");

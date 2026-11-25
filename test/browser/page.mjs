@@ -1869,6 +1869,58 @@ export async function run({ browser, base, mode, dist, out }) {
   await voiced.close();
   ok("Follow my voice: a big mic button in Settings (orange when on) with the API, notice before first use, follows line by line to the reading line (white current line, dimmer lines after it), interim and later-line words never jump, skips QL, picks up after scrolling by hand, pauses auto-scroll, handles a blocked mic, keeps going when speech drops (a fresh recognizer at once after a blip or a session end, no note for one blip; Reconnecting to speech by the reading line, read out once, only while it keeps failing, tries a little apart and never two at once; heard words hide it; a silent stall replaced by a fresh recognizer) and gives up with the message only after about 15 s of failing with no word heard (a browser without the speech service), uses on-device recognition where the browser has it, says it could not start (off at once, one try) when the recognizer cannot start, remembers consent");
 
+  // ---- The Producer's cues with Follow my voice, and going quiet while the box shows ----
+  if (mode === "wrangler") {
+    const { token: cueToken } = await (await fetch(`${base}/api/agent-token`, { method: "POST" })).json();
+    const cued = await browser.newContext(DESKTOP);
+    await cued.addInitScript(SPEECH_STUB);
+    // Connected from the start, as after a reload (the token kept on the device).
+    await cued.addInitScript(([t]) => { if (!localStorage.getItem("prompter-agent")) localStorage.setItem("prompter-agent", JSON.stringify({ token: t, createdAt: Date.now() })); }, [cueToken]);
+    await cued.clock.install();
+    const c = await cued.newPage();
+    watch(c, "cues with voice");
+    await c.goto(link);
+    await c.locator(".section").first().waitFor();
+    assert.equal((await agentRpc(cueToken, "initialize", { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "claude-code", version: "2.1" } })).status, 200);
+    await c.waitForFunction(() => document.querySelector(".open-btn").dataset.dot === "on");
+    await c.locator(".voice:not([hidden])").waitFor({ state: "attached" });
+    await viaSettings(c, ".voice");
+    await c.locator('[data-action="voice-ok"]').click();
+    await c.keyboard.press("Escape");
+    await c.evaluate(() => window.__speech.say("writing scripts takes"));
+    await c.waitForFunction(() => /Writing scripts/.test(document.querySelector("p.cur")?.textContent || ""));
+    // The host reads the cue aloud while the box shows; the browser splits what it is still hearing.
+    const cueText = "One question keeps you focused.";
+    await agentCall(cueToken, "push_suggestions", { items: [{ kind: "point", text: cueText }] });
+    await c.locator(".ask-pill").click();
+    await c.locator(".ask-box").waitFor();
+    await c.evaluate(() => {
+      const s = window.__speech;
+      const part = (text) => { const r = [{ transcript: text }]; r.isFinal = false; return r; };
+      s.results.push(part("one question"), part(" keeps you focused"));
+      s.instance.onresult({ results: s.results, resultIndex: s.results.length - 1 });
+    });
+    await c.mouse.click(12, 12); // a tap beside closes the box
+    await c.locator(".ask-box").waitFor({ state: "hidden" });
+    await c.evaluate(() => { const s = window.__speech; s.results.splice(-2, 2); s.say("one question keeps you focused too long reading"); });
+    await c.waitForFunction(() => /Reading them/.test(document.querySelector("p.cur")?.textContent || ""));
+    assert.match(await c.locator("p.cur").textContent(), /Reading them/, "only the words after the box count: the cue's words never move the script");
+    await viaSettings(c, ".voice"); // off
+    await c.keyboard.press("Escape");
+    // Auto-scroll on, the box open (scrolling waits), then the pushes stop: after two minutes the box and the
+    // pill hide by themselves and auto-scroll goes on.
+    await (await dock(c, ".auto")).click();
+    await agentCall(cueToken, "push_suggestions", { items: [{ kind: "question", text: "What do you build?", number: 1 }] });
+    await c.locator(".ask-pill").click();
+    await c.locator(".ask-box").waitFor();
+    assert.equal(await c.locator(".dock-btn.auto").getAttribute("aria-pressed"), "false", "scrolling waits while the box shows");
+    await c.clock.fastForward("02:05");
+    await c.locator(".ask-box").waitFor({ state: "hidden" });
+    assert.deepEqual([await c.locator(".ask-pill").isHidden(), await c.locator(".dock-btn.auto").getAttribute("aria-pressed")], [true, "true"], "gone quiet: no box, no pill, scrolling goes on");
+    await cued.close();
+    ok("the Producer's cues with Follow my voice: words heard while the box shows (split or not) are never followed, and following goes on after; the box and pill hide by themselves two minutes after the last push, and auto-scroll goes on");
+  }
+
   // ---- Links open at the point where they are talked about ----
   const inlineLink = await makeLink(INLINE_SCRIPT, "lex", base);
   const linked = await browser.newContext(DESKTOP);
