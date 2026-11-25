@@ -673,6 +673,8 @@ export async function run({ browser, base, mode, dist, out }) {
     await A.keyboard.press("Enter");
     await askBox.waitFor({ state: "hidden" });
     assert.deepEqual([await autoState(), await pillRow()], ["true", ["steer", "↩Steer back", "Steer back from the Producer. Open it"]], "auto-scroll goes on; the pill shows what is left");
+    // The focus leaves the box without landing on the pill, so no ring is drawn round it (Lex: never a border).
+    assert.deepEqual(await pill.evaluate((p) => [p === document.activeElement, getComputedStyle(p).outlineStyle]), [false, "none"], "no ring on the pill after a keyboard Use");
     await A.keyboard.press(" ");
     assert.equal(await autoState(), "false", "Space is auto-scroll again after the box");
     // (Auto-scroll ran a moment between Use and Space: the page scrolled, the script's own box did not change.)
@@ -709,13 +711,39 @@ export async function run({ browser, base, mode, dist, out }) {
     await A.waitForFunction(() => document.querySelector(".ask-text").scrollTop > 0);
     assert.equal((await boxRow())[0], "point", "↓ scrolls a long cue and stays on it");
     await shot(A, "cue-box-mobile");
+    // A long unbroken word (a link) wraps inside the box instead of widening it.
+    const longLink = { kind: "point", text: `https://example.com/${"a".repeat(270)}` };
+    await agentCall(token, "push_suggestions", { items: [longLink] });
+    await A.keyboard.press("ArrowLeft");
+    assert.ok((await boxRow())[1].startsWith("https://"), "on the link cue");
+    assert.deepEqual(await askBox.evaluate((b) => [b.scrollWidth <= b.clientWidth, b.querySelector(".ask-text").scrollWidth <= b.querySelector(".ask-text").clientWidth]), [true, true], "a long link wraps");
+    await A.keyboard.press("Escape"); // skips the link cue
     // A tap beside the box closes it; the cue waits behind the pill again.
     await A.mouse.click(195, 12);
     await askBox.waitFor({ state: "hidden" });
     assert.equal((await pillRow())[1], "★Talking point+1");
+    // No room right of the text on a phone: the pill sits just above the reading line, never over it.
+    await A.waitForFunction(() => document.querySelector(".ask-pill").getAnimations().every((a) => a.playState !== "running"));
+    const [phonePlace, phoneBottom] = await pill.evaluate((p) => [p.dataset.place, p.getBoundingClientRect().bottom]);
+    assert.deepEqual([phonePlace, phoneBottom <= (await lineTop()) + 0.5], ["above", true], "above the reading line on a phone");
+    // A phone on its side (the usual prompter rig): the words get at least two lines, Skip and Use stay in view.
+    for (const size of [{ width: 740, height: 360 }, { width: 667, height: 375 }]) {
+      await A.setViewportSize(size);
+      await pill.click();
+      await askBox.waitFor();
+      const side = await askBox.evaluate((b) => {
+        const r = b.getBoundingClientRect();
+        const text = b.querySelector(".ask-text");
+        const fits = [...b.querySelectorAll(".ask-foot button")].every((btn) => { const q = btn.getBoundingClientRect(); return q.top >= r.top && q.bottom <= r.bottom && document.elementFromPoint(q.x + q.width / 2, q.y + q.height / 2)?.closest("button") === btn; });
+        return [fits, text.clientHeight >= 2 * parseFloat(getComputedStyle(text).lineHeight) - 1, r.top >= 0, r.bottom <= innerHeight];
+      });
+      assert.deepEqual(side, [true, true, true, true], `on its side ${size.width}×${size.height}: two lines of words, Skip and Use in view`);
+      await A.mouse.click(8, 8);
+      await askBox.waitFor({ state: "hidden" });
+    }
     await A.setViewportSize(DESKTOP.viewport);
     const cleared = await agentCall(token, "clear_suggestions");
-    assert.deepEqual(cleared.structuredContent, { cleared: true, used: [], skipped: [], asked: [] });
+    assert.deepEqual(cleared.structuredContent, { cleared: true, used: [], skipped: [longLink], asked: [] });
     await pill.waitFor({ state: "hidden" });
     assert.equal((await agentCall(token, "push_suggestions", { items: [{ kind: "question", text: "x", number: 0 }] })).isError, true, "a bad push is refused");
     await agentCall(token, "push_suggestions", { items: [Q6] });
@@ -735,20 +763,29 @@ export async function run({ browser, base, mode, dist, out }) {
     await shot(A, "mcp-elsewhere-desktop");
     assert.equal(await A.locator(".ask-pill").isHidden(), true, "the Producer's pill goes with the link to the other tab");
     assert.deepEqual((await agentCall(token, "get_open_script")).structuredContent, { open: false }, "calls now reach the new tab (its start screen)");
-    // A live show with no script open: no pill, the box shows by itself; Enter uses one and the next one shows,
-    // a tap beside it does not close it (there is no script to go back to).
+    // A live show with no script open: no pill, the box shows by itself and takes the focus, so Enter uses a cue
+    // even when the host's last click was on Disconnect MCP; the next one shows.
+    await B.locator(".empty .mcp-action").focus();
     assert.equal((await agentCall(token, "push_suggestions", { items: [POINT, AUD] })).structuredContent.shown, true);
     const liveBox = B.locator(".ask-box");
+    const livePill = B.locator(".ask-pill");
     await liveBox.waitFor();
-    assert.deepEqual([await B.locator(".ask-pill").isVisible(), await liveBox.locator(".ask-text").textContent()], [false, POINT.text], "no pill: the box by itself, the newest first");
+    assert.deepEqual([await livePill.isVisible(), await liveBox.locator(".ask-text").textContent(), await liveBox.evaluate((b) => b === document.activeElement)], [false, POINT.text, true], "no pill: the box by itself, the newest first, with the focus");
     await shot(B, "cue-box-live-desktop");
-    await B.mouse.click(20, 20);
-    assert.equal(await liveBox.isVisible(), true, "a tap beside keeps the box");
     await B.keyboard.press("Enter");
     await B.waitForFunction((t) => document.querySelector(".ask-box .ask-text").textContent === t, AUD.text);
+    assert.equal(await state(B, ".empty .mcp-action"), "on", "Enter used the cue, it did not press Disconnect MCP");
+    // A tap beside sets it aside: the start screen can be used again, and a pill brings the box back.
+    await B.mouse.click(20, 20);
+    await liveBox.waitFor({ state: "hidden" });
+    await livePill.waitFor();
+    assert.equal(await B.locator(".empty .mcp-action").evaluate((btn) => { const r = btn.getBoundingClientRect(); return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest("button") === btn; }), true, "the start screen's buttons can be reached");
+    await livePill.click();
+    await liveBox.waitFor();
+    assert.equal(await liveBox.locator(".ask-text").textContent(), AUD.text);
     assert.deepEqual((await agentCall(token, "clear_suggestions")).structuredContent.used, [POINT]);
     await liveBox.waitFor({ state: "hidden" });
-    ok("a live show (no script open): no pill, the box shows by itself; Enter uses one and shows the next; a tap beside keeps it");
+    ok("a live show (no script open): no pill, the box shows by itself and takes the focus; Enter uses one and shows the next; a tap beside sets it aside behind a pill");
     if (!(await A.locator("#open-menu:popover-open").count())) await (await dock(A, ".open-btn")).click();
     await act.click();
     await A.waitForFunction(() => document.querySelector("#open-menu .mcp-action").dataset.state === "on");
@@ -793,7 +830,8 @@ export async function run({ browser, base, mode, dist, out }) {
   await live.close();
 
   // One click from the Producer (TOOLS-464): its page asks this site for a token (CORS for its address only)
-  // and opens the prompter with #producer=<token>; the tab drops it from the address at once, connects with it,
+  // and opens the prompter with #producer; the tab drops the mark at once, says ready to its opener at the
+  // Producer's addresses only, takes the token from that page's answer (never from the address), connects,
   // says it is linked to the Producer, tells only its opener its state (never the token), and the Producer's
   // Disconnect ends this tab's link too. The Producer's page is played here by a stand-in at its real address.
   if (mode === "wrangler") {
@@ -807,17 +845,20 @@ export async function run({ browser, base, mode, dist, out }) {
     const { token: handed } = await minted.json();
     const setup = await browser.newContext(DESKTOP);
     await setup.addInitScript(NO_SPEECH);
-    await setup.route(`${PRODUCER}/**`, (route) => route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Producer stand-in</title><script>window.heard = []; addEventListener('message', (e) => heard.push([e.origin, e.data]));</script>" }));
+    // The stand-in answers the tab's ready with the token, as the Producer does.
+    const STAND_IN = "<!doctype html><title>Producer stand-in</title><script>window.heard = []; addEventListener('message', (e) => { heard.push([e.origin, e.data]); if (e.data?.type === 'prompter:ready' && e.source === window.prompterTab) e.source.postMessage({ type: 'prompter:token', token: window.handOut }, e.origin); });</script>";
+    await setup.route(`${PRODUCER}/**`, (route) => route.fulfill({ contentType: "text/html", body: STAND_IN }));
+    await setup.route("https://evil.example/**", (route) => route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Another site</title>" }));
     const producer = await setup.newPage();
     watch(producer, "producer stand-in");
     await producer.goto(`${PRODUCER}/`);
     const [P] = await Promise.all([
       setup.waitForEvent("page"),
-      producer.evaluate(([url]) => { window.prompterTab = window.open(url, "_blank"); }, [`${base}/#producer=${handed}`]),
+      producer.evaluate(([url, token]) => { window.handOut = token; window.prompterTab = window.open(url, "_blank"); }, [`${base}/#producer`, handed]),
     ]);
     watch(P, "prompter from the Producer");
     await showsStart(P);
-    assert.equal(await P.evaluate(() => location.hash), "", "the token is gone from the address at once");
+    assert.equal(await P.evaluate(() => location.hash), "", "the mark is gone from the address at once");
     await P.waitForFunction(() => document.querySelector(".empty .mcp-action").dataset.state === "waiting");
     assert.equal(await P.locator(".open-btn").getAttribute("aria-label"), "Open · waiting for MCP, linked to your Producer");
     assert.equal(await P.evaluate(() => localStorage.getItem("prompter-agent")?.includes('"producer":true')), true, "kept as the Producer's link, for a reload");
@@ -826,7 +867,7 @@ export async function run({ browser, base, mode, dist, out }) {
     await shot(P, "producer-linked-desktop");
     await producer.waitForFunction(() => window.heard.some(([, d]) => d?.state === "on"));
     const heard = await producer.evaluate(() => window.heard);
-    assert.deepEqual(heard.map(([o, d]) => [o, d.type, d.state]), [[base, "prompter:link", "waiting"], [base, "prompter:link", "on"]], "the opener hears the state, from the prompter's address");
+    assert.deepEqual(heard.map(([o, d]) => [o, d.type, d.state]), [[base, "prompter:ready", undefined], [base, "prompter:link", "waiting"], [base, "prompter:link", "on"]], "the opener hears ready, then the state, from the prompter's address");
     assert.equal(JSON.stringify(heard).includes(handed), false, "never the token");
     // A live show from the Producer: no script, so its first question shows by itself.
     await agentCall(handed, "push_suggestions", { items: [{ kind: "question", text: "Who are you, and what do you build?", number: 1 }] });
@@ -843,12 +884,30 @@ export async function run({ browser, base, mode, dist, out }) {
     let gone;
     for (let i = 0; i < 25 && gone !== 401; i++) { gone = (await agentRpc(handed, "tools/list")).status; if (gone !== 401) await sleep(200); }
     assert.equal(gone, 401, "the Producer's token is revoked");
-    // A #producer= link without a real token connects nothing.
-    await P.goto(`${base}/#producer=nope`);
-    await showsStart(P);
-    assert.equal(await state(P, ".empty .mcp-action"), "off", "a bad #producer= connects nothing");
+    // A link anyone could send, with a real token in the address, connects nothing: the token never comes from there.
+    const { token: sent } = await (await fetch(`${base}/api/agent-token`, { method: "POST" })).json();
+    const lone = await setup.newPage();
+    watch(lone, "prompter from a sent link");
+    await lone.goto(`${base}/#producer=${sent}`);
+    await showsStart(lone);
+    await sleep(300);
+    assert.deepEqual([await state(lone, ".empty .mcp-action"), await lone.evaluate(() => location.hash), await lone.evaluate(() => localStorage.getItem("prompter-agent"))], ["off", "", null], "a token in a sent link is ignored and dropped from the address");
+    await lone.close();
+    // Another site that opens the prompter to link it hears no ready, and the token it posts is ignored.
+    const evil = await setup.newPage();
+    watch(evil, "another site");
+    await evil.goto("https://evil.example/");
+    const [E] = await Promise.all([
+      setup.waitForEvent("page"),
+      evil.evaluate(([url]) => { window.heard = []; addEventListener("message", (e) => heard.push(e.data)); window.tab = window.open(url, "_blank"); }, [`${base}/#producer`]),
+    ]);
+    watch(E, "prompter opened by another site");
+    await showsStart(E);
+    await evil.evaluate(([token]) => window.tab.postMessage({ type: "prompter:token", token }, "*"), [sent]);
+    await sleep(300);
+    assert.deepEqual([await state(E, ".empty .mcp-action"), await evil.evaluate(() => window.heard.length)], ["off", 0], "another site hears nothing and cannot hand a token");
     await setup.close();
-    ok("one click from the Producer: /api/agent-token answers its address (CORS) and refuses others; #producer=<token> leaves the address at once and connects (waiting, then on), Open says linked to your Producer; the opener hears waiting/on/off, never the token; a live show shows the first question by itself; the Producer's Disconnect ends the link and revokes the token; anything else is ignored");
+    ok("one click from the Producer: /api/agent-token answers its address (CORS) and refuses others; #producer leaves the address at once, the tab says ready to the Producer only and takes the token from its answer, connects (waiting, then on), Open says linked to your Producer; the opener hears ready/waiting/on/off, never the token; a live show shows the first question by itself; the Producer's Disconnect ends the link and revokes the token; a token in a sent link and another site's messages are ignored");
   }
 
   // Paste from the Open popover.

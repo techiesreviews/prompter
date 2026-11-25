@@ -21,13 +21,17 @@ test("the wire's names and numbers", () => {
   assert.equal(MAX_AGE_MS, TOKEN_MAX_AGE_MS, "the Worker's token age is the wire's");
   assert.deepEqual(relayProtocols("tp1-abc"), ["prompter", "t.tp1-abc"], "the token travels as a subprotocol, never in the URL");
   assert.deepEqual(Object.keys(RELAY_MESSAGES).toSorted(), ["agent", "call", "ping", "pong", "ready", "result", "revoke"]);
-  // The Producer page types these two names on its side (TOOLS-464): changing one breaks its "Connected" line.
-  assert.deepEqual(PRODUCER_MESSAGES, { link: "prompter:link", disconnect: "prompter:disconnect" });
+  // The Producer page types these names on its side (TOOLS-464): changing one breaks its one-click setup.
+  assert.deepEqual(PRODUCER_MESSAGES, { ready: "prompter:ready", token: "prompter:token", link: "prompter:link", disconnect: "prompter:disconnect" });
 });
 
 test("the tab talks to its Producer opener by the wire's names, at the Producer's exact addresses only", () => {
   const app = source("app.js");
-  assert.doesNotMatch(app, /["'`]prompter:(link|disconnect)["'`]/, "the names come from PRODUCER_MESSAGES");
+  assert.doesNotMatch(app, /["'`]prompter:(ready|token|link|disconnect)["'`]/, "the names come from PRODUCER_MESSAGES");
+  // The token comes only in the opener's message, never from the address: a link anyone can send must not tie this tab to their agent.
+  assert.doesNotMatch(app, /producerToken\(location/, "never a token from the address");
+  assert.match(app, /postMessage\(\{ type: PRODUCER_MESSAGES\.ready \}, origin\)/, "ready goes to the Producer's addresses only");
+  assert.match(app, /type === PRODUCER_MESSAGES\.token && producerWaiting/, "a token is taken once, only when this tab was opened to link");
   assert.match(app, /PRODUCER_ORIGINS\.includes\(e\.origin\)/, "a message from any other site is ignored");
   assert.match(app, /e\.source !== window\.opener/, "only the page that opened this tab is heard");
   assert.match(app, /postMessage\(\{ type: PRODUCER_MESSAGES\.link, state \}, origin\)/, "the tab says only its state, to a named address, never \"*\"");

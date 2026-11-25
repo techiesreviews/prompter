@@ -369,10 +369,10 @@ function drawAsk() {
   clearTimeout(askTimer);
   // Hidden again by itself once the pushes stop.
   if (show) askTimer = setTimeout(drawAsk, ask.staleIn() + 50);
-  else ask.close();
+  else ask.close(false); // gone quiet: not set aside, so the next push shows a live show's box again
   const items = show ? ask.items : [];
   const box = show && ask.boxOpen(isEmpty());
-  askPill.hidden = !show || box || isEmpty();
+  askPill.hidden = !show || box;
   if (items.length) {
     const [mark, name] = ASK_KINDS[items[0].kind];
     const more = items.length - 1;
@@ -389,6 +389,7 @@ function drawAsk() {
     }
   }
   askNewest = items[0]?.text ?? "";
+  placePill();
   const was = askShowing;
   askShowing = box;
   askBox.hidden = !box;
@@ -412,20 +413,30 @@ function drawAsk() {
     hideHint(); // it sits above the dock and would cover the box's Skip and Use on a phone
     askPausedAuto = autoOn;
     setAuto(false);
+    // The box takes the focus however it opened (a live show's by itself too), so Enter means Use and not
+    // the button that had it (Disconnect MCP, say).
+    askBox.focus({ preventScroll: true });
   } else if (!box && was) {
     if (askPausedAuto && !isEmpty()) setAuto(true);
     askPausedAuto = false;
-    // Focus in the box goes back to the pill, or off, so Space means auto-scroll again.
-    if (askBox.contains(document.activeElement)) {
-      if (askPill.hidden) document.activeElement.blur(); else askPill.focus({ preventScroll: true });
-    }
+    // Focus in the box goes off (not to the pill: no ring on it), so Space means auto-scroll again and Enter opens the pill.
+    if (askBox.contains(document.activeElement)) document.activeElement.blur();
   }
 }
+
+// The pill sits at the end of the reading line where there is room right of the text column, else just
+// above the line (over text already read), so it never covers the line being read.
+function placePill() {
+  if (askPill.hidden) return;
+  const right = main.getBoundingClientRect().right - parseFloat(getComputedStyle(main).paddingInlineEnd);
+  const room = document.documentElement.clientWidth - right;
+  askPill.dataset.place = isEmpty() || room >= askPill.offsetWidth + 16 + 12 ? "line" : "above";
+}
+new ResizeObserver(placePill).observe(main);
 
 function askOpen() {
   ask.open();
   drawAsk();
-  if (askShowing) askBox.focus({ preventScroll: true });
 }
 function askUse() { if (ask.use()) drawAsk(); }
 function askSkip() { if (ask.skip()) drawAsk(); }
@@ -449,16 +460,18 @@ function askKey(e) {
   else if (k === "ArrowLeft" || k === "PageUp") { ask.move(-1); drawAsk(); }
   else if (k === "ArrowDown" || k === "ArrowUp") askText.scrollBy({ top: (k === "ArrowDown" ? 0.8 : -0.8) * askText.clientHeight }); // a long cue
   else if (k === "Enter" || k === " ") {
-    if (onButton) return false; // Use and Skip (and the control bar) press as buttons do
+    if (e.target.closest?.(".ask-box button")) return true; // Use and Skip press as buttons do
+    if (k === "Enter" && onButton) return true; // a button the person moved to with Tab presses
     if (k === "Enter") askUse();
-  } else return false;
+  } else return true; // the page's own keys (digits, Space, size…) wait while the box shows; the browser's, like Tab, still work
   e.preventDefault();
   return true;
 }
 
 askPill.addEventListener("click", askOpen);
-// A tap beside the box closes it; the cue waits behind the pill. With no script open there is nothing to go back to.
-askVeil.addEventListener("click", () => { if (!isEmpty()) { ask.close(); drawAsk(); } });
+// A tap beside the box closes it; the cue waits behind the pill. In a live show that sets it aside, so the
+// start screen can be used; the pill (or a new cue) brings it back.
+askVeil.addEventListener("click", () => { ask.close(); drawAsk(); });
 
 // The live relay link itself (token, socket, backoff, keepalive, tool calls) is relayLink in src/relay-link.mjs;
 // the code below gives it the page's two tools and draws its state. An offline copy (file://) has no relay:
@@ -521,9 +534,19 @@ function tellProducer() {
   }
   if (state === "off") producerOpener = null; // the link ended: the next one starts fresh
 }
+// A tab the Producer opened to link (`#producer`) says ready to that page and takes the token only from its
+// answer, once: never from the address, where a link anyone can send would tie this tab to their agent.
+let producerWaiting = false;
 window.addEventListener("message", (e) => {
   if (!PRODUCER_ORIGINS.includes(e.origin) || !e.source || e.source !== window.opener) return;
-  if (e.data?.type === PRODUCER_MESSAGES.disconnect && liveLink.producer && liveLink.state !== "off") liveLink.disconnect();
+  const type = e.data?.type;
+  if (type === PRODUCER_MESSAGES.token && producerWaiting) {
+    const token = producerToken(e.data.token);
+    if (token) {
+      producerWaiting = false;
+      liveLink.adopt(token);
+    }
+  } else if (type === PRODUCER_MESSAGES.disconnect && liveLink.producer && liveLink.state !== "off") liveLink.disconnect();
 });
 // "Copied" with a check for two seconds after a copy.
 const copied = { on: false, timer: 0 };
@@ -588,12 +611,17 @@ $("#open-menu").addEventListener("toggle", (e) => {
 });
 const startMcp = $(".empty .mcp-action");
 for (const type of ["pointerenter", "focus", "pointerdown"]) startMcp.addEventListener(type, prefetchToken);
-// The Producer opened this tab with its token (`#producer=`): taken off the address at once (so it is not in
-// the history, a bookmark or a copied link), then connected as Wait for MCP's would be.
-const handed = live ? producerToken(location.hash) : null;
-if (handed) history.replaceState(null, "", plainAddress());
+// The Producer opened this tab to link it (`#producer`): the mark comes off the address at once, and the tab
+// says ready to the page that opened it, at the Producer's addresses only; its token comes back by message.
+const fromProducer = /^#producer\b/.test(location.hash);
+if (fromProducer) history.replaceState(null, "", plainAddress());
 if (live) liveLink.start();
-if (handed) liveLink.adopt(handed);
+if (live && fromProducer && window.opener) {
+  producerWaiting = true;
+  for (const origin of PRODUCER_ORIGINS) {
+    try { window.opener.postMessage({ type: PRODUCER_MESSAGES.ready }, origin); } catch { /* closed */ }
+  }
+}
 renderAgent();
 tellProducer();
 
@@ -1104,7 +1132,7 @@ function onVoiceResult(e) {
   const script = scripts.now;
   // While the Producer's cue box shows, the host reads it, not the script: what is heard then is never
   // followed, and following goes on from the same line once the box closes.
-  if (askShowing) { voiceHeld = e.results.length; return; }
+  if (askShowing) { voiceHeld = Array.prototype.filter.call(e.results, (r) => r.isFinal).length; return; } // the phrase in progress is still followed after
   if (voiceHeld) {
     script.voice = { ...script.voice, final: Math.max(script.voice.final, voiceHeld) };
     voiceHeld = 0;

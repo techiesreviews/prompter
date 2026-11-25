@@ -72,6 +72,7 @@ export function suggestionQueue({ now = Date.now } = {}) {
   let items = [];
   let at = 0;
   let opened = false;
+  let aside = false; // closed in a live show: shown again by open() or a new item
   let pushedAt = null;
   let done = [];
   let used = [];
@@ -106,6 +107,7 @@ export function suggestionQueue({ now = Date.now } = {}) {
         } else fresh.push(copy(item));
       }
       items = [...fresh, ...items];
+      if (fresh.length) aside = false;
       for (let i = items.length - 1; items.length > SUGGESTIONS_WAITING && i >= 0; i--) {
         if (items[i] !== reading) items.splice(i, 1);
       }
@@ -115,13 +117,15 @@ export function suggestionQueue({ now = Date.now } = {}) {
     },
     open() {
       opened = items.length > 0;
+      aside = false;
       at = 0;
     },
     move(step) {
       at = Math.min(Math.max(0, at + step), Math.max(0, items.length - 1));
     },
-    close() {
+    close(setAside = true) {
       opened = false;
+      aside = setAside;
       at = 0;
     },
     use() {
@@ -135,11 +139,12 @@ export function suggestionQueue({ now = Date.now } = {}) {
       items = [];
       at = 0;
       opened = false;
+      aside = false;
       pushedAt = null;
       done = [];
       return take();
     },
-    boxOpen: (liveShow) => items.length > 0 && (opened || Boolean(liveShow)),
+    boxOpen: (liveShow) => items.length > 0 && (opened || (Boolean(liveShow) && !aside)),
     shown: (t = now()) => pushedAt !== null && t - pushedAt < SUGGESTION_STALE_MS && items.length > 0,
     staleIn: (t = now()) => (pushedAt === null ? 0 : Math.max(0, pushedAt + SUGGESTION_STALE_MS - t)),
     get items() { return items.map(copy); },

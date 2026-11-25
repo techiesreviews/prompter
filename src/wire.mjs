@@ -16,15 +16,17 @@ export const TOKEN_PATH = "/api/agent-token";
 export const TOKEN_MAX_AGE_MS = 8 * 60 * 60 * 1000;
 /**
  * The Producer's pages (live and preview), the one other site that may ask TOKEN_PATH for a token (CORS)
- * and that opens this page linked, with `#producer=<token>`; the tab tells only them how its link is.
+ * and that opens this page linked (`#producer`); the tab talks only to them.
  */
 export const PRODUCER_ORIGINS = ["https://producer.techies.tools", "https://preview-producer.techies.tools"];
 /**
- * The messages between this tab and the Producer page that opened it (postMessage, never the token):
- * `link` from the tab with `state` (off, waiting, on, elsewhere), so the Producer can say "Connected:
- * Producer + Prompter"; `disconnect` from the Producer, so its Disconnect ends this tab's link too.
+ * The messages between this tab and the Producer page that opened it (postMessage at exact addresses):
+ * `ready` from a tab opened with `#producer`; `token` from the Producer with `token`, the one it got from
+ * TOKEN_PATH (taken once, only by a tab that said ready); `link` from the tab with `state` (off, waiting,
+ * on, elsewhere), never the token, so the Producer can say "Connected: Producer + Prompter"; `disconnect`
+ * from the Producer, so its Disconnect ends this tab's link too.
  */
-export const PRODUCER_MESSAGES = { link: "prompter:link", disconnect: "prompter:disconnect" };
+export const PRODUCER_MESSAGES = { ready: "prompter:ready", token: "prompter:token", link: "prompter:link", disconnect: "prompter:disconnect" };
 
 /**
  * The relay's own close codes: `elsewhere` when a newer tab took the link (this one offers "Use this

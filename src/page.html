@@ -266,15 +266,24 @@
     font: 700 17px/1.2 var(--font-body); color: var(--bg); background: var(--kind);
     border: 0; border-radius: 999px; box-shadow: var(--ask-lift); cursor: pointer; white-space: nowrap;
   }
+  .ask-pill:focus-visible { outline: none; filter: brightness(1.15); scale: 1.06; } /* focus shows without a ring (Lex: never a border) */
   .ask-pill-mark { font-weight: 800; }
   .ask-more { font-weight: 600; }
-  :root[data-view="empty"] .ask-pill { display: none; }
+  /* No room right of the text (a phone, a full-width column): just above the
+     reading line, over text already read, so the line itself stays clear. */
+  .ask-pill[data-place="above"] { translate: 0 calc(-100% - 10px); }
+  /* The Reconnecting note goes above the pill rather than over it. */
+  :root:has(.ask-pill:not([hidden])) .toast { transform: translateY(calc(-100% - 34px)); }
+  :root:has(.ask-pill[data-place="above"]:not([hidden])) .toast { transform: translateY(calc(-100% - 60px)); }
   .ask-veil { position: fixed; inset: 0; z-index: 15; background: oklch(16% 0.06 282 / 0.82); }
   .ask-box {
     position: fixed; z-index: 16; inset: 0; margin: auto; block-size: fit-content;
     inline-size: min(900px, calc(100vw - 32px)); max-block-size: calc(100dvh - 2 * 104px);
     display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 22px; padding: 30px 32px 22px;
     background: var(--panel); border-radius: 16px; box-shadow: var(--ask-lift);
+  }
+  @media (max-height: 520px) { /* a phone on its side: more room for the words, the control bar still clear */
+    .ask-box { inset-block: 12px 84px; max-block-size: calc(100dvh - 96px); gap: 12px; padding: 16px 20px 12px; }
   }
   .ask-box:focus { outline: none; } /* no ring or edge on the box (Lex, 2026-11-25); its buttons keep theirs */
   .ask-text {

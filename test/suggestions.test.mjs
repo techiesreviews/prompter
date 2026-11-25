@@ -47,6 +47,23 @@ test("the queue puts the newest on top, keeps at most three, and leaves an item 
   assert.equal(box.items.length, SUGGESTIONS_WAITING);
 });
 
+test("in a live show, closing the box sets it aside until it is opened again or a new item comes", () => {
+  const box = suggestionQueue({ now: () => 0 });
+  box.push([q("Q1"), q("Q2")]);
+  assert.equal(box.boxOpen(true), true);
+  box.close();
+  assert.equal(box.boxOpen(true), false, "set aside: the start screen's buttons can be reached again");
+  box.push([q("Q2"), q("Q1")]);
+  assert.equal(box.boxOpen(true), false, "the same items again (an idle round) keep it aside");
+  box.open();
+  assert.equal(box.boxOpen(true), true, "opened again from the pill");
+  box.close();
+  box.push([q("Q3")]);
+  assert.equal(box.boxOpen(true), true, "a new item shows it by itself again");
+  box.use();
+  assert.equal(box.boxOpen(true), true, "Use moves on to the next, still shown by itself");
+});
+
 test("the box opens on the newest, moves between the waiting items, and a new item never moves it off the one being read", () => {
   const box = suggestionQueue({ now: () => 0 });
   box.push([q("Q1"), q("Q2"), q("Q3")]);
