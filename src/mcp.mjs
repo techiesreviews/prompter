@@ -8,7 +8,7 @@
 // and suggestions pass through memory only. Without a token /mcp stays open and stateless.
 import { check, describeProblems, formatGuide, isPreset, makeLink, MAX_SCRIPT_CHARS, PRESET_NAMES, savedDate } from "./core.mjs";
 import { agentInfo, fromOtherSite, memoryLimiter, refusedBy } from "./guard.mjs";
-import { readSuggestions, SUGGESTION_KINDS, SUGGESTION_MAX_CHARS, SUGGESTION_STALE_MS, SUGGESTIONS_WAITING } from "./suggestions.mjs";
+import { DONE_KEPT, readSuggestions, SUGGESTION_KINDS, SUGGESTION_MAX_CHARS, SUGGESTION_STALE_MS, SUGGESTIONS_WAITING } from "./suggestions.mjs";
 import { checkToken } from "./token.mjs";
 
 export const MAX_BODY_BYTES = 200 * 1024;
@@ -174,11 +174,9 @@ async function callTab(relay, name, args) {
 const KIND_NAMES = { question: "question", next: "next question", steer: "steer back", point: "talking point", audience: "audience question" };
 const NUMBERED = ["question", "next"];
 
-/** A list of taps the tab reports, cleaned (it is the page's word): [{ kind, text, number? }]. */
-/** The most used or skipped cues one answer carries (the tab's queue remembers 50 done ones). */
-const TAPS_KEPT = 50;
+/** A list of taps the tab reports, cleaned (it is the page's word): [{ kind, text, number? }], at most as many as the tab's queue remembers. */
 function tapsFrom(list) {
-  return (Array.isArray(list) ? list : []).slice(0, TAPS_KEPT)
+  return (Array.isArray(list) ? list : []).slice(0, DONE_KEPT)
     .filter((u) => u && SUGGESTION_KINDS.includes(u.kind) && typeof u.text === "string")
     .map((u) => ({ kind: u.kind, text: u.text.slice(0, SUGGESTION_MAX_CHARS), ...(NUMBERED.includes(u.kind) && Number.isSafeInteger(u.number) && u.number > 0 ? { number: u.number } : {}) }));
 }

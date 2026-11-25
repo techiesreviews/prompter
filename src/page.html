@@ -250,9 +250,9 @@
      waiting ("+2" when more are). A tap or Enter opens it in a box centred over
      the dimmed script, in big type with no label and no border, edge band or
      ring (Lex, 2026-11-25: never), and dots in the kind's colour show how many
-     wait. With no script open (a live
-     show) there is no pill: the box shows by itself. The control bar (z-index
-     20) stays above the veil. Dark page text on each kind's colour is AA. */
+     wait. With no script open (a live show) the box shows by itself; a tap
+     beside sets it aside behind the pill in the top corner, clear of the start
+     card. The control bar (z-index 20) stays above the veil. Dark page text on each kind's colour is AA. */
   .ask-pill, .ask-box {
     --kind: var(--ql);
     --ask-lift: 0 1px 1px oklch(4% 0.06 282 / 0.5), 0 4px 8px oklch(4% 0.06 282 / 0.4), 0 16px 32px oklch(4% 0.06 282 / 0.3); /* --shadow without its 1px top highlight: no edge line */
@@ -272,6 +272,7 @@
   /* No room right of the text (a phone, a full-width column): just above the
      reading line, over text already read, so the line itself stays clear. */
   .ask-pill[data-place="above"] { translate: 0 calc(-100% - 10px); }
+  .ask-pill[data-place="corner"] { inset-block-start: calc(16px + env(safe-area-inset-top, 0px)); translate: none; }
   /* The Reconnecting note goes above the pill rather than over it. */
   :root:has(.ask-pill:not([hidden])) .toast { transform: translateY(calc(-100% - 34px)); }
   :root:has(.ask-pill[data-place="above"]:not([hidden])) .toast { transform: translateY(calc(-100% - 60px)); }

@@ -627,6 +627,14 @@ export async function run({ browser, base, mode, dist, out }) {
     assert.equal(pillLook[2], 16, "at the end of the line, 16px from the edge");
     assert.deepEqual(await askBox.isHidden(), true, "a push alone does not open the box over a script");
     assert.deepEqual(await scriptBox(), before, "the script did not move for the pill");
+    // A narrower window (snapped to half the screen) leaves no room beside the text: the pill moves just
+    // above the line, clear of it, and back when the window widens again.
+    const colWidth = await A.evaluate(() => document.querySelector("main").getBoundingClientRect().width);
+    await A.setViewportSize({ width: Math.round(colWidth + 120), height: DESKTOP.viewport.height });
+    await A.waitForFunction(() => document.querySelector(".ask-pill").dataset.place === "above");
+    assert.ok((await pill.evaluate((p) => p.getBoundingClientRect().bottom)) <= (await lineTop()) + 0.5, "above the line when the window narrows");
+    await A.setViewportSize(DESKTOP.viewport);
+    await A.waitForFunction(() => document.querySelector(".ask-pill").dataset.place === "line");
     // Two more come in, the most important first: the newest on top, with a count of the rest.
     await agentCall(token, "push_suggestions", { items: [AUD, POINT] });
     await A.waitForFunction(() => document.querySelector(".ask-pill").dataset.kind === "audience");
@@ -779,7 +787,14 @@ export async function run({ browser, base, mode, dist, out }) {
     await B.mouse.click(20, 20);
     await liveBox.waitFor({ state: "hidden" });
     await livePill.waitFor();
-    assert.equal(await B.locator(".empty .mcp-action").evaluate((btn) => { const r = btn.getBoundingClientRect(); return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest("button") === btn; }), true, "the start screen's buttons can be reached");
+    const cardClear = () => B.evaluate(() => [...document.querySelectorAll(".empty .card button")].filter((btn) => btn.offsetParent).every((btn) => { const r = btn.getBoundingClientRect(); return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest("button") === btn; }));
+    assert.deepEqual([await cardClear(), await livePill.getAttribute("data-place")], [true, "corner"], "the start screen's buttons can be reached; the pill waits in the corner");
+    await B.setViewportSize(MOBILE.viewport);
+    await B.waitForTimeout(100);
+    const cardBox = await B.locator(".empty .card").boundingBox();
+    const pillBox = await livePill.boundingBox();
+    assert.deepEqual([await cardClear(), pillBox.y + pillBox.height <= cardBox.y], [true, true], "on a phone too, the pill is clear of the start card");
+    await B.setViewportSize(DESKTOP.viewport);
     await livePill.click();
     await liveBox.waitFor();
     assert.equal(await liveBox.locator(".ask-text").textContent(), AUD.text);
@@ -845,8 +860,9 @@ export async function run({ browser, base, mode, dist, out }) {
     const { token: handed } = await minted.json();
     const setup = await browser.newContext(DESKTOP);
     await setup.addInitScript(NO_SPEECH);
-    // The stand-in answers the tab's ready with the token, as the Producer does.
-    const STAND_IN = "<!doctype html><title>Producer stand-in</title><script>window.heard = []; addEventListener('message', (e) => { heard.push([e.origin, e.data]); if (e.data?.type === 'prompter:ready' && e.source === window.prompterTab) e.source.postMessage({ type: 'prompter:token', token: window.handOut }, e.origin); });</script>";
+    // The stand-in answers the tab's ready with the token, as the Producer does: a second later, as when its
+    // token request is still on its way when the tab opens.
+    const STAND_IN = "<!doctype html><title>Producer stand-in</title><script>window.heard = []; addEventListener('message', (e) => { heard.push([e.origin, e.data]); if (e.data?.type === 'prompter:ready' && e.source === window.prompterTab) setTimeout(() => e.source.postMessage({ type: 'prompter:token', token: window.handOut }, e.origin), 1000); });</script>";
     await setup.route(`${PRODUCER}/**`, (route) => route.fulfill({ contentType: "text/html", body: STAND_IN }));
     await setup.route("https://evil.example/**", (route) => route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Another site</title>" }));
     const producer = await setup.newPage();
@@ -869,6 +885,12 @@ export async function run({ browser, base, mode, dist, out }) {
     const heard = await producer.evaluate(() => window.heard);
     assert.deepEqual(heard.map(([o, d]) => [o, d.type, d.state]), [[base, "prompter:ready", undefined], [base, "prompter:link", "waiting"], [base, "prompter:link", "on"]], "the opener hears ready, then the state, from the prompter's address");
     assert.equal(JSON.stringify(heard).includes(handed), false, "never the token");
+    // The token is taken once: a second one from the same Producer page changes nothing.
+    const kept = await P.evaluate(() => localStorage.getItem("prompter-agent"));
+    const { token: second } = await (await fetch(`${base}/api/agent-token`, { method: "POST" })).json();
+    await producer.evaluate(([url, token]) => window.prompterTab.postMessage({ type: "prompter:token", token }, url), [base, second]);
+    await sleep(300);
+    assert.deepEqual([await P.evaluate(() => localStorage.getItem("prompter-agent")) === kept, (await agentRpc(handed, "tools/list")).status, await state(P, ".empty .mcp-action")], [true, 200, "on"], "a second token is ignored; the first still works");
     // A live show from the Producer: no script, so its first question shows by itself.
     await agentCall(handed, "push_suggestions", { items: [{ kind: "question", text: "Who are you, and what do you build?", number: 1 }] });
     await P.locator(".ask-box").waitFor();

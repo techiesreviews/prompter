@@ -21,7 +21,7 @@ export const SUGGESTIONS_WAITING = 3;
 /** The cues hide this long after the last push; the agent pushes on every Producer round (at most ~30 s apart). */
 export const SUGGESTION_STALE_MS = 2 * 60 * 1000;
 /** How many used or skipped cues the queue remembers, so an idle round's same push does not bring them back. */
-const DONE_KEPT = 50;
+export const DONE_KEPT = 50;
 
 const oneLine = (v) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim() : null);
 const plain = (v) => Boolean(v) && typeof v === "object" && !Array.isArray(v);
