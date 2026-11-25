@@ -65,7 +65,7 @@
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   kbd, code { font: 500 0.88em/1.3 var(--font-mono); background: var(--panel-2); border-radius: 4px; padding: 0.05em 0.35em; }
   svg { flex: none; }
-  .sr-only, .file-input, .strip[data-tight] .sug-k { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); white-space: nowrap; }
+  .sr-only, .file-input { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); white-space: nowrap; }
   .btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 0.4em;
     font: 600 15px/1.25 var(--font-body); color: var(--text); background: var(--chip);
@@ -227,7 +227,7 @@
   /* Reconnecting to speech: a short note at the right, just above the
      reading line (over text already read), that never takes clicks. */
   .toast {
-    position: fixed; z-index: 7; /* above the Producer's strip */ inset-block-start: var(--line); inset-inline-end: 16px;
+    position: fixed; z-index: 7; /* above the Producer's cue pill */ inset-block-start: var(--line); inset-inline-end: 16px;
     transform: translateY(calc(-100% - 10px)); max-inline-size: min(380px, calc(100vw - 32px));
     display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 12px;
     font: 500 14px/1.35 var(--font-body); color: var(--text); background: var(--panel);
@@ -245,89 +245,53 @@
     .toast[data-show] { transition: opacity 150ms linear, visibility 0s; }
   }
 
-  /* The Producer's strip (TOOLS-347): one question, one talking point and one
-     hook from the person's agent while it is connected to their Producer. It
-     floats over the page in slots of a fixed size, so nothing it does can move
-     the script: beside the column where there is room (app.js measures it,
-     data-place="side"), else across the top, over text already read. */
-  .strip {
-    --sug-h: 150px;
-    position: fixed; z-index: 6; inset-block-start: 12px; inset-inline-end: 12px;
-    inline-size: var(--strip-w, 290px); display: grid; gap: 8px; align-content: start;
-    /* Tracks of the slot's size (the heading's own above), so a slot opened to its full words moves no other. */
-    grid-template-rows: auto; grid-auto-rows: var(--sug-h);
+  /* The Producer's cues (TOOLS-464, the v3 look Lex chose): a small pill in the
+     kind's colour at the end of the reading line, with no border, says one is
+     waiting ("+2" when more are). A tap or Enter opens it in a box centred over
+     the dimmed script, in big type with no label and no border, edge band or
+     ring (Lex, 2026-11-25: never), and dots in the kind's colour show how many
+     wait. With no script open (a live
+     show) there is no pill: the box shows by itself. The control bar (z-index
+     20) stays above the veil. Dark page text on each kind's colour is AA. */
+  .ask-pill, .ask-box {
+    --kind: var(--ql);
+    --ask-lift: 0 1px 1px oklch(4% 0.06 282 / 0.5), 0 4px 8px oklch(4% 0.06 282 / 0.4), 0 16px 32px oklch(4% 0.06 282 / 0.3); /* --shadow without its 1px top highlight: no edge line */
   }
-  .strip[hidden], .strip[data-place="none"], :root[data-view="empty"] .strip { display: none; }
-  .strip:is([data-place="top"], [data-place="bottom"]) {
-    --sug-h: 74px;
-    inset: 8px 8px auto 8px; inline-size: auto; gap: 6px;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); grid-template-rows: none;
+  :is(.ask-pill, .ask-box)[data-kind="point"] { --kind: var(--ok); }
+  :is(.ask-pill, .ask-box)[data-kind="audience"] { --kind: var(--next); }
+  :is(.ask-pill, .ask-box)[data-kind="steer"] { --kind: var(--accent); }
+  .ask-pill {
+    position: fixed; z-index: 6; inset-block-start: var(--line); inset-inline-end: 16px; translate: 0 -50%;
+    display: inline-flex; align-items: center; gap: 0.45em; padding: 8px 15px; min-block-size: 40px;
+    font: 700 17px/1.2 var(--font-body); color: var(--bg); background: var(--kind);
+    border: 0; border-radius: 999px; box-shadow: var(--ask-lift); cursor: pointer; white-space: nowrap;
   }
-  /* The reading line dragged high: just above the control bar (app.js sets the gap). */
-  .strip[data-place="bottom"] { inset-block: auto var(--strip-bottom, 88px); }
-  .strip-head {
-    display: flex; align-items: center; gap: 7px; margin: 0; padding: 2px 4px 0;
-    font: 500 11px/1.3 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
+  .ask-pill-mark { font-weight: 800; }
+  .ask-more { font-weight: 600; }
+  :root[data-view="empty"] .ask-pill { display: none; }
+  .ask-veil { position: fixed; inset: 0; z-index: 15; background: oklch(16% 0.06 282 / 0.82); }
+  .ask-box {
+    position: fixed; z-index: 16; inset: 0; margin: auto; block-size: fit-content;
+    inline-size: min(900px, calc(100vw - 32px)); max-block-size: calc(100dvh - 2 * 104px);
+    display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 22px; padding: 30px 32px 22px;
+    background: var(--panel); border-radius: 16px; box-shadow: var(--ask-lift);
   }
-  .strip-head::before { content: ""; inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--ok); }
-  .strip:not([data-place="side"]) .strip-head { display: none; }
-  .sug {
-    display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto 1fr; gap: 6px 8px;
-    block-size: var(--sug-h); padding: 9px 9px 10px 12px; overflow: hidden;
-    font: inherit; color: var(--text); text-align: start; background: var(--panel);
-    border: 0; border-radius: var(--radius); box-shadow: var(--shadow); cursor: pointer;
-    -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  .ask-box:focus { outline: none; } /* no ring or edge on the box (Lex, 2026-11-25); its buttons keep theirs */
+  .ask-text {
+    margin: 0; font: 600 clamp(26px, min(var(--size), 8vw), 72px)/1.25 var(--font-body); letter-spacing: -0.01em;
+    color: var(--text); overflow-wrap: break-word; text-wrap: pretty;
+    overflow-y: auto; overscroll-behavior: contain; /* a long cue scrolls; Skip and Use stay in view */
   }
-  .sug:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .sug-k {
-    display: flex; align-items: center; gap: 6px; align-self: center; min-inline-size: 0;
-    font: 500 11px/1.3 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .sug-k::before { content: ""; flex: none; inline-size: 7px; block-size: 7px; border-radius: 50%; background: var(--ql); }
-  .sug[data-kind="point"] .sug-k::before { background: var(--next); }
-  .sug[data-kind="hook"] .sug-k::before { background: var(--accent); }
-  .sug-use { padding: 3px 10px; border-radius: 999px; background: var(--chip); font: 600 13px/1.4 var(--font-body); white-space: nowrap; }
-  .sug-x {
-    grid-column: 1 / -1; font: 600 15px/1.35 var(--font-body); overflow: hidden; overflow-wrap: anywhere;
-    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; line-clamp: 4;
-  }
-  .strip:not([data-place="side"]) .sug { grid-template-rows: auto auto; gap: 2px 10px; padding: 7px 8px 7px 12px; align-content: center; }
-  .strip:not([data-place="side"]) .sug-x { grid-column: 1; font-size: 14px; -webkit-line-clamp: 2; line-clamp: 2; }
-  .strip:not([data-place="side"]) .sug-use { grid-column: 2; grid-row: 1 / span 2; align-self: center; padding: 8px 12px; }
-  /* A short screen with no room for full slots on either side of the line: one line each (the kind
-     stays for screen readers, through the shared .sr-only rule). After the top/bottom rules above, so these win. */
-  .strip[data-tight] { --sug-h: 44px; }
-  .strip[data-tight]:not([data-place="side"]) .sug { grid-template-rows: auto; padding-block: 4px; }
-  .strip[data-tight]:not([data-place="side"]) .sug-x { align-self: center; -webkit-line-clamp: 1; line-clamp: 1; }
-  .strip[data-tight]:not([data-place="side"]) .sug-use { grid-row: 1; padding-block: 4px; }
-  /* The full words without a mouse: keyboard focus, or a touch held on a slot that cuts them short (app.js
-     sets data-open), opens it over the page from its own track; the other slots and the script stay put.
-     Above the control bar it opens upward. app.js gives each slot its room (--sug-open-max) up to the reading
-     line or the window's edge; past that its words scroll. Escape shuts it (data-shut) until it next takes focus
-     or a press. After the tight rules above, so these win. */
-  .sug:is(:focus-visible, [data-open]):not([data-shut]) {
-    position: relative; z-index: 1; align-self: start; block-size: auto; min-block-size: var(--sug-h);
-    max-block-size: var(--sug-open-max, calc(100dvh - 16px)); overflow-y: auto; overscroll-behavior: contain;
-  }
-  .strip[data-place="bottom"] .sug:is(:focus-visible, [data-open]):not([data-shut]) { align-self: end; }
-  /* Words not clipped inside: at its full height the text keeps its grid row from shrinking, so the slot scrolls. */
-  .strip .sug:is(:focus-visible, [data-open]):not([data-shut]) .sug-x { display: block; overflow: visible; -webkit-line-clamp: none; line-clamp: none; }
-  /* Used: the slot goes quiet (the page colour, so the script never shows through) and says so. */
-  .sug[aria-pressed="true"] { background: var(--bg); box-shadow: inset 0 0 0 1px var(--border); cursor: default; }
-  .sug[aria-pressed="true"] .sug-x { color: var(--dim); }
-  .sug[aria-pressed="true"] .sug-use { background: transparent; color: var(--ok); padding-inline: 4px; }
-  /* A slot the agent left empty keeps its size and takes no tap. */
-  .sug:disabled { background: var(--bg); box-shadow: inset 0 0 0 1px var(--border); cursor: default; }
-  .sug:disabled .sug-x { color: var(--dim); }
-  .sug:disabled .sug-use { visibility: hidden; }
-  @media (hover: hover) and (pointer: fine) { .sug:not(:disabled, [aria-pressed="true"]):hover { background: var(--panel-2); } }
+  .ask-foot { display: flex; align-items: center; gap: 10px; }
+  .ask-dots { display: flex; gap: 8px; margin-inline-end: auto; }
+  .ask-dots span { inline-size: 10px; block-size: 10px; border-radius: 50%; background: var(--chip-hover); }
+  .ask-dots span[data-on] { background: var(--kind); }
   @media (prefers-reduced-motion: no-preference) {
-    .sug { transition: scale 160ms var(--ease-out), background-color 160ms var(--ease-out); }
-    .sug:not(:disabled, [aria-pressed="true"]):active { scale: 0.98; }
-    .sug-x[data-fresh] { animation: sug-in 180ms linear; }
+    .ask-pill[data-fresh] { animation: ask-nudge 420ms var(--ease-out); }
+    .ask-box:not([hidden]), .ask-veil:not([hidden]) { animation: ask-in 180ms var(--ease-out); }
   }
-  @keyframes sug-in { from { opacity: 0; } }
+  @keyframes ask-nudge { 0% { scale: 0.6; opacity: 0; } 60% { scale: 1.08; opacity: 1; } 100% { scale: 1; } }
+  @keyframes ask-in { from { opacity: 0; } }
 
   /* Floating control bar, notices and status at the bottom centre. */
   .dock-wrap {
@@ -549,14 +513,20 @@
     <div class="line-handle" role="slider" tabindex="0" aria-orientation="vertical" aria-label="Reading line" aria-valuemin="8" aria-valuemax="75" aria-valuenow="34" aria-valuetext="34% from the top"></div>
   </div>
   <main class="script" aria-label="Script"></main>
-  <aside class="strip" aria-label="From the Producer" hidden>
-    <p class="strip-head">Producer connected</p>
-    <button class="sug" type="button" data-kind="question" aria-pressed="false"><span class="sug-k">Question</span><span class="sug-use">Use</span><span class="sug-x" dir="auto"></span></button>
-    <button class="sug" type="button" data-kind="point" aria-pressed="false"><span class="sug-k">Talking point</span><span class="sug-use">Use</span><span class="sug-x" dir="auto"></span></button>
-    <button class="sug" type="button" data-kind="hook" aria-pressed="false"><span class="sug-k">Hook</span><span class="sug-use">Use</span><span class="sug-x" dir="auto"></span></button>
-  </aside>
+  <button class="ask-pill" type="button" data-kind="question" hidden><span class="ask-pill-mark" aria-hidden="true"></span><span class="ask-pill-name"></span><span class="ask-more"></span></button>
   <!-- Read out through the status line instead, once. -->
   <p class="toast" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg><span class="toast-text"></span></p>
+</div>
+<!-- The Producer's cue, opened: over the script, and by itself over the start screen in a live show. -->
+<div class="ask-veil" hidden></div>
+<div class="ask-box" role="dialog" aria-modal="false" aria-label="From the Producer" data-kind="question" tabindex="-1" hidden>
+  <p class="ask-text" dir="auto"></p>
+  <div class="ask-foot">
+    <span class="ask-dots" aria-hidden="true"></span>
+    <span class="ask-where sr-only"></span>
+    <button class="btn" type="button" data-action="ask-skip" aria-keyshortcuts="Escape">Skip</button>
+    <button class="btn" type="button" data-action="ask-use" aria-keyshortcuts="Enter">Use</button>
+  </div>
 </div>
 <input class="file-input" type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" tabindex="-1" aria-hidden="true">
 

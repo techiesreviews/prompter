@@ -596,240 +596,131 @@ export async function run({ browser, base, mode, dist, out }) {
     assert.equal(await A.evaluate(() => localStorage.getItem("prompter-last-saved")), "", "a script shown without a date forgets the old one");
     ok("an agent with the copied token: initialize turns the item into Disconnect MCP (no agent row, no status updates) with a green dot on Open, its name (claude-code → Claude) in Open's label and tooltip; show_script opens the example script with the lex preset in this tab (a #s= address, remembered as the last script); get_open_script reads it back");
 
-    // The Producer's strip (TOOLS-347): hidden until the agent pushes (no dead control), three slots of a fixed
-    // size, a tap on Use marks one used and the agent's next push hears it once; the script never moves for it.
-    const strip = A.locator(".strip");
-    const slotRows = () => A.locator(".strip .sug").evaluateAll((els) => els.map((b) => [b.dataset.kind, b.querySelector(".sug-k").textContent, b.querySelector(".sug-x").textContent, b.querySelector(".sug-use").textContent, b.getAttribute("aria-pressed")]));
-    const slotHeights = () => A.locator(".strip .sug").evaluateAll((els) => els.map((b) => Math.round(b.getBoundingClientRect().height)));
+    // The Producer's cues (TOOLS-464): hidden until the agent pushes (no dead control); a small pill in the kind's
+    // colour, with no border, at the end of the reading line, the newest on top with a count; a tap or Enter opens
+    // it in a box over the dimmed script, with dots; ← → and Page Up/Down move, Enter uses, Esc skips; auto-scroll
+    // waits while the box shows and goes on after; the script never moves for it.
+    const pill = A.locator(".ask-pill");
+    const askBox = A.locator(".ask-box");
     const scriptBox = () => A.evaluate(() => { const r = document.querySelector(".script").getBoundingClientRect(); return [scrollY, r.top, r.left, r.width, r.height]; });
-    assert.equal(await strip.isHidden(), true, "no strip before the agent pushes anything");
-    const listedWithStrip = (await agentRpc(token, "tools/list")).body.result.tools.map((t) => t.name);
-    assert.deepEqual(listedWithStrip.slice(-2), ["push_suggestions", "clear_suggestions"]);
-    const before = await scriptBox();
-    const PUSH = { question: "What is a session, and what is a cookie?", number: 6, point: "The cookie is the proof of login.", hook: "No password. No 2FA code. Just one copied cookie." };
-    const pushed = await agentCall(token, "push_suggestions", PUSH);
-    assert.deepEqual(pushed.structuredContent, { shown: true, used: [], asked: [] }, JSON.stringify(pushed).slice(0, 300));
-    await strip.waitFor();
-    assert.deepEqual(await slotRows(), [
-      ["question", "Question · Q6", PUSH.question, "Use", "false"],
-      ["point", "Talking point", PUSH.point, "Use", "false"],
-      ["hook", "Hook", PUSH.hook, "Use", "false"],
-    ]);
-    const heights = await slotHeights();
-    assert.equal(new Set(heights).size, 1, `slots of one size: ${heights}`);
-    assert.deepEqual(await scriptBox(), before, "the script did not move for the strip");
-    // At 1366 wide the medium column leaves too little room beside it: the strip runs across the top, over text already read.
-    const lineTop = () => A.evaluate(() => document.querySelector(".reading-line").getBoundingClientRect().top);
-    assert.equal(await strip.getAttribute("data-place"), "top");
-    assert.ok((await strip.boundingBox()).y + (await strip.boundingBox()).height <= await lineTop(), "over the read text, above the reading line");
-    await shot(A, "strip-desktop");
-    await A.locator('.strip .sug[data-kind="question"]').click();
-    assert.deepEqual((await slotRows())[0], ["question", "Question · Q6", PUSH.question, "Used ✓", "true"]);
-    assert.deepEqual(await slotHeights(), heights, "Used ✓ keeps the slot's size");
-    assert.deepEqual(await scriptBox(), before, "a tap does not move the script");
-    await shot(A, "strip-used-desktop");
-    // The same push again (an idle round) keeps Used ✓ and reports the tap once, with the number for the Producer's Asked.
-    const heard = await agentCall(token, "push_suggestions", PUSH);
-    assert.deepEqual(heard.structuredContent, { shown: true, used: [{ kind: "question", text: PUSH.question, number: 6 }], asked: [6] });
-    assert.equal((await slotRows())[0][3], "Used ✓");
-    assert.deepEqual((await agentCall(token, "push_suggestions", PUSH)).structuredContent.used, [], "reported once");
-    // A wide window has room beside the column: the strip sits there, clear of the text.
-    await A.setViewportSize({ width: 1920, height: 1000 });
-    await A.waitForFunction(() => document.querySelector(".strip").dataset.place === "side");
-    const side = await A.evaluate(() => {
-      const main = document.querySelector(".script");
-      const textRight = main.getBoundingClientRect().right - parseFloat(getComputedStyle(main).paddingInlineEnd);
-      return [document.querySelector(".strip").getBoundingClientRect().left >= textRight, document.querySelector(".strip-head").checkVisibility()];
-    });
-    assert.deepEqual(side, [true, true], "beside the text, with Producer connected above the slots");
-    await shot(A, "strip-wide-desktop");
-    // A phone: one column of slots at the top, over text already read.
-    await A.setViewportSize({ width: 390, height: 844 });
-    await A.waitForFunction(() => document.querySelector(".strip").dataset.place === "top");
-    const phone = await A.evaluate(() => [...document.querySelectorAll(".strip .sug")].map((b) => Math.round(b.getBoundingClientRect().left)));
-    assert.equal(new Set(phone).size, 1, "one column on a phone");
-    assert.ok((await strip.boundingBox()).y + (await strip.boundingBox()).height <= await lineTop(), "above the reading line on a phone");
-    await shot(A, "strip-mobile");
-    // The reading line dragged high (8%): no room above it, so the strip moves just above the control bar, clear of
-    // the line; dragged low (75%) it is back on top. Double-click puts the line back at 34%.
-    await A.locator(".line-handle").focus();
-    await A.keyboard.press("Home");
-    await A.waitForFunction(() => document.querySelector(".strip").dataset.place === "bottom");
-    const high = { line: await lineTop(), strip: await strip.boundingBox(), dock: await A.locator(".dock").boundingBox() };
-    assert.ok(high.strip.y > high.line + 8 && high.strip.y + high.strip.height <= high.dock.y, `below the line (${high.line}) and above the bar (${high.dock.y}): ${JSON.stringify(high.strip)}`);
-    await shot(A, "strip-line-high-mobile");
-    // While reading, the control bar is tucked away: a push then still leaves room for the bar to come back.
-    // (The demo's "would open on your main screen" notice sits over everything near the bar until OK.)
-    if (await A.locator(".screen-hint").isVisible()) await A.locator('.screen-hint [data-action="hint-ok"]').click();
-    await A.mouse.move(195, 120); // a mouse resting near the bottom edge keeps the bar
-    await A.evaluate(() => window.scrollBy(0, 400));
-    await A.waitForFunction(() => document.querySelector(".dock").dataset.tucked === "true");
-    await A.waitForTimeout(400);
-    await agentCall(token, "push_suggestions", PUSH);
-    const barShown = () => A.evaluate(() => document.querySelector(".dock-wrap").getBoundingClientRect().top + document.querySelector(".dock").offsetTop);
-    const tuckedBox = await strip.boundingBox();
-    assert.ok(tuckedBox.y + tuckedBox.height <= await barShown(), `above where the bar comes back: ${JSON.stringify(tuckedBox)}`);
-    await A.evaluate(() => window.scrollBy(0, -200));
-    await A.waitForFunction(() => document.querySelector(".dock").dataset.tucked === "false");
-    await A.waitForTimeout(400);
-    assert.equal(await A.evaluate(() => { const u = document.querySelector('.strip .sug[data-kind="hook"] .sug-use').getBoundingClientRect(); return document.elementFromPoint(u.x + u.width / 2, u.y + u.height / 2)?.closest(".sug")?.dataset.kind; }), "hook", "the bar back does not cover the Hook's Use");
-    await A.locator(".line-handle").focus();
-    await A.keyboard.press("End");
-    await A.waitForFunction(() => document.querySelector(".strip").dataset.place === "top");
-    await A.locator(".line-handle").dblclick();
-    await A.waitForFunction(() => Math.abs(document.querySelector(".reading-line").getBoundingClientRect().top - innerHeight * 0.34) < 2);
-    // A short laptop screen (1366×768) with the line at 8%: the one-row strip goes above the bar too.
-    await A.setViewportSize({ width: 1366, height: 768 });
-    await A.locator(".line-handle").focus();
-    await A.keyboard.press("Home");
-    await A.waitForFunction(() => document.querySelector(".strip").dataset.place === "bottom");
-    const laptop = await strip.boundingBox();
-    assert.ok(laptop.y > await lineTop() + 8 && laptop.y + laptop.height <= await barShown(), `1366×768 at 8%: ${JSON.stringify(laptop)}`);
-    await A.locator(".line-handle").dblclick();
-    await A.waitForFunction(() => document.querySelector(".strip").dataset.place === "top");
-    // A phone on its side (740×360) at the default line: no room for full slots either side, so one line each.
-    await A.setViewportSize({ width: 740, height: 360 });
-    await A.waitForFunction(() => document.querySelector(".strip").hasAttribute("data-tight"));
-    const tight = await A.evaluate(() => [...document.querySelectorAll(".strip .sug")].map((b) => [getComputedStyle(b.querySelector(".sug-x")).webkitLineClamp, b.querySelector(".sug-k").textContent, Math.round(b.getBoundingClientRect().height)]));
-    assert.ok(tight.every(([clamp, , h]) => clamp === "1" && h === 44), `one line each, 44px slots: ${JSON.stringify(tight)}`);
-    assert.deepEqual(tight.map(([, k]) => k), ["Question · Q6", "Talking point", "Hook"], "the kind stays for screen readers");
-    const tightBox = await strip.boundingBox();
-    const tightLine = await lineTop();
-    assert.ok(tightBox.y + tightBox.height <= tightLine - 8 || tightBox.y >= tightLine + 8, `clear of the line (${tightLine}): ${JSON.stringify(tightBox)}`);
-    await shot(A, "strip-tight-landscape");
-    // One-line slots cut the hook short: a held touch opens it to all its words, and letting go uses nothing.
-    const tightHook = A.locator('.strip .sug[data-kind="hook"]');
-    const tightRest = await A.locator('.strip .sug:not([data-kind="hook"])').evaluateAll((els) => els.map((b) => JSON.stringify(b.getBoundingClientRect())));
-    assert.equal(await tightHook.getAttribute("title"), PUSH.hook, "one line cuts the hook short");
-    await tightHook.dispatchEvent("pointerdown", { pointerType: "touch", isPrimary: true, pointerId: 8 });
-    await A.waitForTimeout(700);
-    assert.deepEqual(await tightHook.evaluate((b) => { const x = b.querySelector(".sug-x"); return [x.scrollHeight <= x.clientHeight + 1 && b.scrollHeight <= b.clientHeight + 1, b.getBoundingClientRect().height > 44]; }), [true, true], "held: the whole hook");
-    assert.deepEqual(await A.locator('.strip .sug:not([data-kind="hook"])').evaluateAll((els) => els.map((b) => JSON.stringify(b.getBoundingClientRect()))), tightRest, "held: the other slots stay put");
-    const heldBox = await tightHook.boundingBox();
-    assert.ok(heldBox.y + heldBox.height <= tightLine - 8, `held open, still clear of the line (${tightLine}): ${JSON.stringify(heldBox)}`);
-    await shot(A, "strip-tight-held-landscape");
-    await tightHook.dispatchEvent("pointerup", { pointerType: "touch", isPrimary: true, pointerId: 8 });
-    await tightHook.dispatchEvent("click");
-    assert.deepEqual([Math.round((await tightHook.boundingBox()).height), await tightHook.getAttribute("aria-pressed")], [44, "false"], "let go: one line again, not used");
-    // A hold the browser sends no click for, then at once a quick tap: the tap uses it.
-    await tightHook.dispatchEvent("pointerdown", { pointerType: "touch", isPrimary: true, pointerId: 9 });
-    await A.waitForTimeout(700);
-    await tightHook.dispatchEvent("pointerup", { pointerType: "touch", isPrimary: true, pointerId: 9 });
-    await tightHook.dispatchEvent("pointerdown", { pointerType: "touch", isPrimary: true, pointerId: 10 });
-    await tightHook.dispatchEvent("pointerup", { pointerType: "touch", isPrimary: true, pointerId: 10 });
-    await tightHook.dispatchEvent("click");
-    assert.equal(await tightHook.getAttribute("aria-pressed"), "true", "a quick tap after a hold uses the slot");
-    // The longest hook (300 characters) held open here has more words than room up to the line: the slot scrolls
-    // and none of its words are cut off inside it (the last ones are there to scroll to).
-    const maxHook = `${"Hook ".repeat(59)}end.`;
-    await agentCall(token, "push_suggestions", { ...PUSH, hook: maxHook });
-    await A.waitForFunction((t) => document.querySelector('.strip .sug[data-kind="hook"]').title === t, maxHook);
-    await tightHook.dispatchEvent("pointerdown", { pointerType: "touch", isPrimary: true, pointerId: 11 });
-    await A.waitForTimeout(700);
-    const maxOpen = await tightHook.evaluate((b) => {
-      const x = b.querySelector(".sug-x");
-      b.scrollTop = b.scrollHeight;
-      return [x.scrollHeight <= x.clientHeight + 1, b.scrollHeight > b.clientHeight + 1, x.getBoundingClientRect().bottom <= b.getBoundingClientRect().bottom + 1];
-    });
-    assert.deepEqual(maxOpen, [true, true, true], "the longest hook: its words scroll inside the slot, none cut off");
-    const maxBox = await tightHook.boundingBox();
-    assert.ok(maxBox.y + maxBox.height <= tightLine - 8, `the longest hook held open, still clear of the line (${tightLine}): ${JSON.stringify(maxBox)}`);
-    await shot(A, "strip-tight-longest-held-landscape");
-    await tightHook.dispatchEvent("pointerup", { pointerType: "touch", isPrimary: true, pointerId: 11 });
-    await tightHook.dispatchEvent("click");
-    assert.equal(Math.round((await tightHook.boundingBox()).height), 44, "let go: one line again");
-    await A.setViewportSize(DESKTOP.viewport);
-    // A long question with a word that has no break point still fits its slot.
-    await agentCall(token, "push_suggestions", { question: `${"Why ".repeat(55)}${"x".repeat(60)}?`, number: 6, point: PUSH.point, hook: PUSH.hook });
-    assert.deepEqual(await A.locator('.strip .sug[data-kind="question"]').evaluate((b) => { const x = b.querySelector(".sug-x"); const u = b.querySelector(".sug-use").getBoundingClientRect(); const r = b.getBoundingClientRect(); return [x.scrollWidth <= x.clientWidth, u.right <= r.right, Math.round(r.height)]; }), [true, true, heights[0]], "no words past the slot's edge; Use stays inside; the size stays");
-    assert.equal(await A.locator('.strip .sug[data-kind="question"]').getAttribute("title"), `${"Why ".repeat(55)}${"x".repeat(60)}?`, "cut short: the full words on hover");
-    assert.equal(await A.locator('.strip .sug[data-kind="hook"]').getAttribute("title"), null, "not cut: no hover text");
-    // The full words without a mouse too: keyboard focus opens a cut-short slot, and on touch holding it does,
-    // with letting go using nothing (a tap stays final). It opens over the page, so the other slots and the script stay put.
-    const longQ = A.locator('.strip .sug[data-kind="question"]');
-    const longOpen = () => longQ.evaluate((b) => { const x = b.querySelector(".sug-x"); return [x.scrollHeight <= x.clientHeight + 1 && b.scrollHeight <= b.clientHeight + 1, Math.round(b.getBoundingClientRect().height)]; });
-    const otherSlots = () => A.locator('.strip .sug:not([data-kind="question"])').evaluateAll((els) => els.map((b) => JSON.stringify(b.getBoundingClientRect())));
-    const othersBefore = await otherSlots();
-    const scriptBeforeOpen = await scriptBox();
-    await A.locator('.strip .sug[data-kind="point"]').focus();
-    await A.keyboard.press("Shift+Tab");
-    const focusOpen = await longOpen();
-    assert.ok(focusOpen[0] && focusOpen[1] > heights[0], `keyboard focus shows the whole question: ${focusOpen}`);
-    assert.deepEqual([await otherSlots(), await scriptBox()], [othersBefore, scriptBeforeOpen], "the other slots and the script stay put");
-    await shot(A, "strip-focus-open-desktop");
-    // Escape closes what focus opened, uses nothing and leaves the focus where it was.
-    await A.keyboard.press("Escape");
-    assert.deepEqual([await longOpen(), await longQ.getAttribute("aria-pressed"), await longQ.evaluate((b) => b === document.activeElement)], [[false, heights[0]], "false", true], "Escape: closed, not used, still focused");
-    // New words while it has focus: once focus leaves, its hover title has the new words.
-    const longQ2 = `${"How ".repeat(60)}?`;
-    await agentCall(token, "push_suggestions", { question: longQ2, number: 6, point: PUSH.point, hook: PUSH.hook });
-    await A.keyboard.press("Tab");
-    assert.equal(await longQ.getAttribute("title"), longQ2, "new words while focused: the title follows");
-    assert.deepEqual(await longOpen(), [false, heights[0]], "focus gone: the slot is its size again");
-    await longQ.dispatchEvent("pointerdown", { pointerType: "touch", isPrimary: true, pointerId: 7 });
-    await A.waitForTimeout(700);
-    const holdOpen = await longOpen();
-    assert.ok(holdOpen[0] && holdOpen[1] > heights[0], `holding shows the whole question: ${holdOpen}`);
-    assert.deepEqual([await otherSlots(), await scriptBox()], [othersBefore, scriptBeforeOpen], "held open: the other slots and the script stay put");
-    await longQ.dispatchEvent("pointerup", { pointerType: "touch", isPrimary: true, pointerId: 7 });
-    await longQ.dispatchEvent("click");
-    assert.deepEqual([await longOpen(), await longQ.getAttribute("aria-pressed")], [[false, heights[0]], "false"], "letting go closes it and uses nothing");
-    // Beside the text on the shortest window and nearly the narrowest strip, the longest hook opened from the last
-    // slot has more words than room to the window's edge: the slot scrolls, and none of its words are cut off inside it.
-    await A.setViewportSize({ width: 1920, height: 620 });
-    await A.waitForFunction(() => document.querySelector(".strip").dataset.place === "side");
-    const sideRoom = await A.evaluate(() => { const m = document.querySelector(".script"); return innerWidth - (m.getBoundingClientRect().right - parseFloat(getComputedStyle(m).paddingInlineEnd)) - 24; });
-    await A.setViewportSize({ width: 1920 - 2 * Math.floor(sideRoom - 205), height: 620 });
-    await A.waitForFunction(() => { const s = document.querySelector(".strip"); return s.dataset.place === "side" && s.getBoundingClientRect().width < 230; });
-    const sideHook = A.locator('.strip .sug[data-kind="hook"]');
-    const sideMax = `${"Hook ".repeat(59)}end.`;
-    await agentCall(token, "push_suggestions", { question: longQ2, number: 6, point: PUSH.point, hook: sideMax });
-    await A.waitForFunction((t) => document.querySelector('.strip .sug[data-kind="hook"]').title === t, sideMax);
-    await sideHook.dispatchEvent("pointerdown", { pointerType: "touch", isPrimary: true, pointerId: 12 });
-    await A.waitForTimeout(700);
-    const sideOpen = await sideHook.evaluate((b) => {
-      const x = b.querySelector(".sug-x");
-      b.scrollTop = b.scrollHeight;
-      return [x.scrollHeight <= x.clientHeight + 1, b.scrollHeight > b.clientHeight + 1, x.getBoundingClientRect().bottom <= b.getBoundingClientRect().bottom + 1, b.getBoundingClientRect().bottom <= innerHeight - 8 + 1];
-    });
-    assert.deepEqual(sideOpen, [true, true, true, true], "beside the text: the longest hook scrolls inside its slot, none cut off, inside the window");
-    await shot(A, "strip-side-longest-held-desktop");
-    await sideHook.dispatchEvent("pointerup", { pointerType: "touch", isPrimary: true, pointerId: 12 });
-    await sideHook.dispatchEvent("click");
-    assert.equal(await sideHook.getAttribute("aria-pressed"), "false", "letting go uses nothing");
-    await A.setViewportSize(DESKTOP.viewport);
-    await A.waitForFunction(() => document.querySelector(".strip").dataset.place !== "side");
-    // New words take the slot fresh; a slot left out stays, empty and switched off, at its size.
-    await agentCall(token, "push_suggestions", { question: "Where does WordPress keep a note of my login?", number: 7, point: "WordPress keeps a login for 2 days." });
-    assert.deepEqual(await slotRows(), [
-      ["question", "Question · Q7", "Where does WordPress keep a note of my login?", "Use", "false"],
-      ["point", "Talking point", "WordPress keeps a login for 2 days.", "Use", "false"],
-      ["hook", "Hook", "No hook right now", "Use", "false"],
-    ]);
-    assert.equal(await A.locator('.strip .sug[data-kind="hook"]').isDisabled(), true);
-    // Keyboard: Space on a focused suggestion uses it and leaves auto-scroll as it was; a click leaves no focus behind,
-    // so Space after a tap still means auto-scroll.
+    const pillRow = () => pill.evaluate((p) => [p.dataset.kind, p.textContent, p.getAttribute("aria-label")]);
+    const boxRow = () => askBox.evaluate((b) => [b.dataset.kind, b.querySelector(".ask-text").textContent, [...b.querySelectorAll(".ask-dots span")].map((d) => (d.hasAttribute("data-on") ? "●" : "○")).join("")]);
     const autoState = () => A.locator(".dock-btn.auto").getAttribute("aria-pressed");
-    const autoBefore = await autoState();
-    await A.locator('.strip .sug[data-kind="point"]').focus();
+    const lineTop = () => A.evaluate(() => document.querySelector(".reading-line").getBoundingClientRect().top);
+    assert.deepEqual([await pill.isHidden(), await askBox.isHidden()], [true, true], "no pill and no box before the agent pushes anything");
+    const listedWithCues = (await agentRpc(token, "tools/list")).body.result.tools.map((t) => t.name);
+    assert.deepEqual(listedWithCues.slice(-2), ["push_suggestions", "clear_suggestions"]);
+    const before = await scriptBox();
+    const Q6 = { kind: "question", text: "What is a session, and what is a cookie?", number: 6 };
+    const POINT = { kind: "point", text: "The cookie is the proof of login." };
+    const AUD = { kind: "audience", text: "Does this work on WordPress too?" };
+    const STEER = { kind: "steer", text: "Back to the plan: cookies first." };
+    const pushed = await agentCall(token, "push_suggestions", { items: [Q6] });
+    assert.deepEqual(pushed.structuredContent, { shown: true, used: [], skipped: [], asked: [] }, JSON.stringify(pushed).slice(0, 300));
+    await pill.waitFor();
+    assert.deepEqual(await pillRow(), ["question", "?Question", "Question from the Producer. Open it"]);
+    await pill.evaluate((p) => Promise.all(p.getAnimations().map((a) => a.finished))); // the nudge has played
+    const pillLook = await pill.evaluate((p) => { const s = getComputedStyle(p); const r = p.getBoundingClientRect(); return [s.borderTopWidth, Math.round(r.top + r.height / 2), Math.round(document.documentElement.clientWidth - r.right), s.boxShadow.includes("inset")]; });
+    assert.equal(pillLook[0], "0px", "no border");
+    assert.equal(pillLook[3], false, "no edge line in its shadow either");
+    assert.ok(Math.abs(pillLook[1] - await lineTop()) <= 2, `on the reading line: ${pillLook}`);
+    assert.equal(pillLook[2], 16, "at the end of the line, 16px from the edge");
+    assert.deepEqual(await askBox.isHidden(), true, "a push alone does not open the box over a script");
+    assert.deepEqual(await scriptBox(), before, "the script did not move for the pill");
+    // Two more come in, the most important first: the newest on top, with a count of the rest.
+    await agentCall(token, "push_suggestions", { items: [AUD, POINT] });
+    await A.waitForFunction(() => document.querySelector(".ask-pill").dataset.kind === "audience");
+    assert.deepEqual(await pillRow(), ["audience", "@Audience+2", "Audience from the Producer, 2 more waiting. Open it"]);
+    // (The Open menu and the demo's "would open on your main screen" notice are out of the way for the picture.)
+    if (await A.locator("#open-menu:popover-open").count()) await A.keyboard.press("Escape");
+    if (await A.locator(".screen-hint").isVisible()) await A.locator('.screen-hint [data-action="hint-ok"]').click();
+    await shot(A, "cue-pill-desktop");
+    // Auto-scroll on, then the pill opens the box: scrolling waits, the box sits in the middle over the dimmed script.
+    await A.evaluate(() => document.activeElement?.blur());
     await A.keyboard.press(" ");
-    assert.deepEqual([(await slotRows())[1][3], await autoState()], ["Used ✓", autoBefore], "Space uses the focused suggestion; scrolling unchanged");
-    await A.locator('.strip .sug[data-kind="question"]').click();
-    assert.equal(await A.evaluate(() => document.activeElement?.closest(".strip")), null, "a click leaves no focus in the strip");
-    assert.deepEqual((await agentCall(token, "push_suggestions", { question: "Where does WordPress keep a note of my login?", number: 7, point: "WordPress keeps a login for 2 days." })).structuredContent.used.map((u) => u.kind), ["point", "question"]);
-    // A tiny window (320×320) with no room for even one-line slots beside the line: out of sight, never over the line.
-    await A.setViewportSize({ width: 320, height: 320 });
-    await A.waitForFunction(() => document.querySelector(".strip").dataset.place === "none");
-    assert.equal(await strip.isVisible(), false);
+    assert.equal(await autoState(), "true", "auto-scroll on");
+    await pill.click();
+    await askBox.waitFor();
+    assert.deepEqual([await pill.isHidden(), await A.locator(".ask-veil").isVisible(), await autoState()], [true, true, "false"], "the box replaces the pill, over a veil; auto-scroll waits");
+    assert.deepEqual(await boxRow(), ["audience", AUD.text, "●○○"]);
+    const centred = await askBox.evaluate((b) => { const r = b.getBoundingClientRect(); return [Math.round(r.left + r.width / 2 - innerWidth / 2), Math.round(r.top + r.height / 2 - innerHeight / 2), b === document.activeElement, b.getAttribute("aria-label")]; });
+    assert.ok(Math.abs(centred[0]) <= 1 && Math.abs(centred[1]) <= 1, `centred: ${centred}`);
+    assert.deepEqual(centred.slice(2), [true, "Audience from the Producer"], "the box takes the focus and names the kind");
+    // Lex (2026-11-25): never a border, a coloured edge band or a ring on the box, focused or not.
+    const boxEdge = await askBox.evaluate((b) => { const s = getComputedStyle(b); return [s.borderTopWidth, s.outlineStyle, s.boxShadow.includes("inset")]; });
+    assert.deepEqual(boxEdge, ["0px", "none", false], "no border, edge band or ring on the box");
+    const atPause = await A.evaluate(() => scrollY);
+    await A.waitForTimeout(400);
+    assert.equal(await A.evaluate(() => scrollY), atPause, "the script stands still while the box shows");
+    await shot(A, "cue-box-desktop");
+    // The clicker's keys move between the waiting cues, not the sections.
+    await A.keyboard.press("ArrowRight");
+    assert.deepEqual(await boxRow(), ["point", POINT.text, "○●○"]);
+    await A.keyboard.press("PageDown");
+    assert.deepEqual(await boxRow(), ["question", Q6.text, "○○●"]);
+    await A.keyboard.press("PageDown");
+    assert.deepEqual((await boxRow())[2], "○○●", "the last one stays");
+    await A.keyboard.press("PageUp");
+    await A.keyboard.press("ArrowLeft");
+    assert.deepEqual(await boxRow(), ["audience", AUD.text, "●○○"]);
+    assert.equal(await A.evaluate(() => scrollY), atPause, "no section jump");
+    // A new cue while one is being read: the box stays on it, and the oldest drops off (at most three wait).
+    await agentCall(token, "push_suggestions", { items: [STEER] });
+    assert.deepEqual(await boxRow(), ["audience", AUD.text, "○●○"], "still on the audience question, now second");
+    // Esc skips: the next one at once. Enter uses: the box closes and scrolling goes on.
+    await A.keyboard.press("Escape");
+    assert.deepEqual(await boxRow(), ["point", POINT.text, "○●"]);
+    await A.keyboard.press("Enter");
+    await askBox.waitFor({ state: "hidden" });
+    assert.deepEqual([await autoState(), await pillRow()], ["true", ["steer", "↩Steer back", "Steer back from the Producer. Open it"]], "auto-scroll goes on; the pill shows what is left");
+    await A.keyboard.press(" ");
+    assert.equal(await autoState(), "false", "Space is auto-scroll again after the box");
+    // (Auto-scroll ran a moment between Use and Space: the page scrolled, the script's own box did not change.)
+    const [y0, top0, ...rest0] = before;
+    const [y1, top1, ...rest1] = await scriptBox();
+    assert.deepEqual([y1 + top1, ...rest1], [y0 + top0, ...rest0], "the script's layout never changed for the pill or the box");
+    const heard = await agentCall(token, "push_suggestions", { items: [Q6] });
+    assert.deepEqual(heard.structuredContent, { shown: true, used: [POINT], skipped: [AUD], asked: [] }, "the next push hears what was used and skipped");
+    // Enter opens the pill from the keyboard; a used prepared question goes to the Producer as Asked, once.
+    await A.evaluate(() => document.activeElement?.blur());
+    await A.keyboard.press("Enter");
+    await askBox.waitFor();
+    assert.deepEqual(await boxRow(), ["question", Q6.text, "●○"]);
+    await askBox.locator('[data-action="ask-use"]').click();
+    await askBox.waitFor({ state: "hidden" });
+    assert.deepEqual((await agentCall(token, "push_suggestions", { items: [Q6] })).structuredContent, { shown: true, used: [{ kind: "question", text: Q6.text, number: 6 }], skipped: [], asked: [6] });
+    assert.deepEqual((await agentCall(token, "push_suggestions", { items: [Q6] })).structuredContent.used, [], "reported once, and a used one does not come back");
+    assert.deepEqual(await pillRow(), ["steer", "↩Steer back", "Steer back from the Producer. Open it"]);
+    // The longest cue (300 characters) on a phone: the box stays inside the window, its words all there.
+    await A.setViewportSize({ width: 390, height: 844 });
+    await agentCall(token, "push_suggestions", { items: [{ kind: "point", text: `${"Word ".repeat(59)}end.` }] });
+    await pill.click();
+    await askBox.waitFor();
+    const phoneBox = await askBox.evaluate((b) => {
+      const r = b.getBoundingClientRect();
+      const use = b.querySelector('[data-action="ask-use"]').getBoundingClientRect();
+      const text = b.querySelector(".ask-text");
+      const onTop = Boolean(document.elementFromPoint(use.x + use.width / 2, use.y + use.height / 2)?.closest('[data-action="ask-use"]'));
+      return [r.left >= 16 - 1, r.right <= innerWidth - 16 + 1, r.top >= 0, r.bottom <= innerHeight, b.scrollWidth <= b.clientWidth, use.bottom <= r.bottom, text.scrollHeight > text.clientHeight, onTop];
+    });
+    assert.deepEqual(phoneBox, [true, true, true, true, true, true, true, true], "inside the window on a phone; the long words scroll and Use stays in view, nothing over it");
+    assert.equal(await A.locator(".screen-hint").isHidden(), true, "the main-screen notice never covers the box");
+    await A.keyboard.press("ArrowDown");
+    await A.waitForFunction(() => document.querySelector(".ask-text").scrollTop > 0);
+    assert.equal((await boxRow())[0], "point", "↓ scrolls a long cue and stays on it");
+    await shot(A, "cue-box-mobile");
+    // A tap beside the box closes it; the cue waits behind the pill again.
+    await A.mouse.click(195, 12);
+    await askBox.waitFor({ state: "hidden" });
+    assert.equal((await pillRow())[1], "★Talking point+1");
     await A.setViewportSize(DESKTOP.viewport);
-    await A.waitForFunction(() => document.querySelector(".strip").dataset.place === "top");
     const cleared = await agentCall(token, "clear_suggestions");
-    assert.deepEqual(cleared.structuredContent, { cleared: true, used: [], asked: [] });
-    await strip.waitFor({ state: "hidden" });
-    assert.equal((await agentCall(token, "push_suggestions", { question: "x", number: 0 })).isError, true, "a bad push is refused");
-    await agentCall(token, "push_suggestions", PUSH);
-    await strip.waitFor();
-    ok("the Producer's strip: hidden until the agent pushes; one question (Q6), one talking point and one hook in slots of one size; across the top over read text at 1366 wide and on a phone, beside the text at 1920 wide, just above the bar when the line is dragged to 8%; a tap turns Use into Used ✓ without moving the script, and the next push reports it once (asked: [6]); new words take a slot fresh, a slot left out stays empty and off; clear_suggestions hides it");
+    assert.deepEqual(cleared.structuredContent, { cleared: true, used: [], skipped: [], asked: [] });
+    await pill.waitFor({ state: "hidden" });
+    assert.equal((await agentCall(token, "push_suggestions", { items: [{ kind: "question", text: "x", number: 0 }] })).isError, true, "a bad push is refused");
+    await agentCall(token, "push_suggestions", { items: [Q6] });
+    await pill.waitFor();
+    ok("the Producer's cues: hidden until the agent pushes; a borderless pill at the end of the reading line, newest on top with +2; a click or Enter opens a centred box with dots over a veil while auto-scroll waits; ← → and Page Up/Down move between cues, a new cue keeps the box on the one being read, Esc skips, Enter and Use use; auto-scroll goes on after; the next push reports used, skipped and asked [6] once; inside a phone window; a tap beside closes it; clear_suggestions hides it; the script never moves");
 
     // A second tab takes over; Use this tab takes it back.
     const B = await live.newPage();
@@ -842,25 +733,40 @@ export async function run({ browser, base, mode, dist, out }) {
     assert.deepEqual([await act.textContent(), await act.locator(".i-copy").isVisible(), await A.locator(".open-btn").getAttribute("data-dot"), await A.locator(".open-btn").getAttribute("aria-label")],
       ["Use this tab", false, null, "Open · MCP open in another tab"]);
     await shot(A, "mcp-elsewhere-desktop");
-    assert.equal(await A.locator(".strip").isHidden(), true, "the Producer's strip goes with the link to the other tab");
+    assert.equal(await A.locator(".ask-pill").isHidden(), true, "the Producer's pill goes with the link to the other tab");
     assert.deepEqual((await agentCall(token, "get_open_script")).structuredContent, { open: false }, "calls now reach the new tab (its start screen)");
+    // A live show with no script open: no pill, the box shows by itself; Enter uses one and the next one shows,
+    // a tap beside it does not close it (there is no script to go back to).
+    assert.equal((await agentCall(token, "push_suggestions", { items: [POINT, AUD] })).structuredContent.shown, true);
+    const liveBox = B.locator(".ask-box");
+    await liveBox.waitFor();
+    assert.deepEqual([await B.locator(".ask-pill").isVisible(), await liveBox.locator(".ask-text").textContent()], [false, POINT.text], "no pill: the box by itself, the newest first");
+    await shot(B, "cue-box-live-desktop");
+    await B.mouse.click(20, 20);
+    assert.equal(await liveBox.isVisible(), true, "a tap beside keeps the box");
+    await B.keyboard.press("Enter");
+    await B.waitForFunction((t) => document.querySelector(".ask-box .ask-text").textContent === t, AUD.text);
+    assert.deepEqual((await agentCall(token, "clear_suggestions")).structuredContent.used, [POINT]);
+    await liveBox.waitFor({ state: "hidden" });
+    ok("a live show (no script open): no pill, the box shows by itself; Enter uses one and shows the next; a tap beside keeps it");
     if (!(await A.locator("#open-menu:popover-open").count())) await (await dock(A, ".open-btn")).click();
     await act.click();
     await A.waitForFunction(() => document.querySelector("#open-menu .mcp-action").dataset.state === "on");
     await B.waitForFunction(() => document.querySelector(".empty .mcp-action").dataset.state === "elsewhere");
     assert.equal(await B.locator(".empty .mcp-action").textContent(), "Use this tab");
     assert.equal((await agentCall(token, "get_open_script")).structuredContent.open, true, "back in the first tab");
-    await A.locator(".strip").waitFor();
+    await A.locator(".ask-pill").waitFor();
     await B.close();
     ok("a second tab with the same token takes over (the first shows Use this tab and loses its dot; calls go to the new tab); Use this tab takes it back");
 
     // Disconnect MCP: off at once, the token forgotten, the agent refused with 401.
+    const statusBefore = await A.locator(".status").textContent();
     await act.click();
     assert.deepEqual([await act.textContent(), await state(A, "#open-menu .mcp-action"), await A.locator(".open-btn").getAttribute("data-dot"), await A.locator(".open-btn").getAttribute("aria-label")],
       ["Wait for MCP", "off", null, "Open"]);
     assert.equal(await A.evaluate(() => localStorage.getItem("prompter-agent")), null);
-    assert.equal(await A.locator(".status").textContent(), "Opened from Claude", "no status line for Disconnect (the last one is from opening the script)");
-    assert.equal(await A.locator(".strip").isHidden(), true, "Disconnect MCP also ends the Producer's strip");
+    assert.equal(await A.locator(".status").textContent(), statusBefore, "no status line for Disconnect");
+    assert.deepEqual([await A.locator(".ask-pill").isHidden(), await A.locator(".ask-box").isHidden()], [true, true], "Disconnect MCP also ends the Producer's cues");
     let refused;
     for (let i = 0; i < 25 && refused !== 401; i++) { refused = (await agentRpc(token, "tools/list")).status; if (refused !== 401) await sleep(200); }
     assert.equal(refused, 401, "after Disconnect MCP the token gets 401");
@@ -885,6 +791,65 @@ export async function run({ browser, base, mode, dist, out }) {
     ok("static mode: Wait for MCP without the Worker says No connection, try again, and copies nothing");
   }
   await live.close();
+
+  // One click from the Producer (TOOLS-464): its page asks this site for a token (CORS for its address only)
+  // and opens the prompter with #producer=<token>; the tab drops it from the address at once, connects with it,
+  // says it is linked to the Producer, tells only its opener its state (never the token), and the Producer's
+  // Disconnect ends this tab's link too. The Producer's page is played here by a stand-in at its real address.
+  if (mode === "wrangler") {
+    const PRODUCER = "https://producer.techies.tools";
+    const pre = await fetch(`${base}/api/agent-token`, { method: "OPTIONS", headers: { origin: PRODUCER, "access-control-request-method": "POST" } });
+    assert.deepEqual([pre.status, pre.headers.get("access-control-allow-origin")], [204, PRODUCER]);
+    const elsewhere = await fetch(`${base}/api/agent-token`, { method: "OPTIONS", headers: { origin: "https://example.com", "access-control-request-method": "POST" } });
+    assert.deepEqual([elsewhere.status, elsewhere.headers.get("access-control-allow-origin")], [403, null], "any other site is refused");
+    const minted = await fetch(`${base}/api/agent-token`, { method: "POST", headers: { origin: PRODUCER } });
+    assert.equal(minted.headers.get("access-control-allow-origin"), PRODUCER);
+    const { token: handed } = await minted.json();
+    const setup = await browser.newContext(DESKTOP);
+    await setup.addInitScript(NO_SPEECH);
+    await setup.route(`${PRODUCER}/**`, (route) => route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Producer stand-in</title><script>window.heard = []; addEventListener('message', (e) => heard.push([e.origin, e.data]));</script>" }));
+    const producer = await setup.newPage();
+    watch(producer, "producer stand-in");
+    await producer.goto(`${PRODUCER}/`);
+    const [P] = await Promise.all([
+      setup.waitForEvent("page"),
+      producer.evaluate(([url]) => { window.prompterTab = window.open(url, "_blank"); }, [`${base}/#producer=${handed}`]),
+    ]);
+    watch(P, "prompter from the Producer");
+    await showsStart(P);
+    assert.equal(await P.evaluate(() => location.hash), "", "the token is gone from the address at once");
+    await P.waitForFunction(() => document.querySelector(".empty .mcp-action").dataset.state === "waiting");
+    assert.equal(await P.locator(".open-btn").getAttribute("aria-label"), "Open · waiting for MCP, linked to your Producer");
+    assert.equal(await P.evaluate(() => localStorage.getItem("prompter-agent")?.includes('"producer":true')), true, "kept as the Producer's link, for a reload");
+    assert.equal((await agentRpc(handed, "initialize", { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "claude-code", version: "2.1" } })).status, 200);
+    await P.waitForFunction(() => document.querySelector(".open-btn").getAttribute("aria-label") === "Open · MCP connected to Claude, linked to your Producer");
+    await shot(P, "producer-linked-desktop");
+    await producer.waitForFunction(() => window.heard.some(([, d]) => d?.state === "on"));
+    const heard = await producer.evaluate(() => window.heard);
+    assert.deepEqual(heard.map(([o, d]) => [o, d.type, d.state]), [[base, "prompter:link", "waiting"], [base, "prompter:link", "on"]], "the opener hears the state, from the prompter's address");
+    assert.equal(JSON.stringify(heard).includes(handed), false, "never the token");
+    // A live show from the Producer: no script, so its first question shows by itself.
+    await agentCall(handed, "push_suggestions", { items: [{ kind: "question", text: "Who are you, and what do you build?", number: 1 }] });
+    await P.locator(".ask-box").waitFor();
+    await shot(P, "producer-live-question-desktop");
+    // A message from any other page is ignored; the Producer's Disconnect ends the link.
+    await P.evaluate(() => window.postMessage({ type: "prompter:disconnect" }, "*"));
+    await sleep(300);
+    assert.equal(await state(P, ".empty .mcp-action"), "on", "a message from the tab itself (not the opener) changes nothing");
+    await producer.evaluate(([url]) => window.prompterTab.postMessage({ type: "prompter:disconnect" }, url), [base]);
+    await P.waitForFunction(() => document.querySelector(".empty .mcp-action").dataset.state === "off");
+    assert.equal(await P.locator(".ask-box").isHidden(), true, "the box goes with the link");
+    await producer.waitForFunction(() => window.heard.at(-1)?.[1]?.state === "off");
+    let gone;
+    for (let i = 0; i < 25 && gone !== 401; i++) { gone = (await agentRpc(handed, "tools/list")).status; if (gone !== 401) await sleep(200); }
+    assert.equal(gone, 401, "the Producer's token is revoked");
+    // A #producer= link without a real token connects nothing.
+    await P.goto(`${base}/#producer=nope`);
+    await showsStart(P);
+    assert.equal(await state(P, ".empty .mcp-action"), "off", "a bad #producer= connects nothing");
+    await setup.close();
+    ok("one click from the Producer: /api/agent-token answers its address (CORS) and refuses others; #producer=<token> leaves the address at once and connects (waiting, then on), Open says linked to your Producer; the opener hears waiting/on/off, never the token; a live show shows the first question by itself; the Producer's Disconnect ends the link and revokes the token; anything else is ignored");
+  }
 
   // Paste from the Open popover.
   await (await dock(page, ".open-btn")).click();
