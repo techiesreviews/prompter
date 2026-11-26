@@ -933,8 +933,8 @@ export async function run({ browser, base, mode, dist, out }) {
     const setup = await browser.newContext(DESKTOP);
     await setup.addInitScript(NO_SPEECH);
     // The stand-in answers the tab's ready with the token, as the Producer does: a second later, as when its
-    // token request is still on its way when the tab opens.
-    const STAND_IN = "<!doctype html><title>Producer stand-in</title><script>window.heard = []; addEventListener('message', (e) => { heard.push([e.origin, e.data]); if (e.data?.type === 'prompter:ready' && e.source === window.prompterTab) setTimeout(() => e.source.postMessage({ type: 'prompter:token', token: window.handOut }, e.origin), 1000); });</script>";
+    // token request is still on its way when the tab opens (unless `holdToken` is set: the test then posts it by hand).
+    const STAND_IN = "<!doctype html><title>Producer stand-in</title><script>window.heard = []; addEventListener('message', (e) => { heard.push([e.origin, e.data]); if (e.data?.type === 'prompter:ready' && e.source === window.prompterTab && !window.holdToken) setTimeout(() => e.source.postMessage({ type: 'prompter:token', token: window.handOut }, e.origin), 1000); });</script>";
     await setup.route(`${PRODUCER}/**`, (route) => route.fulfill({ contentType: "text/html", body: STAND_IN }));
     await setup.route("https://evil.example/**", (route) => route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Another site</title>" }));
     const producer = await setup.newPage();
@@ -1013,8 +1013,36 @@ export async function run({ browser, base, mode, dist, out }) {
     await evil.evaluate(([token]) => window.tab.postMessage({ type: "prompter:token", token }, "*"), [sent]);
     await sleep(300);
     assert.deepEqual([await state(E, ".empty .mcp-action"), await evil.evaluate(() => window.heard.length)], ["off", 0], "another site hears nothing and cannot hand a token");
+    // An old Producer link still kept on this device (its Producer page was closed without Disconnect, its
+    // agent still connected, a cue showing; TOOLS-476): a new one-click setup ends it quietly, so the Producer
+    // never hears "off" (nor the old link's states) in between, and the old agent's cue goes with it.
+    const { token: old } = await (await fetch(`${base}/api/agent-token`, { method: "POST" })).json();
+    const { token: fresh } = await (await fetch(`${base}/api/agent-token`, { method: "POST" })).json();
+    await E.evaluate(([token]) => localStorage.setItem("prompter-agent", JSON.stringify({ token, createdAt: Date.now(), producer: true })), [old]);
+    await E.close();
+    await producer.evaluate(() => { window.heard = []; window.holdToken = true; });
+    const [P3] = await Promise.all([
+      setup.waitForEvent("page"),
+      producer.evaluate(([url]) => { window.prompterTab = window.open(url, "_blank"); }, [`${base}/#producer`]),
+    ]);
+    watch(P3, "prompter from the Producer over an old link");
+    await producer.waitForFunction(() => window.heard.some(([, d]) => d?.type === "prompter:ready"));
+    assert.equal((await agentRpc(old, "initialize", { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "claude-code", version: "2.1" } })).status, 200);
+    await P3.waitForFunction(() => document.querySelector(".empty .mcp-action").dataset.state === "on");
+    await agentCall(old, "push_suggestions", { items: [{ kind: "question", text: "Old cue" }] });
+    await P3.locator(".ask-box").waitFor();
+    await producer.evaluate(([url, token]) => window.prompterTab.postMessage({ type: "prompter:token", token }, url), [base, fresh]);
+    await P3.waitForFunction((token) => localStorage.getItem("prompter-agent")?.includes(token), fresh);
+    assert.equal((await agentRpc(fresh, "initialize", { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "claude-code", version: "2.1" } })).status, 200);
+    await producer.waitForFunction(() => window.heard.some(([, d]) => d?.state === "on"));
+    await sleep(300);
+    assert.deepEqual([await P3.locator(".ask-box").isHidden(), await P3.locator(".ask-pill").isHidden()], [true, true], "the old agent's cue went with its link: it does not come back with the new agent");
+    assert.deepEqual((await producer.evaluate(() => window.heard)).map(([, d]) => [d.type, d.state]), [["prompter:ready", undefined], ["prompter:link", "waiting"], ["prompter:link", "on"]], "the opener hears ready, waiting, on: never off while the old link ends");
+    let oldGone;
+    for (let i = 0; i < 25 && oldGone !== 401; i++) { oldGone = (await agentRpc(old, "tools/list")).status; if (oldGone !== 401) await sleep(200); }
+    assert.deepEqual([oldGone, (await agentRpc(fresh, "tools/list")).status], [401, 200], "the old token is revoked; the new one works");
     await setup.close();
-    ok("one click from the Producer: /api/agent-token answers its address (CORS) and refuses others; #producer leaves the address at once, the tab says ready to the Producer only and takes the token from its answer, connects (waiting, then on), Open says linked to your Producer; the opener hears ready/waiting/on/off, never the token; a live show shows the first question by itself; the Producer's Disconnect ends the link and revokes the token, and before the token comes, none is taken; a token in a sent link and another site's messages are ignored");
+    ok("one click from the Producer: /api/agent-token answers its address (CORS) and refuses others; #producer leaves the address at once, the tab says ready to the Producer only and takes the token from its answer, connects (waiting, then on), Open says linked to your Producer; the opener hears ready/waiting/on/off, never the token; a live show shows the first question by itself; the Producer's Disconnect ends the link and revokes the token, and before the token comes, none is taken; a token in a sent link and another site's messages are ignored; over an old Producer link kept on this device, the opener hears ready/waiting/on (never off), the old token is revoked, and the old agent's cue does not come back");
   }
 
   // Paste from the Open popover.

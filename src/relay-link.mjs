@@ -137,16 +137,20 @@ export function relayLink({
   function disconnect() {
     // Detach the socket and token first, then show "off" at once; the revoke finishes quietly behind it.
     const token = link.token;
-    let ws = link.ws;
+    const ws = link.ws;
     link.ws = null; // the close handler now ignores this socket and won't reconnect
     forget();
-    if (!token) return;
+    if (token) revoke(token, ws);
+  }
+
+  // The relay forgets `token`, told over its detached socket `ws` (or one opened just for it), which then closes.
+  function revoke(token, ws) {
     const close = () => { try { ws?.close(1000, "bye"); } catch { /* closed */ } };
-    const revoke = () => { try { send(ws, "revoke"); } catch { /* closed */ } later(close, 200); };
+    const tell = () => { try { send(ws, "revoke"); } catch { /* closed */ } later(close, 200); };
     try {
       if (!ws || ws.readyState >= WebSocket.CLOSING) ws = new WebSocket(url, relayProtocols(token));
-      if (ws.readyState === WebSocket.OPEN) revoke();
-      else ws.addEventListener("open", revoke, { once: true });
+      if (ws.readyState === WebSocket.OPEN) tell();
+      else ws.addEventListener("open", tell, { once: true });
     } catch { /* offline: the token still ends after 8 hours */ }
     later(close, 5000);
   }
@@ -188,12 +192,18 @@ export function relayLink({
   }
 
   // Opened from the Producer: its token (producerToken) is kept and connected as Wait for MCP's would be.
-  // A token this tab had before is revoked, so only the agent the Producer set up reaches the tab.
+  // A token this tab had before is revoked, so only the agent the Producer set up reaches the tab. It ends
+  // quietly: the state goes straight to waiting, never "off" in between, which the Producer would take as
+  // its new link ending.
   function adopt(token) {
     if (link.token === token && hasToken()) {
       if (!link.ws) connect();
     } else {
-      if (link.token) disconnect();
+      const old = link.token;
+      const ws = link.ws;
+      link.ws = null; // the close handler now ignores this socket and won't reconnect
+      link.info = null;
+      if (old) revoke(old, ws);
       link.failed = false;
       keep(token, now(), true);
       link.state = "waiting";
