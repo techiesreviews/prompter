@@ -406,9 +406,14 @@ function drawAsk() {
       return dot;
     }) : []));
     askWhere.textContent = items.length > 1 ? `${ask.at + 1} of ${items.length}` : "";
-    if (cur.text !== askSaid) setStatus(`${name}: ${cur.text}${items.length > 1 ? `. ${ask.at + 1} of ${items.length}` : ""}`);
+    if (cur.text !== askSaid) {
+      askText.scrollTop = 0; // another cue starts at its top; a push that keeps this one keeps the place in it
+      setStatus(`${name}: ${cur.text}${items.length > 1 ? `. ${ask.at + 1} of ${items.length}` : ""}`);
+    }
     askSaid = cur.text;
   } else askSaid = "";
+  // What the veil covers takes no focus or click while the box shows (Tab stays on the box and the control bar).
+  for (const covered of [$(".empty"), main, $(".reading-line")]) covered.inert = box;
   if (box && !was) {
     hideHint(); // it sits above the dock and would cover the box's Skip and Use on a phone
     askPausedAuto = autoOn;
