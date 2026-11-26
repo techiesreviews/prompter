@@ -673,7 +673,23 @@ export async function run({ browser, base, mode, dist, out }) {
     assert.deepEqual(await playLook(), PLAY_ON_WAITING, "a second click turns it on again, and Play shows it");
     await A.waitForTimeout(300);
     assert.equal(await A.evaluate(() => scrollY), atPause, "on or off, the script waits for the box");
-    await askBox.focus(); // back from the Play button, so Enter is Use again
+    // Space on a focused button of the control bar means auto-scroll while the box shows too, as it does without
+    // the box: Play shows the change, the script still waits, and Settings does not open.
+    await (await dock(A, ".auto")).focus();
+    await A.keyboard.press(" ");
+    assert.deepEqual(await playLook(), PLAY_OFF_WAITING, "Space on the focused Play turns auto-scroll off, and Play shows it");
+    await (await dock(A, ".settings-btn")).focus();
+    await A.keyboard.press(" ");
+    assert.deepEqual(await playLook(), PLAY_ON_WAITING, "Space on the focused Settings turns it on again, and Play shows it");
+    await A.waitForTimeout(300);
+    assert.deepEqual(
+      [await A.evaluate(() => scrollY), await A.locator("#settings").evaluate((p) => p.matches(":popover-open")), await askBox.isVisible()],
+      [atPause, false, true],
+      "the script still waits for the box, Settings stays closed and the cue still shows",
+    );
+    await askBox.focus(); // back from the control bar, so Enter is Use again
+    await A.keyboard.press(" ");
+    assert.deepEqual(await playLook(), PLAY_ON_WAITING, "Space on the box itself still waits");
     // The clicker's keys move between the waiting cues, not the sections.
     await A.keyboard.press("ArrowRight");
     assert.deepEqual(await boxRow(), ["point", POINT.text, "○●○"]);
@@ -807,7 +823,7 @@ export async function run({ browser, base, mode, dist, out }) {
     assert.equal((await agentCall(token, "push_suggestions", { items: [{ kind: "question", text: "x", number: 0 }] })).isError, true, "a bad push is refused");
     await agentCall(token, "push_suggestions", { items: [Q6] });
     await pill.waitFor();
-    ok("the Producer's cues: hidden until the agent pushes; a borderless pill at the end of the reading line, newest on top with +2; a click or Enter opens a centred box with dots over a veil while auto-scroll waits; Play keeps showing whether auto-scroll is on while the box shows, a click turns it off or on with a tip that says what happens after the cue, and the script does what Play showed once the box closes; ← → and Page Up/Down move between cues, a new cue keeps the box on the one being read, Esc skips, Enter and Use use; auto-scroll goes on after; the next push reports used, skipped and asked [6] once; inside a phone window; a tap beside closes it; clear_suggestions hides it; the script never moves");
+    ok("the Producer's cues: hidden until the agent pushes; a borderless pill at the end of the reading line, newest on top with +2; a click or Enter opens a centred box with dots over a veil while auto-scroll waits; Play keeps showing whether auto-scroll is on while the box shows, a click, or Space on a focused control bar button, turns it off or on with a tip that says what happens after the cue, and the script does what Play showed once the box closes; ← → and Page Up/Down move between cues, a new cue keeps the box on the one being read, Esc skips, Enter and Use use; auto-scroll goes on after; the next push reports used, skipped and asked [6] once; inside a phone window; a tap beside closes it; clear_suggestions hides it; the script never moves");
 
     // A second tab takes over; Use this tab takes it back.
     const B = await live.newPage();

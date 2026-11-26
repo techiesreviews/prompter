@@ -469,6 +469,9 @@ function askKey(e) {
   else if (k === "Enter" || k === " ") {
     if (e.target.closest?.(".ask-box button")) return true; // Use and Skip press as buttons do
     if (k === "Enter" && onButton) return true; // a button the person moved to with Tab presses
+    // Space on a focused button of the control bar means auto-scroll, as it does without the box (the page's key
+    // handler below): Play shows the change and the scrolling still waits for the box.
+    if (k === " " && e.target.closest?.(".dock button")) return false;
     if (k === "Enter") askUse();
   } else return true; // the page's own keys (digits, Space, size…) wait while the box shows; the browser's, like Tab, still work
   e.preventDefault();
