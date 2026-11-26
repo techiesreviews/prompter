@@ -1,11 +1,6 @@
-// Page logic. scripts/build.mjs inlines src/core.mjs, src/settings.mjs, src/follow.mjs,
-// src/open-script.mjs, src/speech.mjs, src/agent.mjs, src/wire.mjs, src/relay-link.mjs, src/camframe.mjs,
-// src/reading-line.mjs and src/ui/range-field.mjs above this file inside one function, so parse, PRESETS,
-// DEMO_SCRIPT, SETTINGS, STORED, settingValue, settingsStore, encodeScript, voiceStep, voiceStart, voiceSession, voiceAt, linkAt, openScripts, speechWords,
-// speechKeeper, connectionPrompt, agentName, RELAY_PATH, relayLink, camframeLink, cueCrossing, readingLine,
-// rangeField … are in scope here.
+// Page logic. scripts/build.mjs inlines the modules in its INLINED list above this file inside one
+// function, so their exports are in scope here without imports.
 
-// ---------- Player view ----------
 // The main-screen window shows a YouTube video full size via this same page.
 if (location.hash.startsWith("#player=")) {
   const q = new URLSearchParams(location.hash.slice(1));
@@ -25,7 +20,6 @@ if (location.hash.startsWith("#player=")) {
   return;
 }
 
-// ---------- Fonts ----------
 // Inter and Roboto Mono (SIL Open Font License 1.1, fonts/OFL.txt) come from
 // /fonts/ when the page is served. An offline copy opened from a file uses the
 // system fonts, so it never asks for a file that is not there.
@@ -91,9 +85,10 @@ let mainWin = null;
 let hintShown = false;
 let hintTimer = 0;
 let clockStart = 0;
-let autoOn = false;
+let autoOn = false; // auto-scroll is on: what Play shows, also while the scrolling waits for the Producer's cue box
 let speed = prefs.read("speed");
 let lastFrame = 0;
+let autoFrame = 0; // the next animation frame of the scrolling, 0 while it does not run
 let voiceOn = false;
 let voiceLocal = false; // this browser recognises speech on this device (no network needed)
 let voiceAsking = null; // the question whether it can, while it is asked
@@ -108,7 +103,6 @@ const camframe = camframeLink({ fetch, clock: window, visible: () => document.vi
 // The line under the Camera cues list: the words last read out, and the read-out still due.
 const layoutsSay = { said: "", timer: 0 };
 
-// ---------- Opening scripts ----------
 const isEmpty = () => root.dataset.view === "empty";
 const plainAddress = () => location.pathname + location.search;
 
@@ -141,6 +135,7 @@ async function openScript(text, { fromLink = false, remember = true, label = "",
   window.scrollTo(0, 0);
   render();
   setStatus(label);
+  drawAsk(); // a cue that showed by itself over the start screen waits behind the pill now
   if (!fromLink) {
     script.pushOwed = fromStart;
     let url;
@@ -200,6 +195,7 @@ function showStart() {
   root.dataset.view = "empty";
   $(".empty").hidden = false;
   window.scrollTo(0, 0);
+  drawAsk(); // no script: a waiting cue shows by itself
 }
 
 async function route() {
@@ -237,7 +233,6 @@ async function route() {
   showStart();
 }
 
-// ---------- Rendering ----------
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const SPOKEN = new Set(["say", "bullet", "next", "now"]);
 const OPENS_AT_LINE = "opens on the main screen when it reaches the reading line";
@@ -303,7 +298,6 @@ function render() {
   updateActive();
 }
 
-// ---------- Popovers and dialogs ----------
 // Open and Settings are native popovers (light dismiss, Escape) anchored above
 // their bar buttons with CSS anchor positioning. Where the browser has none,
 // placeAbove() puts them there by hand.
@@ -341,9 +335,156 @@ function showDialog(dialog) {
   dialog.showModal();
 }
 
-// ---------- Your own agent over MCP (live relay) ----------
-// The link itself (token, socket, backoff, keepalive, tool calls) is relayLink in src/relay-link.mjs;
-// this part gives it the page's two tools and draws its state. An offline copy (file://) has no relay:
+// The Producer's cues (TOOLS-464; their queue is suggestionQueue in src/suggestions.mjs): what the agent
+// pushes while it is connected to the person's Producer and to this tab, newest first, at most three.
+// A pill in the kind's colour at the end of the reading line says one is waiting; a tap or Enter opens it
+// in a box over the dimmed script (by itself when no script is open: a live show). In the box, ← → and
+// Page Up/Down move between the waiting ones (what a clicker sends), Enter uses one and Esc skips it.
+// While the box shows, auto-scroll and Follow my voice wait, then go on from the same place.
+// It shows only while that agent is connected here and its pushes keep coming, so it is never a dead control.
+const ask = suggestionQueue();
+const askPill = $(".ask-pill");
+const askBox = $(".ask-box");
+const askVeil = $(".ask-veil");
+const askText = $(".ask-text");
+const askDots = $(".ask-dots");
+const askWhere = $(".ask-where");
+const ASK_KINDS = {
+  question: ["?", "Question"],
+  next: ["?", "Question"],
+  steer: ["↩", "Steer back"],
+  point: ["★", "Talking point"],
+  audience: ["@", "Audience"],
+};
+let askTimer = 0;
+let askShowing = false; // the box is on screen
+let askSaid = ""; // the cue last read out, so moving to another reads that one
+let askNewest = ""; // the newest cue the pill showed, so a new one nudges it
+let voiceHold = VOICE_FREE; // what this session heard while the box showed, and until the next pause after (voiceHeld in src/follow.mjs): never followed
+
+const askLive = () => live && liveLink.state === "on" && ask.shown();
+
+function drawAsk() {
+  const show = askLive();
+  clearTimeout(askTimer);
+  // Hidden again by itself once the pushes stop.
+  if (show) askTimer = setTimeout(drawAsk, ask.staleIn() + 50);
+  else ask.close(false); // gone quiet: not set aside, so the next push shows a live show's box again
+  const items = show ? ask.items : [];
+  const box = show && ask.boxOpen(isEmpty());
+  askPill.hidden = !show || box;
+  if (items.length) {
+    const [mark, name] = ASK_KINDS[items[0].kind];
+    const more = items.length - 1;
+    askPill.dataset.kind = items[0].kind;
+    askPill.querySelector(".ask-pill-mark").textContent = mark;
+    askPill.querySelector(".ask-pill-name").textContent = name;
+    askPill.querySelector(".ask-more").textContent = more ? `+${more}` : "";
+    askPill.setAttribute("aria-label", `${name} from the Producer${more ? `, ${more} more waiting` : ""}. Open it`);
+    if (items[0].text !== askNewest && !askPill.hidden) {
+      askPill.removeAttribute("data-fresh");
+      void askPill.offsetWidth; // the nudge plays again
+      askPill.setAttribute("data-fresh", "");
+      setStatus(`${name} from the Producer`);
+    }
+  }
+  askNewest = items[0]?.text ?? "";
+  placePill();
+  const was = askShowing;
+  askShowing = box;
+  askBox.hidden = !box;
+  askVeil.hidden = !box;
+  if (box) {
+    const cur = ask.current;
+    const name = ASK_KINDS[cur.kind][1];
+    askBox.dataset.kind = cur.kind;
+    askBox.setAttribute("aria-label", `${name} from the Producer`);
+    askText.textContent = cur.text;
+    askDots.replaceChildren(...(items.length > 1 ? items.map((_, i) => {
+      const dot = document.createElement("span");
+      dot.toggleAttribute("data-on", i === ask.at);
+      return dot;
+    }) : []));
+    askWhere.textContent = items.length > 1 ? `${ask.at + 1} of ${items.length}` : "";
+    if (cur.text !== askSaid) {
+      askText.scrollTop = 0; // another cue starts at its top; a push that keeps this one keeps the place in it
+      setStatus(`${name}: ${cur.text}${items.length > 1 ? `. ${ask.at + 1} of ${items.length}` : ""}`);
+    }
+    askSaid = cur.text;
+  } else askSaid = "";
+  // What the veil covers takes no focus or click while the box shows (Tab stays on the box and the control bar).
+  for (const covered of [$(".empty"), main, $(".reading-line")]) covered.inert = box;
+  if (box && !was) {
+    hideHint(); // it sits above the dock and would cover the box's Skip and Use on a phone
+    runAuto(); // the scrolling waits while the box shows; Play keeps showing whether auto-scroll is on
+    // The box takes the focus however it opened (a live show's by itself too), so Enter means Use and not
+    // the button that had it (Disconnect MCP, say).
+    askBox.focus({ preventScroll: true });
+  } else if (!box && was) {
+    runAuto(); // auto-scroll, when it is on, goes on
+    // Focus in the box goes off (not to the pill: no ring on it), so Space means auto-scroll again and Enter opens the pill.
+    if (askBox.contains(document.activeElement)) document.activeElement.blur();
+  }
+}
+
+// The pill sits at the end of the reading line where there is room right of the text column, else just
+// above the line (over text already read), or low on the right above the control bar when the line is
+// dragged too high for that (over text still far off), so it never covers the line being read. On the start screen (a live show set aside) it waits in the top
+// corner, clear of the start card.
+function placePill() {
+  if (askPill.hidden) return;
+  const right = main.getBoundingClientRect().right - parseFloat(getComputedStyle(main).paddingInlineEnd);
+  const room = document.documentElement.clientWidth - right;
+  const above = parseFloat(getComputedStyle(root).getPropertyValue("--line")) - 10 - askPill.offsetHeight;
+  askPill.dataset.place = isEmpty() ? "corner" : room >= askPill.offsetWidth + 16 + 12 ? "line" : above >= 8 ? "above" : "low";
+}
+new ResizeObserver(placePill).observe(main);
+window.addEventListener("resize", placePill); // the column keeps its width while the window narrows
+
+function askOpen() {
+  ask.open();
+  drawAsk();
+}
+function askUse() { if (ask.use()) drawAsk(); }
+function askSkip() { if (ask.skip()) drawAsk(); }
+
+// The box's keys, before the page's own: a clicker's Page Up/Down and the arrows move between the waiting
+// cues instead of the sections. Returns true when it took the key.
+function askKey(e) {
+  if (!askShowing && askPill.hidden) return false;
+  if (document.querySelector("dialog[open], :popover-open") || e.metaKey || e.ctrlKey || e.altKey) return false;
+  if (e.target.closest?.("textarea, select, input, .pop")) return false;
+  const k = e.key;
+  const onButton = Boolean(e.target.closest?.("button, a"));
+  if (!askShowing) {
+    if (k !== "Enter" || onButton) return false;
+    e.preventDefault();
+    askOpen();
+    return true;
+  }
+  if (k === "Escape") askSkip();
+  else if (k === "ArrowRight" || k === "PageDown") { ask.move(1); drawAsk(); }
+  else if (k === "ArrowLeft" || k === "PageUp") { ask.move(-1); drawAsk(); }
+  else if (k === "ArrowDown" || k === "ArrowUp") askText.scrollBy({ top: (k === "ArrowDown" ? 0.8 : -0.8) * askText.clientHeight }); // a long cue
+  else if (k === "Enter" || k === " ") {
+    if (e.target.closest?.(".ask-box button")) return true; // Use and Skip press as buttons do
+    if (k === "Enter" && onButton) return true; // a button the person moved to with Tab presses
+    // Space on a focused button of the control bar means auto-scroll, as it does without the box (the page's key
+    // handler below): Play shows the change and the scrolling still waits for the box.
+    if (k === " " && e.target.closest?.(".dock button")) return false;
+    if (k === "Enter") askUse();
+  } else return true; // the page's own keys (digits, Space, size…) wait while the box shows; the browser's, like Tab, still work
+  e.preventDefault();
+  return true;
+}
+
+askPill.addEventListener("click", askOpen);
+// A tap beside the box closes it; the cue waits behind the pill. In a live show that sets it aside, so the
+// start screen can be used; the pill (or a new cue) brings it back.
+askVeil.addEventListener("click", () => { ask.close(); drawAsk(); });
+
+// The live relay link itself (token, socket, backoff, keepalive, tool calls) is relayLink in src/relay-link.mjs;
+// the code below gives it the page's two tools and draws its state. An offline copy (file://) has no relay:
 // its Copy MCP copies the open server's message, which answers with a link instead.
 const live = /^https?:$/.test(location.protocol);
 const liveLink = relayLink({
@@ -365,8 +506,58 @@ const liveLink = relayLink({
       await openScript(text, { label: `Opened from ${agentName(liveLink.info?.name)}`, saved: args.saved });
       return { result: { opened: true, sections: found } }; // this script's, even if another opened while it was packed
     },
+    push_suggestions(args) {
+      const input = readSuggestions(args);
+      if (input.error) return { error: input.error };
+      const { used, skipped } = ask.push(input.items, askShowing);
+      drawAsk();
+      return { result: { shown: askLive(), used, skipped } }; // shown: something waits for the host
+    },
+    clear_suggestions() {
+      const { used, skipped } = ask.clear();
+      drawAsk();
+      return { result: { used, skipped } };
+    },
   },
-  changed: () => renderAgent(),
+  changed: () => {
+    // Disconnect MCP (or the token's end) also ends the cues: nobody is left to hear what was used.
+    if (liveLink.state === "off") ask.clear();
+    renderAgent();
+    drawAsk();
+    tellProducer();
+  },
+});
+
+// Opened from the Producer (one click sets up both): it tells the Producer page that opened this tab how
+// the link is (never the token), so it can say "Connected: Producer + Prompter", and its Disconnect ends
+// this tab's link too. Only that page, at its own address, hears it or is heard.
+let producerOpener = null;
+let toldProducer = "";
+function tellProducer() {
+  if (!producerOpener && liveLink.producer && window.opener) producerOpener = window.opener;
+  if (!producerOpener) return;
+  const state = liveLink.state;
+  if (state === toldProducer) return;
+  toldProducer = state;
+  for (const origin of PRODUCER_ORIGINS) {
+    try { producerOpener.postMessage({ type: PRODUCER_MESSAGES.link, state }, origin); } catch { /* closed */ }
+  }
+  if (state === "off") producerOpener = null; // the link ended: the next one starts fresh
+}
+// A tab the Producer opened to link (`#producer`) says ready to that page and takes the token only from its
+// answer, once: never from the address, where a link anyone can send would tie this tab to their agent.
+let producerWaiting = false;
+window.addEventListener("message", (e) => {
+  if (!PRODUCER_ORIGINS.includes(e.origin) || !e.source || e.source !== window.opener) return;
+  const type = e.data?.type;
+  if (type === PRODUCER_MESSAGES.disconnect) producerWaiting = false; // Disconnect both before the token came: none is taken after
+  if (type === PRODUCER_MESSAGES.token && producerWaiting) {
+    const token = producerToken(e.data.token);
+    if (token) {
+      producerWaiting = false;
+      liveLink.adopt(token);
+    }
+  } else if (type === PRODUCER_MESSAGES.disconnect && liveLink.producer && liveLink.state !== "off") liveLink.disconnect();
 });
 // "Copied" with a check for two seconds after a copy.
 const copied = { on: false, timer: 0 };
@@ -391,7 +582,8 @@ function renderAgent() {
     const el = act.querySelector(".mcp-label");
     if (el.textContent !== label) el.textContent = label;
   }
-  const where = s === "on" ? ` · MCP connected to ${name}` : s === "waiting" ? " · waiting for MCP" : s === "elsewhere" ? " · MCP open in another tab" : "";
+  const linked = liveLink.producer && (s === "on" || s === "waiting") ? ", linked to your Producer" : "";
+  const where = (s === "on" ? ` · MCP connected to ${name}` : s === "waiting" ? " · waiting for MCP" : s === "elsewhere" ? " · MCP open in another tab" : "") + linked;
   if (s === "on" || s === "waiting") openBtn.dataset.dot = s; else delete openBtn.dataset.dot;
   openBtn.setAttribute("aria-label", `Open${where}`);
   openBtn.dataset.tip = `Open a script${where}`;
@@ -430,11 +622,21 @@ $("#open-menu").addEventListener("toggle", (e) => {
 });
 const startMcp = $(".empty .mcp-action");
 for (const type of ["pointerenter", "focus", "pointerdown"]) startMcp.addEventListener(type, prefetchToken);
+// The Producer opened this tab to link it (`#producer`): the mark comes off the address at once, and the tab
+// says ready to the page that opened it, at the Producer's addresses only; its token comes back by message.
+const fromProducer = /^#producer\b/.test(location.hash);
+if (fromProducer) history.replaceState(null, "", plainAddress());
 if (live) liveLink.start();
+if (live && fromProducer && window.opener) {
+  producerWaiting = true;
+  for (const origin of PRODUCER_ORIGINS) {
+    try { window.opener.postMessage({ type: PRODUCER_MESSAGES.ready }, origin); } catch { /* closed */ }
+  }
+}
 renderAgent();
+tellProducer();
 
-// ---------- Reading line ----------
-// Dragged anywhere along it (or moved with the keys when focused) to camera height and
+// The reading line is dragged anywhere along it (or moved with the keys when focused) to camera height and
 // remembered on this device as a share of the window height. It is set on
 // :root as --line in px; the page's CSS and `reading` (src/reading-line.mjs: what is at
 // the line, bring this to the line) use that one value.
@@ -475,6 +677,7 @@ function setLine(frac, keepText = false) {
   const y = Math.round(viewHeight() * lineFrac);
   const delta = reading.place(y);
   root.style.setProperty("--line", `${y}px`);
+  placePill(); // dragged high, the pill goes low
   const pct = Math.round(lineFrac * 100);
   handle.setAttribute("aria-valuenow", String(pct));
   handle.setAttribute("aria-valuetext", `${pct}% from the top`);
@@ -536,8 +739,6 @@ handle.addEventListener("keydown", (e) => {
   moveLine(e.key === "Home" ? LINE.min : e.key === "End" ? LINE.max : (pct + LINE_STEPS[e.key]) / 100, true);
 });
 
-// ---------- Active section ----------
-
 /** The place under the reading line moved (the line, a section jump, line spacing): all that follows it, from one look. */
 function followLine() {
   const at = reading.look();
@@ -564,7 +765,6 @@ function updateActive(look = reading.look()) {
   if (at) scripts.settle(() => showLink(at.s, at.l, false), SETTLE_MS); else scripts.unsettle();
 }
 
-// ---------- CamFrame link ----------
 // A camera cue line that reaches the reading line goes to CamFrame once per
 // pass down (auto-scroll, scrolling by hand, Follow my voice and section jumps
 // all scroll the page). Failures only change the CamFrame button in Settings.
@@ -608,7 +808,6 @@ function drawCamframe() {
   if (was !== camframe.state && ((camframe.state === "on" && was !== "reconnecting") || camframe.state === "lost")) setStatus(`${name}.`);
 }
 
-// ---------- Main screen ----------
 function connected() { return mainWin && !mainWin.closed; }
 
 // The main screen's button in Settings (orange while connected); the Settings button shows a dot then.
@@ -721,7 +920,7 @@ function hideToast() {
 
 // Once per page: a link would have opened by itself, but no main screen is connected.
 function showHint(label) {
-  if (hintShown) return;
+  if (hintShown || askShowing) return; // never over a Producer's cue box; it may come once the box closes
   hintShown = true;
   $(".hint-text").textContent = `“${label}” would open on your main screen now. Connect a main screen and links open by themselves.`;
   hintEl.hidden = false;
@@ -737,7 +936,6 @@ function hideHint() {
 function lost() { showAlert("Main screen window lost. Connect it again in Settings, or click a link button."); }
 function blocked() { showAlert("No window could open. Allow pop-ups for this page."); }
 
-// ---------- Clock ----------
 const fmt = (sec) => `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`;
 
 function updateClock() {
@@ -758,26 +956,33 @@ function startClock() {
 }
 setInterval(updateClock, 1000);
 
-// ---------- Auto-scroll ----------
 function tick(ts) {
-  if (!autoOn) return;
   if (lastFrame) window.scrollBy(0, (speed * (ts - lastFrame)) / 1000);
   lastFrame = ts;
-  requestAnimationFrame(tick);
+  autoFrame = requestAnimationFrame(tick);
+}
+// The scrolling runs while auto-scroll is on and the Producer's cue box does not show: the script waits
+// for the box. One chain of frames at most, started afresh here, and Play's tip says which it is.
+function runAuto() {
+  cancelAnimationFrame(autoFrame);
+  lastFrame = 0;
+  autoFrame = autoOn && !askShowing ? requestAnimationFrame(tick) : 0;
+  setAutoTip();
 }
 function setAuto(on) {
   autoOn = on;
-  lastFrame = 0;
   autoBtn.setAttribute("aria-pressed", String(on));
-  setAutoTip();
-  if (on) requestAnimationFrame(tick);
+  runAuto();
 }
 let autoTipTimer = 0;
-// While Follow my voice is on, play is greyed out and its tip says why (no status pops up).
+// While Follow my voice is on, play is greyed out and its tip says why (no status pops up). While the
+// Producer's cue box shows, the tip says what Play's state means after the cue.
 function setAutoTip() {
   autoBtn.setAttribute("aria-disabled", String(voiceOn));
   if (!voiceOn) { clearTimeout(autoTipTimer); autoBtn.removeAttribute("data-show-tip"); }
-  autoBtn.dataset.tip = voiceOn ? "Auto-scroll is off while Follow my voice is on" : autoOn ? "Pause · Space" : "Auto-scroll · Space";
+  autoBtn.dataset.tip = voiceOn ? "Auto-scroll is off while Follow my voice is on"
+    : askShowing ? (autoOn ? "Auto-scroll waits for the cue · click to turn it off" : "Auto-scroll is off · click to turn it on after the cue")
+    : autoOn ? "Pause · Space" : "Auto-scroll · Space";
 }
 function toggleAuto() {
   if (voiceOn) {
@@ -789,6 +994,9 @@ function toggleAuto() {
     return;
   }
   setAuto(!autoOn);
+  // The Producer's cue box shows: the script waits for it, and Play (pressed or not, its icon and its tip)
+  // shows what happens when it closes.
+  if (askShowing) setStatus(autoOn ? "Auto-scroll goes on when the cue closes." : "Auto-scroll stays off when the cue closes.");
 }
 
 // The sliders in Settings: drag them, or type an exact value into their box,
@@ -801,7 +1009,6 @@ function setSpeed(v) {
   showSpeed(speed);
 }
 
-// ---------- Text size and column ----------
 function setSize(px) {
   px = prefs.save("size", px);
   root.style.setProperty("--size", px + "px");
@@ -849,7 +1056,6 @@ function goSection(delta) {
   followLine(); // at once, so quick repeated presses keep moving
 }
 
-// ---------- Follow my voice ----------
 // The browser's speech recognition turns the voice into words (Chrome sends
 // the audio to Google for that, unless it can do it on this device); the
 // script itself never leaves the page.
@@ -906,7 +1112,7 @@ function newRecognition(local) {
 }
 const voiceKeeper = Recognition && speechKeeper({
   make: newRecognition,
-  onSession() { scripts.now.voice = voiceSession(scripts.now.voice); }, // a new session numbers its results from 0 again
+  onSession() { scripts.now.voice = voiceSession(scripts.now.voice); voiceHold = voiceHoldSession(voiceHold, performance.now()); }, // a new session numbers its results from 0 again
   onResult: onVoiceResult,
   onReconnecting(on) { if (on) showToast(RECONNECTING); else hideToast(); },
   onLocalFailed() { voiceLocal = false; }, // its language pack went away: ask again next time
@@ -927,7 +1133,7 @@ function startVoice() {
     voiceAsking.then((local) => { voiceLocal = local; if (voiceOn) voiceKeeper.useLocal(local); });
   }
   scripts.now.voice = voiceStart(reading.look().line);
-  resumeAuto = autoOn;
+  resumeAuto = autoOn; // also while it waits for the cue box: back when voice goes off, not when the box closes
   setAuto(false);
   setVoiceButton();
   setStatus("Listening. Read your script out loud.");
@@ -940,14 +1146,22 @@ function stopVoice(message = "") {
   setVoiceButton();
   main.querySelector("p.cur")?.classList.remove("cur");
   if (message) showAlert(message);
-  if (resumeAuto) { resumeAuto = false; setAuto(true); }
+  if (resumeAuto) {
+    resumeAuto = false;
+    setAuto(true); // while the cue box shows, the scrolling waits for it
+  }
 }
 
 // Each speech result event goes to voiceStep (src/follow.mjs), which decides where the voice is and
 // which link its label opens; the page marks that line and opens that link.
 function onVoiceResult(e) {
   const script = scripts.now;
-  const results = Array.from(e.results, (r) => ({ transcript: r[0].transcript, isFinal: r.isFinal }));
+  // While the Producer's cue box shows, the host reads it, not the script: what is heard then, and until
+  // the speech pauses after it closes, is never followed; following goes on from the same line after.
+  const heard = Array.from(e.results, (r) => ({ transcript: r[0].transcript, isFinal: r.isFinal }));
+  const hold = voiceHeld(voiceHold, heard, performance.now(), askShowing);
+  if (hold !== voiceHold) { voiceHold = hold; return; }
+  const results = voiceUnheld(heard, voiceHold);
   const { voice, line, link } = voiceStep(script.voiceLines, script.voice, results, { links: voiceLinkCandidates(), shownUrl: script.shownUrl });
   script.voice = voice;
   const cur = main.querySelector("p.cur");
@@ -974,7 +1188,6 @@ const VOICE_ERRORS = {
   "start-failed": "Follow my voice could not start in this browser; try Chrome or Edge. Follow my voice is off.",
 };
 
-// ---------- Link, paste and copy ----------
 function publicBase() {
   return /^https?:$/.test(location.protocol) ? location.origin + location.pathname : `${SITE}/`;
 }
@@ -1139,7 +1352,6 @@ async function loadFile(file) {
   else showAlert(`No sections found in ${file.name}. Each section starts with a title line like: ### **INTRO · 00:00**`);
 }
 
-// ---------- Events ----------
 window.addEventListener("scroll", () => reading.ask(), { passive: true });
 for (const type of ["pointerdown", "keydown", "wheel", "touchstart"]) {
   window.addEventListener(type, () => { cueArmed = true; }, { capture: true, passive: true });
@@ -1225,6 +1437,8 @@ document.addEventListener("click", (e) => {
   else if (action === "hint-ok") hideHint();
   else if (action === "voice-ok") { prefs.save("voiceOk", true); startVoice(); }
   else if (action === "voice-cancel") { voiceNotice.hidden = true; }
+  else if (action === "ask-use") askUse();
+  else if (action === "ask-skip") askSkip();
 });
 // One file input for the start screen and the Open menu.
 fileInput.addEventListener("change", () => {
@@ -1248,6 +1462,7 @@ document.addEventListener("drop", (e) => {
 // Back to an entry without a script link shows the start screen.
 window.addEventListener("popstate", () => { showAlert(""); route(); });
 document.addEventListener("keydown", (e) => {
+  if (askKey(e)) return; // the Producer's cue box, open or waiting, takes its keys first
   if (isEmpty() || document.querySelector("dialog[open]") || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.target.closest("textarea, select, input:not([type=range])")) return;
   const k = e.key;
@@ -1255,8 +1470,8 @@ document.addEventListener("keydown", (e) => {
   if (e.target.matches?.("input[type=range]") && k.startsWith("Arrow")) return;
   // The focused reading line keeps its keys (arrows, Page Up/Down, Home, End).
   if (e.target.closest(".line-handle") && LINE_KEYS.includes(k)) return;
-  // Space on these buttons presses them; on the control bar and the links it still means auto-scroll.
-  if (k === " " && e.target.closest(".note-row, .pop")) return;
+  // Space on these buttons (and the Producer's cue pill, and Use and Skip in its box) presses them; on the control bar and the links it still means auto-scroll.
+  if (k === " " && e.target.closest(".note-row, .pop, .ask-box, .ask-pill")) return;
   if (k === " ") { e.preventDefault(); toggleAuto(); }
   else if (k === "ArrowRight" || k === "PageDown") { e.preventDefault(); goSection(1); }
   else if (k === "ArrowLeft" || k === "PageUp") { e.preventDefault(); goSection(-1); }
@@ -1269,7 +1484,6 @@ document.addEventListener("keydown", (e) => {
   else if (/^[1-9]$/.test(k)) showLink(scripts.now.active, Number(k) - 1, true);
 });
 
-// ---------- Start ----------
 voiceBtn.hidden = !Recognition;
 setLine(prefs.read("line"));
 setSpeed(speed);

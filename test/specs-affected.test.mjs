@@ -13,14 +13,19 @@ const reached = (file) => suitesFor(suites, [file]).toSorted();
 
 test("each change runs the browser suites it can reach, and docs run none", () => {
   assert.deepEqual(reached("src/ui/range-field.css"), ["page", "range-field"], "the slider is on the page too");
-  assert.deepEqual(reached("src/app.js"), ["page"]);
-  assert.deepEqual(reached("fonts/inter-latin.woff2"), ["page"]);
-  assert.deepEqual(reached("scripts/build.mjs"), ["page"]);
+  assert.deepEqual(reached("src/page.html"), ["page", "reading-wrap"]);
+  assert.deepEqual(reached("src/app.js"), ["page", "reading-wrap"]);
+  assert.deepEqual(reached("src/core.mjs"), ["page", "reading-wrap"]);
+  assert.deepEqual(reached("src/settings.mjs"), ["page", "reading-wrap"]);
+  assert.deepEqual(reached("src/open-script.mjs"), ["page"]);
+  assert.deepEqual(reached("fonts/inter-latin.woff2"), ["page", "reading-wrap"]);
+  assert.deepEqual(reached("scripts/build.mjs"), ["page", "reading-wrap"]);
   assert.deepEqual(reached("wrangler.jsonc"), ["page"]);
   assert.deepEqual(reached("test/browser/page.mjs"), ["page"]);
   assert.deepEqual(reached("test/browser/range-field.mjs"), ["range-field"]);
-  assert.deepEqual(reached("scripts/agents/prompter-kit.mjs"), ["page", "range-field"], "the runner reaches every suite");
-  assert.deepEqual(reached("scripts/agents/specs-affected.mjs"), ["page", "range-field"]);
+  assert.deepEqual(reached("test/browser/reading-wrap.mjs"), ["reading-wrap"]);
+  assert.deepEqual(reached("scripts/agents/prompter-kit.mjs"), ["page", "range-field", "reading-wrap"], "the runner reaches every suite");
+  assert.deepEqual(reached("scripts/agents/specs-affected.mjs"), ["page", "range-field", "reading-wrap"]);
   for (const doc of ["src/ui/README.md", "docs/agents/kitchen-extras.md", "README.md"]) assert.deepEqual(reached(doc), [], doc);
   assert.deepEqual(suitesFor(["new-suite"], ["src/app.js"]), ["new-suite"], "a suite not named is reached by src/");
 });

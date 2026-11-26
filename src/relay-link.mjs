@@ -16,6 +16,15 @@ export const RELAY_KEEPALIVE_MS = 45_000;
 /** How often the token's age is checked: past eight hours it is dropped like Disconnect MCP. */
 export const RELAY_EXPIRY_CHECK_MS = 60_000;
 
+/**
+ * The token the Producer page posts to the tab it opened to link (one click sets up both), or null when it
+ * is not shaped like a token (the relay checks the rest). Never read from the address: a link anyone can
+ * send would tie the tab to their agent.
+ */
+export function producerToken(value) {
+  return typeof value === "string" && /^tp1-[0-9a-z]{4,12}-[A-Za-z0-9_-]{20,64}$/.test(value) ? value : null;
+}
+
 /** The wait before reconnect number `retry` (from 0): 1 s doubling to at most 30 s, a quarter either way. */
 export function relayBackoff(retry, random) {
   return Math.min(30000, 1000 * 2 ** retry) * (0.75 + random * 0.5);
@@ -31,8 +40,10 @@ export function relayBackoff(retry, random) {
  *
  * Read: `state` (off, waiting for the agent, on once it said hello or called, elsewhere when a newer tab
  * took the link), `info` (the agent's { name, version }, or null), `token`, `failed` (the last token fetch
- * got nothing). Do: `start()` (picks up a kept token, starts the keepalive and the age check),
- * `prefetchToken()`, `waitForAgent(busy)` (resolves to the token to copy, or null), `useHere()`, `disconnect()`.
+ * got nothing), `producer` (the token came from the Producer). Do: `start()` (picks up a kept token, starts
+ * the keepalive and the age check), `prefetchToken()`, `waitForAgent(busy)` (resolves to the token to copy,
+ * or null), `adopt(token)` (the Producer's token, from producerToken), `useHere()` (Use this tab: take the
+ * link back from the newer tab), `disconnect()`.
  */
 export function relayLink({
   WebSocket = globalThis.WebSocket, fetch = globalThis.fetch, clock = globalThis, now = Date.now, random = Math.random,
@@ -40,7 +51,7 @@ export function relayLink({
 } = {}) {
   // Plain calls: a browser's timers refuse to run on any other object.
   const { setTimeout: later, clearTimeout: cancel, setInterval: every } = clock;
-  const link = { token: null, createdAt: 0, ws: null, state: "off", info: null, retry: 0, timer: 0, failed: false };
+  const link = { token: null, createdAt: 0, producer: false, ws: null, state: "off", info: null, retry: 0, timer: 0, failed: false };
   // Ages here use this tab's clock, counted from when the token arrived.
   let spare = null;
   let spareFetch = null;
@@ -115,6 +126,7 @@ export function relayLink({
     try { ws?.close(1000, "bye"); } catch { /* closed */ }
     link.token = null;
     link.createdAt = 0;
+    link.producer = false;
     link.info = null;
     link.state = "off";
     store.del(STORED.agent);
@@ -160,17 +172,35 @@ export function relayLink({
       if (hasToken()) return null;
       if (!t) { link.failed = true; changed(); return null; }
       link.failed = false;
-      link.token = t.token;
-      link.createdAt = t.at;
-      store.set(STORED.agent, JSON.stringify({ token: link.token, createdAt: link.createdAt }));
-      connect();
+      keep(t.token, t.at, false);
     } else if (!link.ws) connect();
     if (link.state !== "on") link.state = "waiting";
     changed();
     return link.token;
   }
 
-  // Use this tab: take the link back from the newer tab.
+  function keep(token, createdAt, producer) {
+    link.token = token;
+    link.createdAt = createdAt;
+    link.producer = producer;
+    store.set(STORED.agent, JSON.stringify({ token, createdAt, ...(producer ? { producer: true } : {}) }));
+    connect();
+  }
+
+  // Opened from the Producer: its token (producerToken) is kept and connected as Wait for MCP's would be.
+  // A token this tab had before is revoked, so only the agent the Producer set up reaches the tab.
+  function adopt(token) {
+    if (link.token === token && hasToken()) {
+      if (!link.ws) connect();
+    } else {
+      if (link.token) disconnect();
+      link.failed = false;
+      keep(token, now(), true);
+      link.state = "waiting";
+    }
+    changed();
+  }
+
   function useHere() {
     link.state = "waiting";
     connect();
@@ -185,6 +215,7 @@ export function relayLink({
     if (typeof saved?.token === "string" && now() - saved.createdAt < TOKEN_MAX_AGE_MS) {
       link.token = saved.token;
       link.createdAt = saved.createdAt;
+      link.producer = saved.producer === true;
       link.state = "waiting";
       connect();
     } else if (store.get(STORED.agent)) store.del(STORED.agent);
@@ -195,9 +226,11 @@ export function relayLink({
     get info() { return link.info; },
     get token() { return link.token; },
     get failed() { return link.failed; },
+    get producer() { return link.producer; },
     start,
     prefetchToken,
     waitForAgent,
+    adopt,
     useHere,
     disconnect,
   };

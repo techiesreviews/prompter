@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { DEMO_SCRIPT, parse } from "../src/core.mjs";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { commonWord, followStart, followWords, heardLink, sameWord, speechWords, voiceAt, voiceSession, voiceStart, voiceStep } from "../src/follow.mjs";
+import { commonWord, followStart, followWords, heardLink, sameWord, speechWords, voiceAt, voiceHeld, voiceHoldSession, voiceSession, voiceStart, voiceStep, voiceUnheld, VOICE_FREE, VOICE_PAUSE_MS } from "../src/follow.mjs";
 
 const script = [
   "Writing scripts takes too long.",
@@ -313,4 +313,89 @@ test("app.js only feeds results in and draws: the follow decisions live here", (
     assert.ok(!new RegExp(`\\b${name}\\(`).test(app), `app.js calls ${name} itself`);
   }
   assert.match(app, /\bvoiceStep\(/);
+});
+
+test("words heard while the Producer's cue box shows are never followed, also the rest of a phrase begun then", () => {
+  // Feeds speech events as the page does: each is [results, time in ms, whether the box shows]. Returns
+  // the line followed last and the links opened.
+  const links = [{ label: "the demo site", key: "demo", url: "https://example.com/demo" }];
+  const run = (events, voice = voiceStep(lines, voiceStart(0), [said("writing scripts takes")]).voice) => {
+    let hold = VOICE_FREE;
+    let line = voice.follow.line;
+    const opened = [];
+    for (const [results, now, showing] of events) {
+      const next = voiceHeld(hold, results, now, showing);
+      if (next !== hold) { hold = next; continue; }
+      const step = voiceStep(lines, voice, voiceUnheld(results, hold), { links });
+      voice = step.voice;
+      if (step.line >= 0) line = step.line;
+      if (step.link) opened.push(step.link.key);
+    }
+    return { line, opened };
+  };
+  const first = said("writing scripts takes");
+  // The host reads the cue aloud while the box shows ("one question keeps you focused" is also a later
+  // line); the box closes while that phrase is still heard, and the speech service ends it after: in one
+  // result, split, split with its opening heard alone, or with words corrected. None of it is followed.
+  const during = [[first, said("one question", false)], 0, true];
+  const endings = [
+    [[first, said("one question keeps you focused")]],
+    [[first, said("one question"), said(" keeps you focused", false)], [first, said("one question"), said(" keeps you focused")]],
+    [[first, said("one question")], [first, said("one question"), said("keeps you focused")]],
+    [[first, said("won question keeps", false)], [first, said("one question keeps you focused")]],
+  ];
+  for (const ending of endings) {
+    const events = [during, ...ending.map((results, i) => [results, 300 + i * 300, false])];
+    assert.equal(run(events).line, 0, `the rest of the cue's phrase moves nothing: ${JSON.stringify(ending.at(-1).slice(1))}`);
+    // After a pause the host goes on with the script in a new phrase: followed from where they were.
+    const last = ending.at(-1);
+    assert.equal(run([...events, [[...last, said("too long reading them")], 300 + ending.length * 300 + VOICE_PAUSE_MS, false]]).line, 1, "\"too long reading them\", after a pause, is line 1");
+  }
+  assert.ok(voiceStep(lines, voiceStart(0), [first, said("one question keeps you focused")]).line >= 6, "without the hold, the cue's words would jump far down the script");
+  // Nothing heard while the box showed: nothing held.
+  assert.equal(run([[[first, said("too long reading them")], 0, false]]).line, 1, "nothing held: followed at once");
+  assert.deepEqual(voiceUnheld([first], VOICE_FREE), [first], "nothing held: nothing cut");
+  // A link label said while the box showed opens nothing after it closes, finished or not then, nor
+  // continued after it closed; a label said after a pause opens it.
+  const label = [[said("show the demo", false)], 0, true];
+  for (const tail of [[said("show the demo site")], [said("show the"), said("demo site")], [said("show the demo site"), said("now back", false)]]) {
+    assert.deepEqual(run([label, [tail, 400, false]]).opened, [], `the cue's link label opens nothing: ${JSON.stringify(tail)}`);
+  }
+  assert.deepEqual(run([label, [[said("show the demo site")], 400, false], [[said("show the demo site"), said("now the demo site")], 400 + VOICE_PAUSE_MS, false]]).opened, ["demo"], "said again after a pause, it opens");
+  // A gap between two speech result events is not a pause in speaking (the speech service can be slow):
+  // while it has not finished the cue's phrase, the rest is held however late it comes, in one result,
+  // split in two at once, or split with the rest still being heard. A pause counts from the phrase's end.
+  const late = [
+    [[first, said("one question"), said(" keeps you focused")]],
+    [[first, said("one question"), said(" keeps you focused", false)], [first, said("one question"), said(" keeps you focused")]],
+    [[first, said("one question keeps you focused")]],
+  ];
+  for (const ending of late) {
+    const gap = VOICE_PAUSE_MS + 100;
+    const events = [during, ...ending.map((results, i) => [results, gap * (i + 1), false])];
+    const end = gap * ending.length;
+    const last = ending.at(-1);
+    assert.equal(run(events).line, 0, `the rest of the cue's phrase, come late, moves nothing: ${JSON.stringify(last.slice(1))}`);
+    assert.equal(run([...events, [[...last, said("too long reading them")], end + VOICE_PAUSE_MS - 1, false]]).line, 0, "no pause yet since the phrase ended: still held");
+    assert.equal(run([...events, [[...last, said("too long reading them")], end + VOICE_PAUSE_MS, false]]).line, 1, "a pause after the phrase ended: the next phrase is followed");
+  }
+  // Every result finished and then a pause: the hold is over (`hold` itself comes back), box closed or not before.
+  const finished = voiceHeld(VOICE_FREE, [said("one question")], 0, true);
+  assert.deepEqual(finished, { upTo: 1, at: 0, open: false });
+  assert.equal(voiceHeld(finished, [said("one question"), said("too long reading them")], VOICE_PAUSE_MS, false), finished);
+  // A new session (the service restarted) numbers its results from 0 again. Still within a pause of the
+  // cue, its first words are held; after a pause they are followed.
+  const hold = voiceHeld(VOICE_FREE, [said("one question", false)], 0, true);
+  assert.deepEqual(hold, { upTo: 1, at: 0, open: true });
+  const again = voiceHoldSession(finished, 400);
+  assert.deepEqual(again, { upTo: 0, at: 0, open: false }, "a finished phrase: the pause still counts from its end");
+  assert.deepEqual(voiceHeld(again, [said("keeps you focused")], 500, false), { upTo: 1, at: 500, open: false }, "a new session's first words within the pause are still held");
+  assert.equal(voiceHeld(again, [said("too long reading them")], VOICE_PAUSE_MS, false), again, "a new session's first words after a pause are followed");
+  // A session that ended with the cue's phrase unfinished: the phrase is taken as still spoken when the
+  // next session starts, so the pause counts from there (the old session's unfinished result is gone).
+  const cut = voiceHoldSession(hold, 1500);
+  assert.deepEqual(cut, { upTo: 0, at: 1500, open: false });
+  assert.notEqual(voiceHeld(cut, [said("keeps you focused")], 1500 + VOICE_PAUSE_MS - 1, false), cut, "the rest of the phrase, heard by the next session, is held");
+  assert.equal(voiceHeld(cut, [said("too long reading them")], 1500 + VOICE_PAUSE_MS, false), cut, "after a pause the next session is followed");
+  assert.deepEqual(voiceHoldSession(VOICE_FREE, 1500), VOICE_FREE, "nothing held: a new session holds nothing");
 });

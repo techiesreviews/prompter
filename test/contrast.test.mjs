@@ -57,6 +57,11 @@ const PAIRS = [
   ["dim", "panel", "lines and labels on raised surfaces"],
   ["accent", "panel", "late clock, paste errors, links, the start screen's save note"],
   ["ok", "panel", "main screen connected"],
+  // The Producer's cue pill: night text on the kind's colour, 17px bold.
+  ["bg", "ql", "a question's cue pill"],
+  ["bg", "ok", "a talking point's cue pill"],
+  ["bg", "next", "an audience question's cue pill"],
+  ["bg", "accent", "a steer-back cue pill"],
   ["ql", "panel", "active QL box"],
   ["ql-dim", "panel", "other sections' QL box"],
   ["text", "panel-2", "hovered menu items"],

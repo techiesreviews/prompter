@@ -151,6 +151,7 @@
     box-sizing: content-box; max-inline-size: var(--col); margin-inline: auto;
     padding: calc(var(--line) + 10px) 4vw max(70vh, calc(100vh - var(--line)));
     font: 600 var(--size)/var(--line-height) var(--font-body); letter-spacing: -0.01em; text-align: start;
+    overflow-wrap: break-word;
   }
   .section {
     --c-say: var(--dim); --c-ql: var(--ql-dim); --c-next: var(--next-dim); --c-now: var(--dim); --c-link: var(--dim);
@@ -159,12 +160,13 @@
   .section.active { --c-say: var(--text); --c-ql: var(--ql); --c-next: var(--next); --c-now: var(--accent); --c-link: var(--muted); }
   .section :is(p, .title) { transition: color 200ms ease-out, border-color 200ms ease-out; }
   .title {
-    display: flex; align-items: center; gap: 0.35em 0.8em;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 0.35em 0.8em;
     margin: 0 0 0.6em; font: 500 max(13px, 0.3em)/1.3 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--c-say);
   }
   .title::before { content: ""; flex: none; inline-size: 0.6em; block-size: 0.6em; border-radius: 50%; background: var(--c-now); }
+  .title > span:first-child { flex: 1 1 0; min-inline-size: min(100% - 1.4em, 6em); }
   .time:empty { display: none; }
-  .time { flex: none; margin-inline-start: auto; color: var(--muted); background: var(--chip); border-radius: 999px; padding: 0.2em 0.7em; font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
+  .time { flex: none; max-inline-size: 100%; font-size: min(1em, 2rem); overflow-wrap: anywhere; margin-inline-start: auto; color: var(--muted); background: var(--chip); border-radius: 999px; padding: 0.2em 0.7em; font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
   .script p { margin: 0 0 calc(0.25em + var(--room)); }
   .bullet::before { content: "• "; color: var(--c-now); }
   .next { color: var(--c-next); }
@@ -225,7 +227,7 @@
   /* Reconnecting to speech: a short note at the right, just above the
      reading line (over text already read), that never takes clicks. */
   .toast {
-    position: fixed; z-index: 6; inset-block-start: var(--line); inset-inline-end: 16px;
+    position: fixed; z-index: 7; /* above the Producer's cue pill */ inset-block-start: var(--line); inset-inline-end: 16px;
     transform: translateY(calc(-100% - 10px)); max-inline-size: min(380px, calc(100vw - 32px));
     display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 12px;
     font: 500 14px/1.35 var(--font-body); color: var(--text); background: var(--panel);
@@ -242,6 +244,68 @@
     .toast { transition: opacity 300ms linear, visibility 0s linear 300ms; }
     .toast[data-show] { transition: opacity 150ms linear, visibility 0s; }
   }
+
+  /* The Producer's cues (TOOLS-464, the v3 look Lex chose): a small pill in the
+     kind's colour at the end of the reading line, with no border, says one is
+     waiting ("+2" when more are). A tap or Enter opens it in a box centred over
+     the dimmed script, in big type with no label and no border, edge band or
+     ring (Lex, 2026-11-25: never), and dots in the kind's colour show how many
+     wait. With no script open (a live show) the box shows by itself; a tap
+     beside sets it aside behind the pill in the top corner, clear of the start
+     card. The control bar (z-index 20) stays above the veil. Dark page text on each kind's colour is AA. */
+  .ask-pill, .ask-box {
+    --kind: var(--ql);
+    --ask-lift: 0 1px 1px oklch(4% 0.06 282 / 0.5), 0 4px 8px oklch(4% 0.06 282 / 0.4), 0 16px 32px oklch(4% 0.06 282 / 0.3); /* --shadow without its 1px top highlight: no edge line */
+  }
+  :is(.ask-pill, .ask-box)[data-kind="point"] { --kind: var(--ok); }
+  :is(.ask-pill, .ask-box)[data-kind="audience"] { --kind: var(--next); }
+  :is(.ask-pill, .ask-box)[data-kind="steer"] { --kind: var(--accent); }
+  .ask-pill {
+    position: fixed; z-index: 6; inset-block-start: var(--line); inset-inline-end: 16px; translate: 0 -50%;
+    display: inline-flex; align-items: center; gap: 0.45em; padding: 8px 15px; min-block-size: 40px;
+    font: 700 17px/1.2 var(--font-body); color: var(--bg); background: var(--kind);
+    border: 0; border-radius: 999px; box-shadow: var(--ask-lift); cursor: pointer; white-space: nowrap;
+  }
+  .ask-pill:focus-visible { outline: none; filter: brightness(1.15); scale: 1.06; } /* focus shows without a ring (Lex: never a border) */
+  .ask-pill-mark { font-weight: 800; }
+  .ask-more { font-weight: 600; }
+  /* No room right of the text (a phone, a full-width column): just above the
+     reading line, over text already read, so the line itself stays clear. */
+  .ask-pill[data-place="above"] { translate: 0 calc(-100% - 10px); }
+  /* The line dragged too near the top for that (a phone on its side): low on the right, above the control bar. */
+  .ask-pill[data-place="low"] { inset-block: auto calc(88px + env(safe-area-inset-bottom, 0px)); translate: none; }
+  .ask-pill[data-place="corner"] { inset-block-start: calc(16px + env(safe-area-inset-top, 0px)); inset-inline-end: calc(16px + env(safe-area-inset-right, 0px)); translate: none; }
+  /* A start card taller than a small phone starts below the corner pill. */
+  :root:has(.ask-pill[data-place="corner"]:not([hidden])) .empty { padding-block-start: 72px; }
+  /* The Reconnecting note goes above the pill rather than over it. */
+  :root:has(.ask-pill:not([hidden])) .toast { transform: translateY(calc(-100% - 34px)); }
+  :root:has(.ask-pill[data-place="above"]:not([hidden])) .toast { transform: translateY(calc(-100% - 60px)); }
+  .ask-veil { position: fixed; inset: 0; z-index: 15; background: oklch(16% 0.06 282 / 0.82); }
+  .ask-box {
+    position: fixed; z-index: 16; inset: 0; margin: auto; block-size: fit-content;
+    inline-size: min(900px, calc(100vw - 32px)); max-block-size: calc(100dvh - 2 * 104px);
+    display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 22px; padding: 30px 32px 22px;
+    background: var(--panel); border-radius: 16px; box-shadow: var(--ask-lift);
+  }
+  @media (max-height: 520px) { /* a phone on its side: more room for the words, the control bar still clear */
+    .ask-box { inset-block: 12px 84px; max-block-size: calc(100dvh - 96px); gap: 12px; padding: 16px 20px 12px; }
+  }
+  .ask-box:focus { outline: none; } /* no ring or edge on the box (Lex, 2026-11-25); its buttons keep theirs */
+  .ask-text {
+    margin: 0; font: 600 clamp(26px, min(var(--size), 8vw), 72px)/1.25 var(--font-body); letter-spacing: -0.01em;
+    color: var(--text); overflow-wrap: break-word; text-wrap: pretty;
+    overflow-y: auto; overscroll-behavior: contain; /* a long cue scrolls; Skip and Use stay in view */
+  }
+  .ask-foot { display: flex; align-items: center; gap: 10px; }
+  .ask-dots { display: flex; gap: 8px; margin-inline-end: auto; }
+  @media (pointer: coarse) { .ask-pill, .ask-foot .btn { min-block-size: 44px; } } /* 44px targets on phones */
+  .ask-dots span { inline-size: 10px; block-size: 10px; border-radius: 50%; background: var(--chip-hover); }
+  .ask-dots span[data-on] { background: var(--kind); }
+  @media (prefers-reduced-motion: no-preference) {
+    .ask-pill[data-fresh] { animation: ask-in 180ms var(--ease-out); }
+    .ask-box:not([hidden]), .ask-veil:not([hidden]) { animation: ask-in 180ms var(--ease-out); }
+  }
+  @keyframes ask-in { from { opacity: 0; } }
 
   /* Floating control bar, notices and status at the bottom centre. */
   .dock-wrap {
@@ -463,8 +527,20 @@
     <div class="line-handle" role="slider" tabindex="0" aria-orientation="vertical" aria-label="Reading line" aria-valuemin="8" aria-valuemax="75" aria-valuenow="34" aria-valuetext="34% from the top"></div>
   </div>
   <main class="script" aria-label="Script"></main>
+  <button class="ask-pill" type="button" data-kind="question" hidden><span class="ask-pill-mark" aria-hidden="true"></span><span class="ask-pill-name"></span><span class="ask-more"></span></button>
   <!-- Read out through the status line instead, once. -->
   <p class="toast" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg><span class="toast-text"></span></p>
+</div>
+<!-- The Producer's cue, opened: over the script, and by itself over the start screen in a live show. -->
+<div class="ask-veil" hidden></div>
+<div class="ask-box" role="dialog" aria-modal="false" aria-label="From the Producer" data-kind="question" tabindex="-1" hidden>
+  <p class="ask-text" dir="auto"></p>
+  <div class="ask-foot">
+    <span class="ask-dots" aria-hidden="true"></span>
+    <span class="ask-where sr-only"></span>
+    <button class="btn" type="button" data-action="ask-skip" aria-keyshortcuts="Escape">Skip</button>
+    <button class="btn" type="button" data-action="ask-use" aria-keyshortcuts="Enter">Use</button>
+  </div>
 </div>
 <input class="file-input" type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" tabindex="-1" aria-hidden="true">
 

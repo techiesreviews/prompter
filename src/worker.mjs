@@ -6,7 +6,7 @@ import { fromOtherSite, memoryLimiter, refusedBy } from "./guard.mjs";
 import { durableLimiter } from "./limiter.mjs";
 import { handleMcp } from "./mcp.mjs";
 import { checkToken, newToken, relayName, TOKEN_RE } from "./token.mjs";
-import { RELAY_CLOSE, RELAY_PATH, RELAY_PROTOCOL, RELAY_TOKEN_PREFIX, TOKEN_PATH } from "./wire.mjs";
+import { PRODUCER_ORIGINS, RELAY_CLOSE, RELAY_PATH, RELAY_PROTOCOL, RELAY_TOKEN_PREFIX, TOKEN_PATH } from "./wire.mjs";
 
 export { McpLimiter } from "./limiter.mjs";
 export { Relay } from "./relay.mjs";
@@ -18,10 +18,17 @@ const relayGuard = memoryLimiter(30);
 
 const noStore = { "Cache-Control": "no-store", "X-Robots-Tag": "noindex" };
 const reply = (body, status = 200, extra = {}) => Response.json(body, { status, headers: { ...noStore, ...extra } });
-// The tab's routes take this site's requests only, and each one counts against the client's limit (guard.mjs).
-async function refused(request, limiter) {
-  if (fromOtherSite(request)) return reply({ error: "Forbidden" }, 403);
-  return (await refusedBy(request, limiter)) ? reply({ error: "Too many requests" }, 429, { "Retry-After": "60" }) : null;
+// The tab's routes take this site's requests only (a new token also the Producer's page: `allowed`), and
+// each one counts against the client's limit (guard.mjs).
+async function refused(request, limiter, allowed = [], extra = {}) {
+  if (fromOtherSite(request, allowed)) return reply({ error: "Forbidden" }, 403);
+  return (await refusedBy(request, limiter)) ? reply({ error: "Too many requests" }, 429, { "Retry-After": "60", ...extra }) : null;
+}
+
+// CORS for the Producer's page only, so it can read the new token it asked for (one click sets up both).
+function producerCors(request) {
+  const origin = request.headers.get("Origin");
+  return PRODUCER_ORIGINS.includes(origin) ? { "Access-Control-Allow-Origin": origin, Vary: "Origin" } : {};
 }
 
 // A socket that is closed at once, so the tab hears why (`forget` makes it forget the token). No relay object is touched.
@@ -51,11 +58,16 @@ export default {
     }
     if (pathname === TOKEN_PATH) {
       // A new agent token with the Worker's own time inside (see token.mjs). It touches no relay object.
+      const cors = producerCors(request);
+      if (request.method === "OPTIONS") {
+        if (fromOtherSite(request, PRODUCER_ORIGINS)) return reply({ error: "Forbidden" }, 403);
+        return new Response(null, { status: 204, headers: { ...noStore, ...cors, "Access-Control-Allow-Methods": "POST", "Access-Control-Max-Age": "600" } });
+      }
       if (request.method !== "POST") return reply({ error: "Method not allowed" }, 405, { Allow: "POST" });
-      const refusal = await refused(request, tokenGuard);
+      const refusal = await refused(request, tokenGuard, PRODUCER_ORIGINS, cors);
       if (refusal) return refusal;
       const { token, born } = newToken();
-      return reply({ token, createdAt: born });
+      return reply({ token, createdAt: born }, 200, cors);
     }
     if (pathname === RELAY_PATH) {
       if (request.headers.get("Upgrade") !== "websocket") return reply({ error: "Expected a WebSocket" }, 426);
