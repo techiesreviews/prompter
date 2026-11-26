@@ -213,25 +213,38 @@ export function voiceAt(voice, line) {
 }
 
 /**
- * How long the speech must go quiet after the Producer's cue box closes before what is heard is followed
+ * How long the speech must stay quiet after the Producer's cue box closes before what is heard is followed
  * again: a phrase begun while the box showed ends at the first such pause.
  */
 export const VOICE_PAUSE_MS = 1000;
 
 /** Nothing held (the start): every speech result event is followed. */
-export const VOICE_FREE = { upTo: 0, at: -Infinity };
+export const VOICE_FREE = { upTo: 0, at: -Infinity, open: false };
 
 /**
  * What a speech result event holds back from following (the host reads the cue, not the script). `hold`
- * is the hold before (VOICE_FREE at first; a new speech session keeps its time and starts at `upTo` 0),
- * `results` the event's results, `now` its time in ms and `showing` whether the cue box shows. While the
- * box shows, and after it closes until the speech goes quiet for VOICE_PAUSE_MS (the end of a phrase begun
- * while it showed, however the speech service splits or corrects it), the event and all its results are
- * held: a new hold `{ upTo: results.length, at: now }`, and the event is not followed. Otherwise `hold`
- * itself comes back and the event is followed, with voiceUnheld.
+ * is the hold before (VOICE_FREE at first; voiceHoldSession's as a new speech session starts), `results`
+ * the event's results, `now` its time in ms and `showing` whether the cue box shows. While the box shows,
+ * and after it closes until the phrase begun while it showed has ended, the event and all its results are
+ * held: a new hold `{ upTo: results.length, at: now, open }`, `open` when the speech service has not
+ * finished every result yet, and the event is not followed. The phrase has ended once the service has
+ * finished every result and VOICE_PAUSE_MS passes with no event. The time between two events alone is no
+ * pause: the service can be slow, so while a result is unfinished the next event is held however late it
+ * comes, and however the service splits or corrects the phrase. Otherwise `hold` itself comes back and
+ * the event is followed, with voiceUnheld.
  */
 export function voiceHeld(hold, results, now, showing) {
-  return showing || now - hold.at < VOICE_PAUSE_MS ? { upTo: results.length, at: now } : hold;
+  if (!showing && !hold.open && now - hold.at >= VOICE_PAUSE_MS) return hold;
+  return { upTo: results.length, at: now, open: results.some((r) => !r.isFinal) };
+}
+
+/**
+ * The hold as a new speech session starts, at `now` in ms. The session numbers its results from 0 again,
+ * and the old session's unfinished result is gone: a phrase it left unfinished is taken as still spoken
+ * now, so the next VOICE_PAUSE_MS of this session are held too. A finished phrase keeps its own time.
+ */
+export function voiceHoldSession(hold, now) {
+  return { upTo: 0, at: hold.open ? now : hold.at, open: false };
 }
 
 /**

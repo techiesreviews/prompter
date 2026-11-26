@@ -649,7 +649,7 @@ export async function run({ browser, base, mode, dist, out }) {
     assert.equal(await autoState(), "true", "auto-scroll on");
     await pill.click();
     await askBox.waitFor();
-    assert.deepEqual([await pill.isHidden(), await A.locator(".ask-veil").isVisible(), await autoState()], [true, true, "false"], "the box replaces the pill, over a veil; auto-scroll waits");
+    assert.deepEqual([await pill.isHidden(), await A.locator(".ask-veil").isVisible(), await autoState()], [true, true, "true"], "the box replaces the pill, over a veil; auto-scroll is still on, it only waits (checked below)");
     assert.deepEqual(await boxRow(), ["audience", AUD.text, "●○○"]);
     const centred = await askBox.evaluate((b) => { const r = b.getBoundingClientRect(); return [Math.round(r.left + r.width / 2 - innerWidth / 2), Math.round(r.top + r.height / 2 - innerHeight / 2), b === document.activeElement, b.getAttribute("aria-label")]; });
     assert.ok(Math.abs(centred[0]) <= 1 && Math.abs(centred[1]) <= 1, `centred: ${centred}`);
@@ -661,6 +661,19 @@ export async function run({ browser, base, mode, dist, out }) {
     await A.waitForTimeout(400);
     assert.equal(await A.evaluate(() => scrollY), atPause, "the script stands still while the box shows");
     await shot(A, "cue-box-desktop");
+    // Play while the box shows turns auto-scroll off and on as always, and the button shows which (pressed
+    // state, icon and tip); the script waits for the box either way.
+    const playLook = () => A.locator(".dock-btn.auto").evaluate((b) => [b.getAttribute("aria-pressed"), b.dataset.tip, getComputedStyle(b.querySelector(".pause")).display !== "none"]);
+    const PLAY_ON_WAITING = ["true", "Auto-scroll waits for the cue · click to turn it off", true];
+    const PLAY_OFF_WAITING = ["false", "Auto-scroll is off · click to turn it on after the cue", false];
+    assert.deepEqual(await playLook(), PLAY_ON_WAITING, "Play shows auto-scroll on, waiting for the cue");
+    await (await dock(A, ".auto")).click();
+    assert.deepEqual(await playLook(), PLAY_OFF_WAITING, "a click turns it off, and Play shows it");
+    await (await dock(A, ".auto")).click();
+    assert.deepEqual(await playLook(), PLAY_ON_WAITING, "a second click turns it on again, and Play shows it");
+    await A.waitForTimeout(300);
+    assert.equal(await A.evaluate(() => scrollY), atPause, "on or off, the script waits for the box");
+    await askBox.focus(); // back from the Play button, so Enter is Use again
     // The clicker's keys move between the waiting cues, not the sections.
     await A.keyboard.press("ArrowRight");
     assert.deepEqual(await boxRow(), ["point", POINT.text, "○●○"]);
@@ -706,8 +719,27 @@ export async function run({ browser, base, mode, dist, out }) {
     await A.keyboard.press(" ");
     await askBox.waitFor();
     assert.equal(await A.locator(".dock-btn.auto").getAttribute("aria-pressed"), "false", "Space opened the cue, it did not start auto-scroll");
+    // Play turned on while the box shows: it shows on, the script waits, and scrolling starts when the box closes.
+    assert.deepEqual(await playLook(), PLAY_OFF_WAITING);
+    await (await dock(A, ".auto")).click();
+    assert.deepEqual(await playLook(), PLAY_ON_WAITING);
+    const waiting = await A.evaluate(() => scrollY);
+    await A.waitForTimeout(300);
+    assert.equal(await A.evaluate(() => scrollY), waiting, "turned on while the box shows: the script still waits");
     await A.mouse.click(12, 12);
     await askBox.waitFor({ state: "hidden" });
+    await A.waitForFunction((y) => scrollY > y, waiting);
+    assert.deepEqual(await playLook(), ["true", "Pause · Space", true], "the box closed: auto-scroll runs, as Play showed");
+    // Turned off while the box shows: it shows off, and auto-scroll stays off after the box.
+    await pill.click();
+    await askBox.waitFor();
+    await (await dock(A, ".auto")).click();
+    assert.deepEqual(await playLook(), PLAY_OFF_WAITING);
+    await A.mouse.click(12, 12);
+    await askBox.waitFor({ state: "hidden" });
+    const stopped = await A.evaluate(() => scrollY);
+    await A.waitForTimeout(300);
+    assert.deepEqual([await A.evaluate(() => scrollY), await playLook()], [stopped, ["false", "Auto-scroll · Space", false]], "the box closed: auto-scroll stays off, as Play showed");
     // On touch screens the pill, Skip and Use are 44px targets.
     const touchRule = await A.evaluate(() => [...document.styleSheets].flatMap((sheet) => [...sheet.cssRules]).some((r) => r.media?.mediaText === "(pointer: coarse)" && [...r.cssRules].some((x) => /\.ask-pill/.test(x.selectorText) && /\.ask-foot \.btn/.test(x.selectorText) && x.style.minBlockSize === "44px")));
     assert.equal(touchRule, true, "44px touch targets for the pill, Skip and Use");
@@ -775,7 +807,7 @@ export async function run({ browser, base, mode, dist, out }) {
     assert.equal((await agentCall(token, "push_suggestions", { items: [{ kind: "question", text: "x", number: 0 }] })).isError, true, "a bad push is refused");
     await agentCall(token, "push_suggestions", { items: [Q6] });
     await pill.waitFor();
-    ok("the Producer's cues: hidden until the agent pushes; a borderless pill at the end of the reading line, newest on top with +2; a click or Enter opens a centred box with dots over a veil while auto-scroll waits; ← → and Page Up/Down move between cues, a new cue keeps the box on the one being read, Esc skips, Enter and Use use; auto-scroll goes on after; the next push reports used, skipped and asked [6] once; inside a phone window; a tap beside closes it; clear_suggestions hides it; the script never moves");
+    ok("the Producer's cues: hidden until the agent pushes; a borderless pill at the end of the reading line, newest on top with +2; a click or Enter opens a centred box with dots over a veil while auto-scroll waits; Play keeps showing whether auto-scroll is on while the box shows, a click turns it off or on with a tip that says what happens after the cue, and the script does what Play showed once the box closes; ← → and Page Up/Down move between cues, a new cue keeps the box on the one being read, Esc skips, Enter and Use use; auto-scroll goes on after; the next push reports used, skipped and asked [6] once; inside a phone window; a tap beside closes it; clear_suggestions hides it; the script never moves");
 
     // A second tab takes over; Use this tab takes it back.
     const B = await live.newPage();
@@ -1926,26 +1958,27 @@ export async function run({ browser, base, mode, dist, out }) {
     await c.keyboard.press("Escape");
     await c.evaluate(() => window.__speech.say("writing scripts takes"));
     await c.waitForFunction(() => /Writing scripts/.test(document.querySelector("p.cur")?.textContent || ""));
-    // The host reads the cue aloud while the box shows; the browser splits what it is still hearing.
+    // The host reads the cue aloud while the box shows; the browser is still hearing the phrase (one
+    // unfinished result) when the box closes.
     const cueText = "One question keeps you focused.";
     await agentCall(cueToken, "push_suggestions", { items: [{ kind: "point", text: cueText }] });
     await c.locator(".ask-pill").click();
     await c.locator(".ask-box").waitFor();
-    await c.evaluate(() => {
-      const s = window.__speech;
-      const part = (text) => { const r = [{ transcript: text }]; r.isFinal = false; return r; };
-      s.results.push(part("one question"), part(" keeps you focused"));
-      s.instance.onresult({ results: s.results, resultIndex: s.results.length - 1 });
-    });
+    await c.evaluate(() => window.__speech.say("one question keeps", true));
     await c.mouse.click(12, 12); // a tap beside closes the box
     await c.locator(".ask-box").waitFor({ state: "hidden" });
-    // The phrase begun while the box showed ends after it closed: none of it is followed.
-    // The service ends it as two results: its opening alone, then the rest.
-    await c.evaluate(() => { const s = window.__speech; s.results.splice(-2, 2); s.say("one question"); });
-    await c.clock.fastForward(300);
-    await c.evaluate(() => window.__speech.say("keeps you focused"));
+    // The phrase begun while the box showed ends after it closed: none of it is followed. The speech
+    // service is slow (no result for over a second, though the host speaks on: that is no pause) and
+    // then ends the phrase as two results, its opening alone and the rest as a new one.
+    await c.clock.fastForward(1200);
+    await c.evaluate(() => { const s = window.__speech; s.say("one question"); s.say("keeps you focused"); });
     await c.waitForTimeout(300);
-    assert.match(await c.locator("p.cur").textContent(), /Writing scripts/, "the rest of the cue's phrase never moves the script");
+    assert.match(await c.locator("p.cur").textContent(), /Writing scripts/, "the rest of the cue's phrase, come late and split, never moves the script");
+    // Less than a pause after the phrase ended, more words (a later line's) are still held.
+    await c.clock.fastForward(900);
+    await c.evaluate(() => window.__speech.say("short lines guide your eyes"));
+    await c.waitForTimeout(300);
+    assert.match(await c.locator("p.cur").textContent(), /Writing scripts/, "no pause yet: still not followed");
     // After a pause the host goes on with the script: followed from where they were.
     await c.clock.fastForward(1100);
     await c.evaluate(() => window.__speech.say("too long reading"));
@@ -1978,12 +2011,15 @@ export async function run({ browser, base, mode, dist, out }) {
     await c.locator(".ask-pill").click();
     await c.locator(".ask-box").waitFor();
     await viaSettings(c, ".voice"); // off
-    assert.equal(await autoState(), "false", "scrolling waits while the box shows");
+    assert.equal(await autoState(), "true", "auto-scroll is on again, and Play shows it");
+    const held = await c.evaluate(() => scrollY);
+    await c.clock.runFor(500);
+    assert.deepEqual([await c.locator(".ask-box").isVisible(), await c.evaluate(() => scrollY)], [true, held], "scrolling waits while the box shows");
     await c.clock.fastForward("02:05");
     await c.locator(".ask-box").waitFor({ state: "hidden" });
     assert.deepEqual([await c.locator(".ask-pill").isHidden(), await autoState()], [true, "true"], "gone quiet: no box, no pill, scrolling goes on");
     await cued.close();
-    ok("the Producer's cues with Follow my voice: words heard while the box shows (split or not), and the rest of a phrase begun then, are never followed, and following goes on after; voice turned on while a cue shows keeps auto-scroll off until voice goes off, and voice going off while it shows lets scrolling wait for the box; the box and pill hide by themselves two minutes after the last push, and auto-scroll goes on");
+    ok("the Producer's cues with Follow my voice: words heard while the box shows (split or not), and the rest of a phrase begun then, also when it comes late and split, are never followed, and following goes on after the first pause once the phrase has ended; voice turned on while a cue shows keeps auto-scroll off until voice goes off, and voice going off while it shows lets scrolling wait for the box; the box and pill hide by themselves two minutes after the last push, and auto-scroll goes on");
   }
 
   // ---- Links open at the point where they are talked about ----
