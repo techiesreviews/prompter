@@ -360,7 +360,7 @@ let askShowing = false; // the box is on screen
 let askSaid = ""; // the cue last read out, so moving to another reads that one
 let askNewest = ""; // the newest cue the pill showed, so a new one nudges it
 let askPausedAuto = false; // auto-scroll was on when the box came up
-let voiceHold = voiceHeld([]); // what this session heard while the box showed (voiceHeld in src/follow.mjs): never followed
+let voiceHold = VOICE_FREE; // what this session heard while the box showed, and until the next pause after (voiceHeld in src/follow.mjs): never followed
 
 const askLive = () => live && liveLink.state === "on" && ask.shown();
 
@@ -1106,7 +1106,7 @@ function newRecognition(local) {
 }
 const voiceKeeper = Recognition && speechKeeper({
   make: newRecognition,
-  onSession() { scripts.now.voice = voiceSession(scripts.now.voice); voiceHold = voiceHeld([]); }, // a new session numbers its results from 0 again
+  onSession() { scripts.now.voice = voiceSession(scripts.now.voice); voiceHold = { ...voiceHold, upTo: 0 }; }, // a new session numbers its results from 0 again
   onResult: onVoiceResult,
   onReconnecting(on) { if (on) showToast(RECONNECTING); else hideToast(); },
   onLocalFailed() { voiceLocal = false; }, // its language pack went away: ask again next time
@@ -1152,10 +1152,11 @@ function stopVoice(message = "") {
 // which link its label opens; the page marks that line and opens that link.
 function onVoiceResult(e) {
   const script = scripts.now;
-  // While the Producer's cue box shows, the host reads it, not the script: what is heard then is never
-  // followed, and following goes on from the same line once the box closes.
+  // While the Producer's cue box shows, the host reads it, not the script: what is heard then, and until
+  // the speech pauses after it closes, is never followed; following goes on from the same line after.
   const heard = Array.from(e.results, (r) => ({ transcript: r[0].transcript, isFinal: r.isFinal }));
-  if (askShowing) { voiceHold = voiceHeld(heard); return; }
+  const hold = voiceHeld(voiceHold, heard, performance.now(), askShowing);
+  if (hold !== voiceHold) { voiceHold = hold; return; }
   const results = voiceUnheld(heard, voiceHold);
   const { voice, line, link } = voiceStep(script.voiceLines, script.voice, results, { links: voiceLinkCandidates(), shownUrl: script.shownUrl });
   script.voice = voice;

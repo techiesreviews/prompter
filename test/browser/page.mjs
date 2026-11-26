@@ -1940,10 +1940,14 @@ export async function run({ browser, base, mode, dist, out }) {
     await c.mouse.click(12, 12); // a tap beside closes the box
     await c.locator(".ask-box").waitFor({ state: "hidden" });
     // The phrase begun while the box showed ends after it closed: none of it is followed.
-    await c.evaluate(() => { const s = window.__speech; s.results.splice(-2, 2); s.say("one question keeps you focused"); });
+    // The service ends it as two results: its opening alone, then the rest.
+    await c.evaluate(() => { const s = window.__speech; s.results.splice(-2, 2); s.say("one question"); });
+    await c.clock.fastForward(300);
+    await c.evaluate(() => window.__speech.say("keeps you focused"));
     await c.waitForTimeout(300);
     assert.match(await c.locator("p.cur").textContent(), /Writing scripts/, "the rest of the cue's phrase never moves the script");
-    // The host goes on with the script: followed from where they were.
+    // After a pause the host goes on with the script: followed from where they were.
+    await c.clock.fastForward(1100);
     await c.evaluate(() => window.__speech.say("too long reading"));
     await c.waitForFunction(() => /Reading them/.test(document.querySelector("p.cur")?.textContent || ""));
     await viaSettings(c, ".voice"); // off
