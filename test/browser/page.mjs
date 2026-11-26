@@ -1013,8 +1013,28 @@ export async function run({ browser, base, mode, dist, out }) {
     await evil.evaluate(([token]) => window.tab.postMessage({ type: "prompter:token", token }, "*"), [sent]);
     await sleep(300);
     assert.deepEqual([await state(E, ".empty .mcp-action"), await evil.evaluate(() => window.heard.length)], ["off", 0], "another site hears nothing and cannot hand a token");
+    // An old Producer link still kept on this device (its Producer page was closed without Disconnect,
+    // TOOLS-476): a new one-click setup ends it quietly, so the Producer never hears "off" in between.
+    const { token: old } = await (await fetch(`${base}/api/agent-token`, { method: "POST" })).json();
+    const { token: fresh } = await (await fetch(`${base}/api/agent-token`, { method: "POST" })).json();
+    await E.evaluate(([token]) => localStorage.setItem("prompter-agent", JSON.stringify({ token, createdAt: Date.now(), producer: true })), [old]);
+    await E.close();
+    await producer.evaluate(() => { window.heard = []; });
+    const [P3] = await Promise.all([
+      setup.waitForEvent("page"),
+      producer.evaluate(([url, token]) => { window.handOut = token; window.prompterTab = window.open(url, "_blank"); }, [`${base}/#producer`, fresh]),
+    ]);
+    watch(P3, "prompter from the Producer over an old link");
+    await P3.waitForFunction((token) => localStorage.getItem("prompter-agent")?.includes(token), fresh);
+    assert.equal((await agentRpc(fresh, "initialize", { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "claude-code", version: "2.1" } })).status, 200);
+    await producer.waitForFunction(() => window.heard.some(([, d]) => d?.state === "on"));
+    await sleep(300);
+    assert.deepEqual((await producer.evaluate(() => window.heard)).map(([, d]) => [d.type, d.state]), [["prompter:ready", undefined], ["prompter:link", "waiting"], ["prompter:link", "on"]], "the opener hears ready, waiting, on: never off while the old link ends");
+    let oldGone;
+    for (let i = 0; i < 25 && oldGone !== 401; i++) { oldGone = (await agentRpc(old, "tools/list")).status; if (oldGone !== 401) await sleep(200); }
+    assert.deepEqual([oldGone, (await agentRpc(fresh, "tools/list")).status], [401, 200], "the old token is revoked; the new one works");
     await setup.close();
-    ok("one click from the Producer: /api/agent-token answers its address (CORS) and refuses others; #producer leaves the address at once, the tab says ready to the Producer only and takes the token from its answer, connects (waiting, then on), Open says linked to your Producer; the opener hears ready/waiting/on/off, never the token; a live show shows the first question by itself; the Producer's Disconnect ends the link and revokes the token, and before the token comes, none is taken; a token in a sent link and another site's messages are ignored");
+    ok("one click from the Producer: /api/agent-token answers its address (CORS) and refuses others; #producer leaves the address at once, the tab says ready to the Producer only and takes the token from its answer, connects (waiting, then on), Open says linked to your Producer; the opener hears ready/waiting/on/off, never the token; a live show shows the first question by itself; the Producer's Disconnect ends the link and revokes the token, and before the token comes, none is taken; a token in a sent link and another site's messages are ignored; over an old Producer link kept on this device, the opener hears ready/waiting/on (never off) and the old token is revoked");
   }
 
   // Paste from the Open popover.
