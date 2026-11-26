@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { DEMO_SCRIPT, parse } from "../src/core.mjs";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { commonWord, followStart, followWords, heardLink, sameWord, speechWords, voiceAt, voiceHeld, voiceSession, voiceStart, voiceStep, voiceUnheld, VOICE_FREE, VOICE_PAUSE_MS } from "../src/follow.mjs";
+import { commonWord, followStart, followWords, heardLink, sameWord, speechWords, voiceAt, voiceHeld, voiceHoldSession, voiceSession, voiceStart, voiceStep, voiceUnheld, VOICE_FREE, VOICE_PAUSE_MS } from "../src/follow.mjs";
 
 const script = [
   "Writing scripts takes too long.",
@@ -362,7 +362,40 @@ test("words heard while the Producer's cue box shows are never followed, also th
     assert.deepEqual(run([label, [tail, 400, false]]).opened, [], `the cue's link label opens nothing: ${JSON.stringify(tail)}`);
   }
   assert.deepEqual(run([label, [[said("show the demo site")], 400, false], [[said("show the demo site"), said("now the demo site")], 400 + VOICE_PAUSE_MS, false]]).opened, ["demo"], "said again after a pause, it opens");
-  // Still within a pause of the cue a second session (the service restarted) holds on.
+  // A gap between two speech result events is not a pause in speaking (the speech service can be slow):
+  // while it has not finished the cue's phrase, the rest is held however late it comes, in one result,
+  // split in two at once, or split with the rest still being heard. A pause counts from the phrase's end.
+  const late = [
+    [[first, said("one question"), said(" keeps you focused")]],
+    [[first, said("one question"), said(" keeps you focused", false)], [first, said("one question"), said(" keeps you focused")]],
+    [[first, said("one question keeps you focused")]],
+  ];
+  for (const ending of late) {
+    const gap = VOICE_PAUSE_MS + 100;
+    const events = [during, ...ending.map((results, i) => [results, gap * (i + 1), false])];
+    const end = gap * ending.length;
+    const last = ending.at(-1);
+    assert.equal(run(events).line, 0, `the rest of the cue's phrase, come late, moves nothing: ${JSON.stringify(last.slice(1))}`);
+    assert.equal(run([...events, [[...last, said("too long reading them")], end + VOICE_PAUSE_MS - 1, false]]).line, 0, "no pause yet since the phrase ended: still held");
+    assert.equal(run([...events, [[...last, said("too long reading them")], end + VOICE_PAUSE_MS, false]]).line, 1, "a pause after the phrase ended: the next phrase is followed");
+  }
+  // Every result finished and then a pause: the hold is over (`hold` itself comes back), box closed or not before.
+  const finished = voiceHeld(VOICE_FREE, [said("one question")], 0, true);
+  assert.deepEqual(finished, { upTo: 1, at: 0, open: false });
+  assert.equal(voiceHeld(finished, [said("one question"), said("too long reading them")], VOICE_PAUSE_MS, false), finished);
+  // A new session (the service restarted) numbers its results from 0 again. Still within a pause of the
+  // cue, its first words are held; after a pause they are followed.
   const hold = voiceHeld(VOICE_FREE, [said("one question", false)], 0, true);
-  assert.notEqual(voiceHeld({ ...hold, upTo: 0 }, [said("keeps you focused")], 500, false), hold, "a new session's first words within the pause are still held");
+  assert.deepEqual(hold, { upTo: 1, at: 0, open: true });
+  const again = voiceHoldSession(finished, 400);
+  assert.deepEqual(again, { upTo: 0, at: 0, open: false }, "a finished phrase: the pause still counts from its end");
+  assert.deepEqual(voiceHeld(again, [said("keeps you focused")], 500, false), { upTo: 1, at: 500, open: false }, "a new session's first words within the pause are still held");
+  assert.equal(voiceHeld(again, [said("too long reading them")], VOICE_PAUSE_MS, false), again, "a new session's first words after a pause are followed");
+  // A session that ended with the cue's phrase unfinished: the phrase is taken as still spoken when the
+  // next session starts, so the pause counts from there (the old session's unfinished result is gone).
+  const cut = voiceHoldSession(hold, 1500);
+  assert.deepEqual(cut, { upTo: 0, at: 1500, open: false });
+  assert.notEqual(voiceHeld(cut, [said("keeps you focused")], 1500 + VOICE_PAUSE_MS - 1, false), cut, "the rest of the phrase, heard by the next session, is held");
+  assert.equal(voiceHeld(cut, [said("too long reading them")], 1500 + VOICE_PAUSE_MS, false), cut, "after a pause the next session is followed");
+  assert.deepEqual(voiceHoldSession(VOICE_FREE, 1500), VOICE_FREE, "nothing held: a new session holds nothing");
 });

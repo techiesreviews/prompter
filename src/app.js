@@ -85,9 +85,10 @@ let mainWin = null;
 let hintShown = false;
 let hintTimer = 0;
 let clockStart = 0;
-let autoOn = false;
+let autoOn = false; // auto-scroll is on: what Play shows, also while the scrolling waits for the Producer's cue box
 let speed = prefs.read("speed");
 let lastFrame = 0;
+let autoFrame = 0; // the next animation frame of the scrolling, 0 while it does not run
 let voiceOn = false;
 let voiceLocal = false; // this browser recognises speech on this device (no network needed)
 let voiceAsking = null; // the question whether it can, while it is asked
@@ -359,7 +360,6 @@ let askTimer = 0;
 let askShowing = false; // the box is on screen
 let askSaid = ""; // the cue last read out, so moving to another reads that one
 let askNewest = ""; // the newest cue the pill showed, so a new one nudges it
-let askPausedAuto = false; // auto-scroll was on when the box came up
 let voiceHold = VOICE_FREE; // what this session heard while the box showed, and until the next pause after (voiceHeld in src/follow.mjs): never followed
 
 const askLive = () => live && liveLink.state === "on" && ask.shown();
@@ -416,14 +416,12 @@ function drawAsk() {
   for (const covered of [$(".empty"), main, $(".reading-line")]) covered.inert = box;
   if (box && !was) {
     hideHint(); // it sits above the dock and would cover the box's Skip and Use on a phone
-    askPausedAuto = autoOn;
-    setAuto(false);
+    runAuto(); // the scrolling waits while the box shows; Play keeps showing whether auto-scroll is on
     // The box takes the focus however it opened (a live show's by itself too), so Enter means Use and not
     // the button that had it (Disconnect MCP, say).
     askBox.focus({ preventScroll: true });
   } else if (!box && was) {
-    if (askPausedAuto && !isEmpty()) setAuto(true);
-    askPausedAuto = false;
+    runAuto(); // auto-scroll, when it is on, goes on
     // Focus in the box goes off (not to the pill: no ring on it), so Space means auto-scroll again and Enter opens the pill.
     if (askBox.contains(document.activeElement)) document.activeElement.blur();
   }
@@ -956,24 +954,32 @@ function startClock() {
 setInterval(updateClock, 1000);
 
 function tick(ts) {
-  if (!autoOn) return;
   if (lastFrame) window.scrollBy(0, (speed * (ts - lastFrame)) / 1000);
   lastFrame = ts;
-  requestAnimationFrame(tick);
+  autoFrame = requestAnimationFrame(tick);
+}
+// The scrolling runs while auto-scroll is on and the Producer's cue box does not show: the script waits
+// for the box. One chain of frames at most, started afresh here, and Play's tip says which it is.
+function runAuto() {
+  cancelAnimationFrame(autoFrame);
+  lastFrame = 0;
+  autoFrame = autoOn && !askShowing ? requestAnimationFrame(tick) : 0;
+  setAutoTip();
 }
 function setAuto(on) {
   autoOn = on;
-  lastFrame = 0;
   autoBtn.setAttribute("aria-pressed", String(on));
-  setAutoTip();
-  if (on) requestAnimationFrame(tick);
+  runAuto();
 }
 let autoTipTimer = 0;
-// While Follow my voice is on, play is greyed out and its tip says why (no status pops up).
+// While Follow my voice is on, play is greyed out and its tip says why (no status pops up). While the
+// Producer's cue box shows, the tip says what Play's state means after the cue.
 function setAutoTip() {
   autoBtn.setAttribute("aria-disabled", String(voiceOn));
   if (!voiceOn) { clearTimeout(autoTipTimer); autoBtn.removeAttribute("data-show-tip"); }
-  autoBtn.dataset.tip = voiceOn ? "Auto-scroll is off while Follow my voice is on" : autoOn ? "Pause · Space" : "Auto-scroll · Space";
+  autoBtn.dataset.tip = voiceOn ? "Auto-scroll is off while Follow my voice is on"
+    : askShowing ? (autoOn ? "Auto-scroll waits for the cue · click to turn it off" : "Auto-scroll is off · click to turn it on after the cue")
+    : autoOn ? "Pause · Space" : "Auto-scroll · Space";
 }
 function toggleAuto() {
   if (voiceOn) {
@@ -984,13 +990,10 @@ function toggleAuto() {
     autoTipTimer = setTimeout(() => autoBtn.removeAttribute("data-show-tip"), 2000);
     return;
   }
-  // The Producer's cue box shows: the script waits, so Play sets what happens when it closes.
-  if (askShowing) {
-    askPausedAuto = !askPausedAuto;
-    setStatus(askPausedAuto ? "Auto-scroll goes on when the cue closes." : "Auto-scroll stays off when the cue closes.");
-    return;
-  }
   setAuto(!autoOn);
+  // The Producer's cue box shows: the script waits for it, and Play (pressed or not, its icon and its tip)
+  // shows what happens when it closes.
+  if (askShowing) setStatus(autoOn ? "Auto-scroll goes on when the cue closes." : "Auto-scroll stays off when the cue closes.");
 }
 
 // The sliders in Settings: drag them, or type an exact value into their box,
@@ -1106,7 +1109,7 @@ function newRecognition(local) {
 }
 const voiceKeeper = Recognition && speechKeeper({
   make: newRecognition,
-  onSession() { scripts.now.voice = voiceSession(scripts.now.voice); voiceHold = { ...voiceHold, upTo: 0 }; }, // a new session numbers its results from 0 again
+  onSession() { scripts.now.voice = voiceSession(scripts.now.voice); voiceHold = voiceHoldSession(voiceHold, performance.now()); }, // a new session numbers its results from 0 again
   onResult: onVoiceResult,
   onReconnecting(on) { if (on) showToast(RECONNECTING); else hideToast(); },
   onLocalFailed() { voiceLocal = false; }, // its language pack went away: ask again next time
@@ -1127,8 +1130,7 @@ function startVoice() {
     voiceAsking.then((local) => { voiceLocal = local; if (voiceOn) voiceKeeper.useLocal(local); });
   }
   scripts.now.voice = voiceStart(reading.look().line);
-  resumeAuto = autoOn || (askShowing && askPausedAuto); // paused by the cue box: back when voice goes off, not when the box closes
-  if (askShowing) askPausedAuto = false;
+  resumeAuto = autoOn; // also while it waits for the cue box: back when voice goes off, not when the box closes
   setAuto(false);
   setVoiceButton();
   setStatus("Listening. Read your script out loud.");
@@ -1143,8 +1145,7 @@ function stopVoice(message = "") {
   if (message) showAlert(message);
   if (resumeAuto) {
     resumeAuto = false;
-    if (askShowing) askPausedAuto = true; // the cue box shows: auto-scroll goes on when it closes
-    else setAuto(true);
+    setAuto(true); // while the cue box shows, the scrolling waits for it
   }
 }
 
