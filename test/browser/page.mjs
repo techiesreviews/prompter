@@ -933,7 +933,7 @@ export async function run({ browser, base, mode, dist, out }) {
     const setup = await browser.newContext(DESKTOP);
     await setup.addInitScript(NO_SPEECH);
     // The stand-in answers the tab's ready with the token, as the Producer does: a second later, as when its
-    // token request is still on its way when the tab opens.
+    // token request is still on its way when the tab opens (unless `holdToken` is set: the test then posts it by hand).
     const STAND_IN = "<!doctype html><title>Producer stand-in</title><script>window.heard = []; addEventListener('message', (e) => { heard.push([e.origin, e.data]); if (e.data?.type === 'prompter:ready' && e.source === window.prompterTab && !window.holdToken) setTimeout(() => e.source.postMessage({ type: 'prompter:token', token: window.handOut }, e.origin), 1000); });</script>";
     await setup.route(`${PRODUCER}/**`, (route) => route.fulfill({ contentType: "text/html", body: STAND_IN }));
     await setup.route("https://evil.example/**", (route) => route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Another site</title>" }));
@@ -1042,7 +1042,7 @@ export async function run({ browser, base, mode, dist, out }) {
     for (let i = 0; i < 25 && oldGone !== 401; i++) { oldGone = (await agentRpc(old, "tools/list")).status; if (oldGone !== 401) await sleep(200); }
     assert.deepEqual([oldGone, (await agentRpc(fresh, "tools/list")).status], [401, 200], "the old token is revoked; the new one works");
     await setup.close();
-    ok("one click from the Producer: /api/agent-token answers its address (CORS) and refuses others; #producer leaves the address at once, the tab says ready to the Producer only and takes the token from its answer, connects (waiting, then on), Open says linked to your Producer; the opener hears ready/waiting/on/off, never the token; a live show shows the first question by itself; the Producer's Disconnect ends the link and revokes the token, and before the token comes, none is taken; a token in a sent link and another site's messages are ignored; over an old Producer link kept on this device, the opener hears ready/waiting/on (never off) and the old token is revoked");
+    ok("one click from the Producer: /api/agent-token answers its address (CORS) and refuses others; #producer leaves the address at once, the tab says ready to the Producer only and takes the token from its answer, connects (waiting, then on), Open says linked to your Producer; the opener hears ready/waiting/on/off, never the token; a live show shows the first question by itself; the Producer's Disconnect ends the link and revokes the token, and before the token comes, none is taken; a token in a sent link and another site's messages are ignored; over an old Producer link kept on this device, the opener hears ready/waiting/on (never off), the old token is revoked, and the old agent's cue does not come back");
   }
 
   // Paste from the Open popover.
