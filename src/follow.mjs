@@ -213,40 +213,33 @@ export function voiceAt(voice, line) {
 }
 
 /**
- * What this speech session had heard by the last result event while the Producer's cue box showed (the
- * host reads the cue then, not the script), from that event's `results`: `finished`, how many results had
- * ended, and `words`, the words of the phrase still being heard, however the speech service split it
- * into unfinished results.
+ * How long the speech must go quiet after the Producer's cue box closes before what is heard is followed
+ * again: a phrase begun while the box showed ends at the first such pause.
  */
-export function voiceHeld(results) {
-  const finished = results.filter((r) => r.isFinal).length;
-  return { finished, words: results.slice(finished).flatMap((r) => speechWords(r.transcript)) };
+export const VOICE_PAUSE_MS = 1000;
+
+/** Nothing held (the start): every speech result event is followed. */
+export const VOICE_FREE = { upTo: 0, at: -Infinity };
+
+/**
+ * What a speech result event holds back from following (the host reads the cue, not the script). `hold`
+ * is the hold before (VOICE_FREE at first; a new speech session keeps its time and starts at `upTo` 0),
+ * `results` the event's results, `now` its time in ms and `showing` whether the cue box shows. While the
+ * box shows, and after it closes until the speech goes quiet for VOICE_PAUSE_MS (the end of a phrase begun
+ * while it showed, however the speech service splits or corrects it), the event and all its results are
+ * held: a new hold `{ upTo: results.length, at: now }`, and the event is not followed. Otherwise `hold`
+ * itself comes back and the event is followed, with voiceUnheld.
+ */
+export function voiceHeld(hold, results, now, showing) {
+  return showing || now - hold.at < VOICE_PAUSE_MS ? { upTo: results.length, at: now } : hold;
 }
 
 /**
- * `results` with what was heard while the box showed (`held`, from voiceHeld) left empty: the results
- * that had ended, then each result from there on that is still that phrase, whole (the rest of it, ended
- * after the box closed as one result or several, even with words the service corrected): one that starts
- * with a word of it not yet used, or whose words are mostly its words. The first result that is neither,
- * and all after it, are the next phrase and followed. Applied to every later event of the same session, so
- * none of the cue is ever followed, nor opens a link.
+ * `results` with the held ones (the first `hold.upTo`, from voiceHeld) left empty, so none of them is ever
+ * followed, nor opens a link, in any later event of the same session.
  */
-export function voiceUnheld(results, held) {
-  const left = [...held.words];
-  let next = false;
-  return results.map((r, i) => {
-    if (i < held.finished) return { ...r, transcript: "" };
-    if (next) return r;
-    const words = speechWords(r.transcript);
-    const starts = left.includes(words[0]);
-    let shared = 0;
-    for (const word of words) {
-      const at = left.indexOf(word);
-      if (at >= 0) { left.splice(at, 1); shared += 1; }
-    }
-    if (words.length && !starts && shared * 2 <= words.length) { next = true; return r; }
-    return { ...r, transcript: "" };
-  });
+export function voiceUnheld(results, hold) {
+  return results.map((r, i) => (i < hold.upTo ? { ...r, transcript: "" } : r));
 }
 
 /**
