@@ -1942,7 +1942,8 @@ export async function run({ browser, base, mode, dist, out }) {
     await c.waitForFunction(() => /Reading them/.test(document.querySelector("p.cur")?.textContent || ""));
     await viaSettings(c, ".voice"); // off
     await c.keyboard.press("Escape");
-    // Auto-scroll on, a cue opens (scrolling waits), Follow my voice turned on meanwhile: auto-scroll stays off after.
+    // Auto-scroll on, a cue opens (scrolling waits), Follow my voice turned on meanwhile: auto-scroll stays off
+    // when the box closes, and comes back when voice goes off.
     await (await dock(c, ".auto")).click();
     await agentCall(cueToken, "push_suggestions", { items: [{ kind: "steer", text: "Back to the demo." }] });
     await c.locator(".ask-pill").click();
@@ -1953,21 +1954,26 @@ export async function run({ browser, base, mode, dist, out }) {
     await c.locator('.ask-box[data-kind="point"]').waitFor(); // the cue read aloud before still waited
     await c.locator('.ask-box [data-action="ask-skip"]').click();
     await c.locator(".ask-box").waitFor({ state: "hidden" });
-    assert.deepEqual([await c.locator("#settings .voice").getAttribute("aria-pressed"), await c.locator(".dock-btn.auto").getAttribute("aria-pressed")], ["true", "false"], "voice on: auto-scroll does not come back");
+    const autoState = () => c.locator(".dock-btn.auto").getAttribute("aria-pressed");
+    assert.deepEqual([await c.locator("#settings .voice").getAttribute("aria-pressed"), await autoState()], ["true", "false"], "voice on: auto-scroll does not come back with the box closing");
     await viaSettings(c, ".voice"); // off
-    await c.keyboard.press("Escape");
-    // Auto-scroll on, the box open (scrolling waits), then the pushes stop: after two minutes the box and the
-    // pill hide by themselves and auto-scroll goes on.
-    await (await dock(c, ".auto")).click();
+    assert.equal(await autoState(), "true", "voice off: auto-scroll comes back");
+    // Voice on over auto-scroll, a cue opens, then voice goes off (as when the microphone fails) while it shows:
+    // scrolling waits for the box. Then the pushes stop: after two minutes the box and the pill hide by
+    // themselves and auto-scroll goes on.
+    await viaSettings(c, ".voice");
+    if (await c.locator('[data-action="voice-ok"]').isVisible()) await c.locator('[data-action="voice-ok"]').click();
+    assert.equal(await autoState(), "false");
     await agentCall(cueToken, "push_suggestions", { items: [{ kind: "question", text: "What do you build?", number: 1 }] });
     await c.locator(".ask-pill").click();
     await c.locator(".ask-box").waitFor();
-    assert.equal(await c.locator(".dock-btn.auto").getAttribute("aria-pressed"), "false", "scrolling waits while the box shows");
+    await viaSettings(c, ".voice"); // off
+    assert.equal(await autoState(), "false", "scrolling waits while the box shows");
     await c.clock.fastForward("02:05");
     await c.locator(".ask-box").waitFor({ state: "hidden" });
-    assert.deepEqual([await c.locator(".ask-pill").isHidden(), await c.locator(".dock-btn.auto").getAttribute("aria-pressed")], [true, "true"], "gone quiet: no box, no pill, scrolling goes on");
+    assert.deepEqual([await c.locator(".ask-pill").isHidden(), await autoState()], [true, "true"], "gone quiet: no box, no pill, scrolling goes on");
     await cued.close();
-    ok("the Producer's cues with Follow my voice: words heard while the box shows (split or not), and the rest of a phrase begun then, are never followed, and following goes on after; voice turned on while a cue waits keeps auto-scroll off; the box and pill hide by themselves two minutes after the last push, and auto-scroll goes on");
+    ok("the Producer's cues with Follow my voice: words heard while the box shows (split or not), and the rest of a phrase begun then, are never followed, and following goes on after; voice turned on while a cue shows keeps auto-scroll off until voice goes off, and voice going off while it shows lets scrolling wait for the box; the box and pill hide by themselves two minutes after the last push, and auto-scroll goes on");
   }
 
   // ---- Links open at the point where they are talked about ----
