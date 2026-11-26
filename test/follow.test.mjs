@@ -321,10 +321,11 @@ test("words heard while the Producer's cue box shows are never followed, also th
   // the speech service may split what it is still hearing into two results.
   const during = [said("writing scripts takes too long"), said("one question", false), said(" keeps you focused", false)];
   const held = voiceHeld(during);
-  assert.equal(held, 2, "the finished phrase and the one still heard, split or not");
+  assert.deepEqual(held, { finished: 1, words: 5 }, "the finished phrase, and the words of the one still heard, split or not");
   const voice = voiceStep(lines, start, [said("writing scripts takes too long")]).voice;
   // The box closes while the phrase begun during it is still heard, then that phrase ends.
-  for (const after of [[said("writing scripts takes too long"), said("one question keeps", false)], [said("writing scripts takes too long"), said("one question keeps you focused")]]) {
+  const first = said("writing scripts takes too long");
+  for (const after of [[first, said("one question keeps", false)], [first, said("one question keeps you focused")], [first, said("one question"), said(" keeps you focused")], [first, said("one question"), said(" keeps you focused", false)]]) {
     const step = voiceStep(lines, voice, voiceUnheld(after, held));
     assert.equal(step.line, voiceStep(lines, voice, after.slice(0, 1)).line, "the rest of the cue's phrase moves nothing");
     assert.ok(voiceStep(lines, voice, after).line >= 6, "without it, the cue's words would jump far down the script");
@@ -333,7 +334,9 @@ test("words heard while the Producer's cue box shows are never followed, also th
   const next = [said("writing scripts takes too long"), said("one question keeps you focused"), said("reading them")];
   assert.deepEqual(voiceUnheld(next, held).map((r) => r.transcript), ["", "", "reading them"]);
   assert.equal(voiceStep(lines, voice, voiceUnheld(next, held)).line, 1, "\"reading them\" is line 1");
-  assert.deepEqual(voiceUnheld(next, 0), next, "nothing held: nothing cut");
+  assert.deepEqual(voiceUnheld(next, voiceHeld([])), next, "nothing held: nothing cut");
+  const split = [first, said("one question"), said(" keeps you focused"), said("reading them")];
+  assert.deepEqual(voiceUnheld(split, held).map((r) => r.transcript), ["", "", "", "reading them"], "the cue's phrase ended as two results: both left out");
   // A link label said while the box showed opens nothing after it closes, finished or not then.
   const links = [{ label: "the demo site", key: "demo", url: "https://example.com/demo" }];
   const heldLink = voiceHeld([said("show the demo", false)]);

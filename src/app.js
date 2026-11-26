@@ -360,7 +360,7 @@ let askShowing = false; // the box is on screen
 let askSaid = ""; // the cue last read out, so moving to another reads that one
 let askNewest = ""; // the newest cue the pill showed, so a new one nudges it
 let askPausedAuto = false; // auto-scroll was on when the box came up
-let voiceHold = 0; // the results this session began while the box showed (voiceHeld in src/follow.mjs): never followed
+let voiceHold = voiceHeld([]); // what this session heard while the box showed (voiceHeld in src/follow.mjs): never followed
 
 const askLive = () => live && liveLink.state === "on" && ask.shown();
 
@@ -417,7 +417,7 @@ function drawAsk() {
     // the button that had it (Disconnect MCP, say).
     askBox.focus({ preventScroll: true });
   } else if (!box && was) {
-    if (askPausedAuto && !isEmpty() && !voiceOn) setAuto(true); // voice turned on meanwhile: auto-scroll stays off
+    if (askPausedAuto && !isEmpty()) setAuto(true);
     askPausedAuto = false;
     // Focus in the box goes off (not to the pill: no ring on it), so Space means auto-scroll again and Enter opens the pill.
     if (askBox.contains(document.activeElement)) document.activeElement.blur();
@@ -1101,7 +1101,7 @@ function newRecognition(local) {
 }
 const voiceKeeper = Recognition && speechKeeper({
   make: newRecognition,
-  onSession() { scripts.now.voice = voiceSession(scripts.now.voice); voiceHold = 0; }, // a new session numbers its results from 0 again
+  onSession() { scripts.now.voice = voiceSession(scripts.now.voice); voiceHold = voiceHeld([]); }, // a new session numbers its results from 0 again
   onResult: onVoiceResult,
   onReconnecting(on) { if (on) showToast(RECONNECTING); else hideToast(); },
   onLocalFailed() { voiceLocal = false; }, // its language pack went away: ask again next time
@@ -1122,7 +1122,8 @@ function startVoice() {
     voiceAsking.then((local) => { voiceLocal = local; if (voiceOn) voiceKeeper.useLocal(local); });
   }
   scripts.now.voice = voiceStart(reading.look().line);
-  resumeAuto = autoOn;
+  resumeAuto = autoOn || (askShowing && askPausedAuto); // paused by the cue box: back when voice goes off, not when the box closes
+  if (askShowing) askPausedAuto = false;
   setAuto(false);
   setVoiceButton();
   setStatus("Listening. Read your script out loud.");
@@ -1135,7 +1136,11 @@ function stopVoice(message = "") {
   setVoiceButton();
   main.querySelector("p.cur")?.classList.remove("cur");
   if (message) showAlert(message);
-  if (resumeAuto) { resumeAuto = false; setAuto(true); }
+  if (resumeAuto) {
+    resumeAuto = false;
+    if (askShowing) askPausedAuto = true; // the cue box shows: auto-scroll goes on when it closes
+    else setAuto(true);
+  }
 }
 
 // Each speech result event goes to voiceStep (src/follow.mjs), which decides where the voice is and

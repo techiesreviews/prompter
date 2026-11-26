@@ -213,23 +213,30 @@ export function voiceAt(voice, line) {
 }
 
 /**
- * How many results of this speech session were begun by the last result event while the Producer's cue
- * box showed (the host reads the cue then, not the script), from that event's `results`: the finished
- * ones, plus one for the phrase still being heard, which the speech service may show as several
- * unfinished results but ends as one.
+ * What this speech session had heard by the last result event while the Producer's cue box showed (the
+ * host reads the cue then, not the script), from that event's `results`: `finished`, how many results had
+ * ended, and `words`, how many words the phrase still being heard had, however the speech service split
+ * it into unfinished results.
  */
 export function voiceHeld(results) {
   const finished = results.filter((r) => r.isFinal).length;
-  return finished + (finished < results.length ? 1 : 0);
+  return { finished, words: results.slice(finished).reduce((n, r) => n + speechWords(r.transcript).length, 0) };
 }
 
 /**
- * `results` with the first `held` of the session (voiceHeld) left empty: each phrase begun before the
- * box closed stays empty also as it goes on and ends after. Applied to every later event of the same
- * session, so none of their words is ever followed, nor opens a link; the next phrase is followed.
+ * `results` with what was heard while the box showed (`held`, from voiceHeld) left empty: the results
+ * that had ended, then results from there on until they hold the words of the phrase still heard then,
+ * each one whole (the rest of that phrase, ended after the box closed, as one result or several). Applied
+ * to every later event of the same session, so none of it is ever followed, nor opens a link; the next
+ * phrase is followed.
  */
 export function voiceUnheld(results, held) {
-  return results.map((r, i) => (i < held ? { ...r, transcript: "" } : r));
+  let words = held.words;
+  return results.map((r, i) => {
+    if (i >= held.finished && words <= 0) return r;
+    if (i >= held.finished) words -= speechWords(r.transcript).length;
+    return { ...r, transcript: "" };
+  });
 }
 
 /**
