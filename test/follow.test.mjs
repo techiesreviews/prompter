@@ -321,7 +321,7 @@ test("words heard while the Producer's cue box shows are never followed, also th
   // the speech service may split what it is still hearing into two results.
   const during = [said("writing scripts takes too long"), said("one question", false), said(" keeps you focused", false)];
   const held = voiceHeld(during);
-  assert.deepEqual(held, { finished: 1, words: 5 }, "the finished phrase, and the words of the one still heard, split or not");
+  assert.deepEqual(held, { finished: 1, words: ["one", "question", "keeps", "you", "focused"] }, "the finished phrase, and the words of the one still heard, split or not");
   const voice = voiceStep(lines, start, [said("writing scripts takes too long")]).voice;
   // The box closes while the phrase begun during it is still heard, then that phrase ends.
   const first = said("writing scripts takes too long");
@@ -337,6 +337,12 @@ test("words heard while the Producer's cue box shows are never followed, also th
   assert.deepEqual(voiceUnheld(next, voiceHeld([])), next, "nothing held: nothing cut");
   const split = [first, said("one question"), said(" keeps you focused"), said("reading them")];
   assert.deepEqual(voiceUnheld(split, held).map((r) => r.transcript), ["", "", "", "reading them"], "the cue's phrase ended as two results: both left out");
+  // The service corrects the cue's words when the phrase ends ("log in" becomes "login"): still left out,
+  // and the next phrase is followed.
+  const corrected = voiceHeld([said("one question log in", false)]);
+  for (const tail of [said("reading them"), said("reading them", false)]) {
+    assert.deepEqual(voiceUnheld([said("one question login"), tail], corrected).map((r) => r.transcript), ["", "reading them"], "a corrected cue phrase is still left out, the next one followed");
+  }
   // A link label said while the box showed opens nothing after it closes, finished or not then.
   const links = [{ label: "the demo site", key: "demo", url: "https://example.com/demo" }];
   const heldLink = voiceHeld([said("show the demo", false)]);

@@ -215,26 +215,36 @@ export function voiceAt(voice, line) {
 /**
  * What this speech session had heard by the last result event while the Producer's cue box showed (the
  * host reads the cue then, not the script), from that event's `results`: `finished`, how many results had
- * ended, and `words`, how many words the phrase still being heard had, however the speech service split
- * it into unfinished results.
+ * ended, and `words`, the words of the phrase still being heard, however the speech service split it
+ * into unfinished results.
  */
 export function voiceHeld(results) {
   const finished = results.filter((r) => r.isFinal).length;
-  return { finished, words: results.slice(finished).reduce((n, r) => n + speechWords(r.transcript).length, 0) };
+  return { finished, words: results.slice(finished).flatMap((r) => speechWords(r.transcript)) };
 }
 
 /**
  * `results` with what was heard while the box showed (`held`, from voiceHeld) left empty: the results
- * that had ended, then results from there on until they hold the words of the phrase still heard then,
- * each one whole (the rest of that phrase, ended after the box closed, as one result or several). Applied
- * to every later event of the same session, so none of it is ever followed, nor opens a link; the next
- * phrase is followed.
+ * that had ended, then each result from there on that is still that phrase, whole (the rest of it, ended
+ * after the box closed as one result or several, even with words the service corrected): one that starts
+ * with a word of it not yet used, or whose words are mostly its words. The first result that is neither,
+ * and all after it, are the next phrase and followed. Applied to every later event of the same session, so
+ * none of the cue is ever followed, nor opens a link.
  */
 export function voiceUnheld(results, held) {
-  let words = held.words;
+  const left = [...held.words];
+  let next = false;
   return results.map((r, i) => {
-    if (i >= held.finished && words <= 0) return r;
-    if (i >= held.finished) words -= speechWords(r.transcript).length;
+    if (i < held.finished) return { ...r, transcript: "" };
+    if (next) return r;
+    const words = speechWords(r.transcript);
+    const starts = left.includes(words[0]);
+    let shared = 0;
+    for (const word of words) {
+      const at = left.indexOf(word);
+      if (at >= 0) { left.splice(at, 1); shared += 1; }
+    }
+    if (words.length && !starts && shared * 2 <= words.length) { next = true; return r; }
     return { ...r, transcript: "" };
   });
 }
