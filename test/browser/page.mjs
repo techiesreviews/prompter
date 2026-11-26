@@ -734,6 +734,7 @@ export async function run({ browser, base, mode, dist, out }) {
     await agentCall(token, "push_suggestions", { items: [longLink] });
     await A.keyboard.press("ArrowLeft");
     assert.ok((await boxRow())[1].startsWith("https://"), "on the link cue");
+    assert.equal(await askBox.locator(".ask-text").evaluate((t) => t.scrollTop), 0, "another cue starts at its top, not where the long one was scrolled to");
     assert.deepEqual(await askBox.evaluate((b) => [b.scrollWidth <= b.clientWidth, b.querySelector(".ask-text").scrollWidth <= b.querySelector(".ask-text").clientWidth]), [true, true], "a long link wraps");
     await A.keyboard.press("Escape"); // skips the link cue
     // A tap beside the box closes it; the cue waits behind the pill again.
@@ -798,6 +799,11 @@ export async function run({ browser, base, mode, dist, out }) {
     await liveBox.waitFor();
     assert.deepEqual([await livePill.isVisible(), await liveBox.locator(".ask-text").textContent(), await liveBox.evaluate((b) => b === document.activeElement)], [false, POINT.text, true], "no pill: the box by itself, the newest first, with the focus");
     await shot(B, "cue-box-live-desktop");
+    for (const key of ["Shift+Tab", "Tab", "Tab"]) {
+      await B.keyboard.press(key);
+      assert.equal(await B.evaluate(() => Boolean(document.activeElement?.closest(".empty, .script"))), false, `${key} never reaches what the veil covers`);
+    }
+    await liveBox.focus();
     await B.keyboard.press("Enter");
     await B.waitForFunction((t) => document.querySelector(".ask-box .ask-text").textContent === t, AUD.text);
     assert.equal(await state(B, ".empty .mcp-action"), "on", "Enter used the cue, it did not press Disconnect MCP");
