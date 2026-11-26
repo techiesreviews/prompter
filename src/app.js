@@ -487,6 +487,7 @@ askVeil.addEventListener("click", () => { ask.close(); drawAsk(); });
 // the code below gives it the page's two tools and draws its state. An offline copy (file://) has no relay:
 // its Copy MCP copies the open server's message, which answers with a link instead.
 const live = /^https?:$/.test(location.protocol);
+let cueToken = null; // the token the cues came through
 const liveLink = relayLink({
   WebSocket,
   fetch,
@@ -520,8 +521,10 @@ const liveLink = relayLink({
     },
   },
   changed: () => {
-    // Disconnect MCP (or the token's end) also ends the cues: nobody is left to hear what was used.
-    if (liveLink.state === "off") ask.clear();
+    // Disconnect MCP (or the token's end) also ends the cues: nobody is left to hear what was used. So does a
+    // new token (a Producer link that replaced the old one quietly): the old agent's cues go with it.
+    if (liveLink.state === "off" || liveLink.token !== cueToken) ask.clear();
+    cueToken = liveLink.token;
     renderAgent();
     drawAsk();
     tellProducer();
@@ -533,7 +536,11 @@ const liveLink = relayLink({
 // this tab's link too. Only that page, at its own address, hears it or is heard.
 let producerOpener = null;
 let toldProducer = "";
+// A tab the Producer opened to link (`#producer`) says ready to that page and takes the token only from its
+// answer, once: never from the address, where a link anyone can send would tie this tab to their agent.
+let producerWaiting = false;
 function tellProducer() {
+  if (producerWaiting) return; // an older link this tab still had is none of that Producer's business until its token comes
   if (!producerOpener && liveLink.producer && window.opener) producerOpener = window.opener;
   if (!producerOpener) return;
   const state = liveLink.state;
@@ -544,9 +551,6 @@ function tellProducer() {
   }
   if (state === "off") producerOpener = null; // the link ended: the next one starts fresh
 }
-// A tab the Producer opened to link (`#producer`) says ready to that page and takes the token only from its
-// answer, once: never from the address, where a link anyone can send would tie this tab to their agent.
-let producerWaiting = false;
 window.addEventListener("message", (e) => {
   if (!PRODUCER_ORIGINS.includes(e.origin) || !e.source || e.source !== window.opener) return;
   const type = e.data?.type;

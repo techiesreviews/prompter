@@ -100,8 +100,9 @@ function setup({ store = fakeStore(), tools = {}, random = () => 0.5 } = {}) {
   const ws = fakeSockets();
   const tokens = fakeTokens();
   let draws = 0;
-  const link = relayLink({ WebSocket: ws.WebSocket, fetch: tokens.fetch, clock: time.clock, now: time.now, random, store, url: URL_, tools, changed: () => { draws++; } });
-  return { link, time, ws, tokens, store, draws: () => draws };
+  const states = [];
+  const link = relayLink({ WebSocket: ws.WebSocket, fetch: tokens.fetch, clock: time.clock, now: time.now, random, store, url: URL_, tools, changed: () => { draws++; states.push(link.state); } });
+  return { link, time, ws, tokens, store, draws: () => draws, states };
 }
 
 test("backoff doubles from 1 s to at most 30 s, with a quarter either way of jitter", () => {
@@ -447,4 +448,31 @@ test("a new Producer link replaces the token this tab had: the old one is revoke
   link.disconnect();
   await link.waitForAgent();
   assert.equal(link.producer, false);
+});
+
+test("a new Producer link over an old Producer link still kept on this device ends the old one quietly: never off in between (TOOLS-476)", async () => {
+  const OLD = `tp1-${"m0old0001"}-${"B".repeat(43)}`;
+  const time = fakeClock();
+  const s = setup({ store: fakeStore({ [STORED.agent]: JSON.stringify({ token: OLD, createdAt: time.now(), producer: true }) }) });
+  s.link.start();
+  const old = s.ws.last();
+  old.open();
+  old.receive({ type: "agent", name: "Old agent" });
+  assert.deepEqual([s.link.state, s.link.producer, s.link.info.name], ["on", true, "Old agent"]);
+  s.states.length = 0;
+  s.link.adopt(HANDED);
+  assert.deepEqual(s.states, ["waiting"], "the page is never told off while the old link ends");
+  assert.deepEqual([s.link.state, s.link.token, s.link.producer, s.link.info], ["waiting", HANDED, true, null], "the old agent's name goes with it");
+  assert.deepEqual(old.sent, [{ type: "revoke" }], "the old token is revoked");
+  assert.deepEqual(JSON.parse(s.store.get(STORED.agent)), { token: HANDED, createdAt: time.now(), producer: true });
+  // A late message on the old socket changes nothing; its socket closes once the revoke is out.
+  old.receive({ type: "agent", name: "Old agent" });
+  await s.time.advance(300);
+  assert.deepEqual([s.link.state, old.closedWith?.code], ["waiting", 1000]);
+  s.ws.last().open();
+  s.ws.last().receive({ type: "agent", name: "Claude Code" });
+  assert.deepEqual(s.states, ["waiting", "on"]);
+  // Disconnect MCP afterwards still says off.
+  s.link.disconnect();
+  assert.equal(s.states.at(-1), "off");
 });
