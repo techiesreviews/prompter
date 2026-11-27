@@ -20,7 +20,8 @@
     --size: 52px;
     --col: 960px;
     --line: 34vh; /* the reading line's distance from the top; app.js sets it in px */
-    --strip: clamp(240px, 22vw, 320px); /* Text only's "what happens next" strip on a wide screen */
+    --col-room: 960px; /* the column's width as a length, for the room beside it */
+    --strip: clamp(200px, calc((100vw - var(--col-room)) / 2 - 32px), 300px); /* Text only's "what happens next" strip on a wide screen: the room beside the column, within limits */
     --bg: oklch(16% 0.06 282);          /* --color-night, #0b0826 */
     --panel: oklch(24% 0.066 282);      /* raised: night l+0.08, c×1.1 */
     --panel-2: oklch(27% 0.069 282);    /* raised hover: night l+0.11, c×1.15 */
@@ -49,8 +50,8 @@
     --line-height: 1.65;
     --para: 2;
   }
-  :root[data-width="narrow"] { --col: 600px; }
-  :root[data-width="full"] { --col: none; }
+  :root[data-width="narrow"] { --col: 600px; --col-room: 600px; }
+  :root[data-width="full"] { --col: none; --col-room: 100vw; }
   /* Rows of one paragraph a quarter of the text size apart; paragraphs by the paragraph spacing. */
   :root { --row-gap: calc(var(--size) * 0.25); --para-space: calc(var(--size) * var(--para)); }
 
@@ -243,11 +244,13 @@
     font: 500 13px/1.4 var(--font-body); color: var(--muted);
   }
   .next-up[hidden] { display: none; }
-  @media (min-width: 1000px) {
-    :root[data-next-up] .script { padding-inline: max(4vw, calc(var(--strip) + 32px)); }
+  /* The column keeps its set width where the strip fits beside it, and narrows only as much as the strip
+     needs, centred all the same. Under 1240px wide the card at the top takes the strip's place. */
+  @media (width >= 1240px) {
+    :root[data-next-up] .script { max-inline-size: min(var(--col-room), 100% - 2 * (var(--strip) + 32px)); }
   }
   .next-up-label { margin: 0 0 6px; font: 500 11px/1.3 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
-  .next-up .next-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+  .next-up .next-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; outline: 0; } /* focused only to keep the keyboard here after Open */
   .next-up li { display: flex; align-items: baseline; gap: 0 6px; }
   .next-up li[data-state="done"] { color: var(--text); }
   .sw-kind { flex: none; font: 500 11px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
@@ -261,13 +264,14 @@
   .redo:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   @media (pointer: coarse) { .redo { min-block-size: 44px; } }
   .sw-end { block-size: 0; }
-  @media (max-width: 999px) {
+  @media (width < 1240px) {
     .next-up {
       inset-block-start: calc(8px + env(safe-area-inset-top, 0px)); inset-inline: 8px; inline-size: auto;
       padding: 8px 12px; font-size: 12px; background: var(--panel); border-radius: 14px;
       box-shadow: 0 1px 1px oklch(4% 0.06 282 / 0.5), 0 4px 8px oklch(4% 0.06 282 / 0.4), 0 16px 32px oklch(4% 0.06 282 / 0.3); /* no 1px top highlight: no edge line */
     }
     .next-up[data-low] { inset-block: auto calc(var(--dock-h, 88px) + 8px); } /* above the control bar and any note over it */
+    :root:has(.ask-pill[data-place="low"]:not([hidden])) .next-up[data-low] { inset-block-end: max(calc(var(--dock-h, 88px) + 8px), calc(136px + env(safe-area-inset-bottom, 0px))); } /* and above the low cue pill */
     .next-up-label { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); white-space: nowrap; }
     .next-up .next-list { gap: 2px; }
     .next-up li:nth-child(n+3) { display: none; }
@@ -579,7 +583,7 @@
     <div class="line-handle" role="slider" tabindex="0" aria-orientation="vertical" aria-label="Reading line" aria-valuemin="8" aria-valuemax="75" aria-valuenow="34" aria-valuetext="34% from the top"></div>
   </div>
   <main class="script" aria-label="Script"></main>
-  <aside class="next-up" aria-labelledby="next-up-label" hidden><h2 class="next-up-label" id="next-up-label">What happens next</h2><ol class="next-list"></ol></aside>
+  <aside class="next-up" aria-labelledby="next-up-label" hidden><h2 class="next-up-label" id="next-up-label">What happens next</h2><ol class="next-list" tabindex="-1"></ol></aside>
   <button class="ask-pill" type="button" data-kind="question" hidden><span class="ask-pill-mark" aria-hidden="true"></span><span class="ask-pill-name"></span><span class="ask-more"></span></button>
   <!-- Read out through the status line instead, once. -->
   <p class="toast" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg><span class="toast-text"></span></p>

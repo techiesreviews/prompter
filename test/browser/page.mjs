@@ -3890,6 +3890,8 @@ export async function run({ browser, base, mode, dist, out }) {
     await M.locator(".next-up .redo").click();
     await M.waitForFunction(() => window.__screen.visits.at(-1) === "https://patchstack.com", null, { timeout: 2000 });
     await M.waitForFunction(() => !document.querySelector('.next-up li[data-state="missed"]'));
+    assert.equal(await M.evaluate(() => Boolean(document.activeElement?.closest(".next-up"))), true, "Open's row went, and the keyboard stays in the strip");
+    assert.equal(await M.locator(".next-up .sw-what").first().getAttribute("title"), await M.locator(".next-up .sw-what").first().textContent(), "a name cut at two lines shows in full on hover");
     await missCtx.close();
     ok("Text only, missed: with no main screen, or one cut off, the page's row says Missed (also after a later cue) and nothing opens by itself; its Open button opens it by hand");
 
@@ -3974,6 +3976,38 @@ export async function run({ browser, base, mode, dist, out }) {
     assert.deepEqual(high, { open: true, missed: true, clear: true, hint: true, uncovered: true }, "Missed and Open in view; the card clear of the reading line and above the main screen note");
     await shot(TH, "text-only-mobile-high-line");
     await highPhone.close();
+    // The Producer's cue pill on a phone with the line high: the card never covers the pill or the line,
+    // with the pill just above the line, or low above the control bar on a short screen.
+    if (mode === "wrangler") {
+      const { token: stripToken } = await (await fetch(`${base}/api/agent-token`, { method: "POST" })).json();
+      const pillPhone = await browser.newContext(MOBILE);
+      await pillPhone.addInitScript(([t]) => {
+        localStorage.setItem("prompter-text-only", "on");
+        localStorage.setItem("prompter-line", "0.12");
+        if (!localStorage.getItem("prompter-agent")) localStorage.setItem("prompter-agent", JSON.stringify({ token: t, createdAt: Date.now() }));
+      }, [stripToken]);
+      const TQ = await pillPhone.newPage();
+      watch(TQ, "text only phone, cue pill");
+      await TQ.goto(textOnlyLink);
+      await TQ.locator(".section").first().waitFor();
+      assert.equal((await agentRpc(stripToken, "initialize", { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "claude-code", version: "2.1" } })).status, 200);
+      await TQ.waitForFunction(() => document.querySelector(".open-btn").dataset.dot === "on");
+      await agentCall(stripToken, "push_suggestions", { items: [{ kind: "point", text: "The cookie is the proof of login." }] });
+      await TQ.locator(".ask-pill").waitFor();
+      const apart = () => TQ.evaluate(() => {
+        const box = (sel) => document.querySelector(sel).getBoundingClientRect();
+        const card = box(".next-up");
+        const pill = box(".ask-pill");
+        const y = box(".reading-line").top;
+        const overlap = !(card.bottom <= pill.top || card.top >= pill.bottom || card.right <= pill.left || card.left >= pill.right);
+        return { place: document.querySelector(".ask-pill").dataset.place, overlap, clear: card.bottom < y || card.top > y + 60 };
+      });
+      assert.deepEqual(await apart(), { place: "above", overlap: false, clear: true }, "the pill just above the line, the card clear of both");
+      await TQ.setViewportSize({ width: 390, height: 440 });
+      await TQ.waitForFunction(() => document.querySelector(".ask-pill").dataset.place === "low");
+      assert.deepEqual(await apart(), { place: "low", overlap: false, clear: true }, "on a short screen the pill goes low, and the card above it");
+      await pillPhone.close();
+    }
     // A script with nothing hidden: Text only draws the column exactly where Everything does.
     const plainCtx = await browser.newContext(DESKTOP);
     await plainCtx.addInitScript(() => { localStorage.setItem("prompter-text-only", "on"); });
@@ -3987,6 +4021,38 @@ export async function run({ browser, base, mode, dist, out }) {
     await viaSettings(TPl, 'input[name="show"][value="all"]');
     assert.deepEqual(await colBox(), textOnlyBox, "the column stays where Everything puts it");
     await plainCtx.close();
+    // Beside the strip the column keeps the width the reader chose wherever the strip fits beside it, and
+    // never loses much of it; under 1240px wide the card takes the strip's place and the column stays as is.
+    const widthCtx = await browser.newContext(DESKTOP);
+    const TW = await widthCtx.newPage();
+    watch(TW, "text only widths");
+    await TW.goto(textOnlyLink);
+    await TW.locator(".section").first().waitFor();
+    const colWidth = () => TW.evaluate(() => {
+      const m = document.querySelector(".script");
+      const cs = getComputedStyle(m);
+      const strip = document.querySelector(".next-up").getBoundingClientRect();
+      const right = Math.max(...[...document.querySelectorAll("[data-k]")].map((el) => el.getBoundingClientRect().right));
+      return { w: Math.round(m.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)), side: getComputedStyle(document.querySelector(".next-up")).backgroundColor === "rgba(0, 0, 0, 0)", clear: strip.width === 0 || strip.left >= right || strip.bottom <= document.querySelector(".reading-line").getBoundingClientRect().top };
+    });
+    for (const [width, height, choice] of [[1920, 1080, "medium"], [1440, 900, "medium"], [1280, 800, "medium"], [1280, 800, "narrow"], [1024, 768, "medium"], [1920, 1080, "full"]]) {
+      await TW.setViewportSize({ width, height });
+      await viaSettings(TW, `input[name="width"][value="${choice}"]`);
+      await viaSettings(TW, 'input[name="show"][value="all"]');
+      const all = await colWidth();
+      await viaSettings(TW, 'input[name="show"][value="text"]');
+      const text = await colWidth();
+      const at = `${width}px, ${choice} width`;
+      assert.equal(text.clear, true, `${at}: the strip covers no word`);
+      if (width < 1240) assert.deepEqual([text.side, text.w], [false, all.w], `${at}: the card, and the column as in Everything`);
+      else {
+        assert.equal(text.side, true, `${at}: the strip beside the text`);
+        assert.ok(text.w >= 0.8 * all.w, `${at}: the column keeps most of its width (${text.w} of ${all.w}px)`);
+        const room = (width - all.w) / 2;
+        if (room >= 232) assert.equal(text.w, all.w, `${at}: with room for the strip the column keeps its width`);
+      }
+    }
+    await widthCtx.close();
     ok("Text only on a phone: the strip is a compact card at the top with two rows, above the reading line; nothing scrolls sideways");
   }
 

@@ -515,11 +515,12 @@ function drawAsk() {
 // dragged too high for that (over text still far off), so it never covers the line being read. On the start screen (a live show set aside) it waits in the top
 // corner, clear of the start card.
 function placePill() {
-  if (askPill.hidden) return;
+  if (askPill.hidden) return placeNext(); // Text only's card may move back up
   const right = main.getBoundingClientRect().right - parseFloat(getComputedStyle(main).paddingInlineEnd);
   const room = document.documentElement.clientWidth - right;
   const above = parseFloat(getComputedStyle(root).getPropertyValue("--line")) - 10 - askPill.offsetHeight;
   askPill.dataset.place = isEmpty() ? "corner" : room >= askPill.offsetWidth + 16 + 12 ? "line" : above >= 8 ? "above" : "low";
+  placeNext(); // in the corner, the pill pushes Text only's card down
 }
 new ResizeObserver(placePill).observe(main);
 window.addEventListener("resize", placePill); // the column keeps its width while the window narrows
@@ -773,8 +774,7 @@ function setLine(frac, keepText = false) {
   const y = Math.round(viewHeight() * lineFrac);
   const delta = reading.place(y);
   root.style.setProperty("--line", `${y}px`);
-  placePill(); // dragged high, the pill goes low
-  placeNext(); // and so does Text only's card on a phone
+  placePill(); // dragged high, the pill goes low (and Text only's card on a phone goes above the control bar)
   const pct = Math.round(lineFrac * 100);
   handle.setAttribute("aria-valuenow", String(pct));
   handle.setAttribute("aria-valuetext", `${pct}% from the top`);
@@ -1049,35 +1049,42 @@ const stripOn = () => textOnly() && !isEmpty() && scripts.now.switches.length > 
 function drawNext() {
   const script = scripts.now;
   const on = stripOn();
+  let moved = nextUp.hidden === on;
   nextUp.hidden = !on;
   root.toggleAttribute("data-next-up", on); // the column keeps room for it
   const missed = script.missedKey && script.missedKey === script.anchorKey ? script.missedKey : "";
   const rows = !on ? [] : nextUpRows(script.switches, script.passed, missed).map((r) =>
-    `<li data-state="${r.state}" data-at="${r.at}"><span class="sr-only">${r.state === "missed" ? "" : `${SW_STATE[r.state]}: `}</span><span class="sw-kind">${SWITCH_KINDS[r.kind]}</span> <span class="sw-what">${esc(r.text)}</span>${
+    `<li data-state="${r.state}" data-at="${r.at}"><span class="sr-only">${r.state === "missed" ? "" : `${SW_STATE[r.state]}: `}</span><span class="sw-kind">${SWITCH_KINDS[r.kind]}</span> <span class="sw-what" title="${esc(r.text)}">${esc(r.text)}</span>${
       r.state === "missed" ? ` <span class="sw-state">Missed</span> <button class="redo" type="button" data-action="redo" data-s="${r.s}" data-l="${r.l}" aria-label="Open ${esc(r.text)} on the main screen">Open</button>` : ""}</li>`);
   // Rows that stay are kept as they are; only new ones are made and old ones taken away.
   const old = new Map([...nextList.children].map((li) => [rowDrawn.get(li), li]));
+  const focused = nextList.contains(document.activeElement);
   const lis = rows.map((html) => {
     const kept = old.get(html);
     if (kept) { old.delete(html); return kept; }
+    moved = true;
     const t = document.createElement("template");
     t.innerHTML = html;
     rowDrawn.set(t.content.firstChild, html);
     return t.content.firstChild;
   });
-  for (const li of old.values()) li.remove();
+  for (const li of old.values()) { li.remove(); moved = true; }
   lis.forEach((li, n) => { if (nextList.children[n] !== li) nextList.insertBefore(li, nextList.children[n] ?? null); });
-  placeNext();
+  if (focused && !nextList.contains(document.activeElement)) nextList.focus({ preventScroll: true }); // Open's row went: the keyboard stays in the strip
+  if (moved) placeNext(); // only when the card can have changed size: never a layout on every scroll frame
 }
-// On a narrow screen the card sits at the top, over text already read, unless the reading line is
-// dragged up into it: then it goes above the control bar and the notes over it (their height is --dock-h).
+// On a narrow screen the card sits at the top, over text already read, unless the reading line (or the
+// cue pill just above it) is dragged up into it: then it goes above the control bar and the notes over it
+// (their height is --dock-h), and above the cue pill when that went low too.
 const dockWrap = $(".dock-wrap");
 new ResizeObserver(() => root.style.setProperty("--dock-h", `${dockWrap.offsetHeight}px`)).observe(dockWrap);
 function placeNext() {
   if (nextUp.hidden) return;
-  const narrow = matchMedia("(max-width: 999px)").matches;
+  const narrow = matchMedia("(width < 1240px)").matches;
+  const pillAbove = !askPill.hidden && askPill.dataset.place === "above";
+  const limit = pillAbove ? Math.min(reading.y, askPill.getBoundingClientRect().top) : reading.y;
   nextUp.removeAttribute("data-low");
-  if (narrow && nextUp.getBoundingClientRect().bottom + 12 > reading.y) nextUp.setAttribute("data-low", "");
+  if (narrow && nextUp.getBoundingClientRect().bottom + 12 > limit) nextUp.setAttribute("data-low", "");
 }
 
 // Text only: drawn again in place, the spoken line at the reading line staying put (and the line
