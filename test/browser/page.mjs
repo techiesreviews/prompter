@@ -2502,9 +2502,9 @@ export async function run({ browser, base, mode, dist, out }) {
   await hold(false);
   await cutOff();
   assert.deepEqual(await screenOf(CW), ["cut", "Main screen cut off, reconnect", "Settings · main screen cut off"], "the button says the main screen is cut off, on itself, with a dot on Settings");
-  assert.match(await CW.locator("#settings .screen").getAttribute("title"), /^Main screen cut off, reconnect\. Its window was closed, or the page in it cut it off .*still shows its page.*The next page opens a new main screen by itself/, "its title says either may have happened, that a cut-off window still shows its page, and what comes next");
-  assert.equal(await CW.locator(".status").textContent(), "cut1.localhost cut the main screen off.", "read out once through the status line");
-  assert.equal(await noteOf(), "cut1.localhost cut the main screen off.", "one plain note names the site");
+  assert.match(await CW.locator("#settings .screen").getAttribute("title"), /^Main screen cut off, reconnect\. Its window was closed, or the page in it cut it off .*still shows its page.*The next page tries to open a new main screen by itself \(the browser may block that/, "its title says either may have happened, that a cut-off window still shows its page, and what comes next");
+  assert.equal(await CW.locator(".status").textContent(), "cut1.localhost may have cut the main screen off.", "read out once through the status line");
+  assert.equal(await noteOf(), "cut1.localhost may have cut the main screen off.", "one plain note names the site, as one that may have done it (a window closed by hand looks the same)");
   assert.equal(await CW.locator(".cut-note button").textContent(), "Open a new main screen", "with one button");
   assert.equal(await noAlert(), true, "no alert");
   assert.deepEqual(await stored(), ["cut1.localhost"], "the site is remembered on this device, its name only");
@@ -2547,9 +2547,18 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await CW.locator(".status").textContent(), "In its own window: Leak rules", "read out");
   assert.equal(await linkOf(1).getAttribute("data-shown"), "true", "its link is marked as showing");
   assert.ok(await CW.evaluate((n) => window.__focus > n, focusBefore), "the Prompter asks for the keys back");
+  assert.equal(await linkOf(2).getAttribute("data-shown"), "true", "the main screen's page stays marked too");
+  // Back at the section before: the main screen already shows its page, so it is not loaded again
+  // (a playing video would start over).
+  await secondWin.evaluate(() => { window.__kept = true; });
+  await scrollToSection(CW, 2);
+  await CW.waitForTimeout(1200);
+  assert.equal(await secondWin.evaluate(() => window.__kept === true), true, "the main screen's page is not loaded again");
+  assert.equal(await CW.locator(".status").textContent(), "On main screen: After. cut1.localhost's own window may still cover it: close that window.", "the next page says the own window may still cover it");
+  assert.deepEqual([await linkOf(1).getAttribute("data-shown"), await linkOf(2).getAttribute("data-shown")], ["false", "true"]);
   await scrollToSection(CW, 0);
   await secondWin.waitForURL(`${site}/plain`);
-  assert.equal(await CW.locator(".status").textContent(), "On main screen: Plain. cut1.localhost's own window may still cover it: close that window.", "the next page says the own window may still cover it");
+  assert.equal(await CW.locator(".status").textContent(), "On main screen: Plain", "said once");
   // Back at that section, no second own window opens by itself (the first cannot be closed from here,
   // and they would pile up), and the main screen keeps its page.
   const pagesNow = cutCtx.pages().length;
@@ -2569,7 +2578,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await scrollToSection(CW, 2);
   await cutOff();
   await hold(false);
-  const blockedSays = "cut2.localhost cut the main screen off. The browser blocked a new main screen: allow pop-ups for this page so the next one opens by itself.";
+  const blockedSays = "cut2.localhost may have cut the main screen off. The browser blocked a new main screen: allow pop-ups for this page so the next one opens by itself.";
   assert.deepEqual([await noteOf(), await CW.locator(".status").textContent(), await noAlert(), cutCtx.pages().length], [blockedSays, blockedSays, true, 4], "blocked: the note says so, no alert, no window");
   await CW.evaluate(() => { window.__said = []; });
   await scrollToSection(CW, 0);
@@ -2604,7 +2613,7 @@ export async function run({ browser, base, mode, dist, out }) {
   letSlowAnswer();
   await thirdWin.waitForURL(`${cut3}/slowcuts`);
   await cutOff();
-  assert.deepEqual([await noteOf(), await noAlert()], ["cut3.localhost cut the main screen off.", true], "a slow site: the same note, no alert");
+  assert.deepEqual([await noteOf(), await noAlert()], ["cut3.localhost may have cut the main screen off.", true], "a slow site: the same note, no alert");
   // Reconnecting while the page that cut it off is still the one at the reading line does not send it
   // again (it would cut the new window off too), also when pressed twice: the new window waits for the
   // next page, and no link is marked as showing.
@@ -2650,7 +2659,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await sixthWin.waitForURL(`${site}/plain`);
   await sixthWin.close();
   await cutOff();
-  assert.equal(await noteOf(), "localhost cut the main screen off.");
+  assert.equal(await noteOf(), "localhost may have cut the main screen off.", "a window closed by hand: the note says the site may have done it, not that it did");
   const seventhWin = await reconnect();
   await CW.waitForTimeout(1200);
   assert.deepEqual([seventhWin.url(), await stored()], ["about:blank", ["cut1.localhost", "cut2.localhost", "cut3.localhost", "localhost"]], "closed straight after its page was sent: not sent again, its site remembered");

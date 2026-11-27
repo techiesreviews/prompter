@@ -28,7 +28,9 @@ test("a site whose own window stayed connected comes off the list; the built-in 
   const list = ["example.com", "example.org"];
   assert.deepEqual(forgetCutSite(list, "www.Example.com"), ["example.org"]);
   assert.equal(forgetCutSite(list, "example.net"), list, "not there: the same list");
-  assert.equal(forgetCutSite(list, "news.example.com"), list, "a subdomain staying connected says nothing of the site");
+  assert.deepEqual(forgetCutSite(list, "docs.example.org"), ["example.com"], "a subdomain the remembered site sent to its own window: that site comes off, so the device is never stuck with it");
+  assert.equal(forgetCutSite(list, "notexample.com"), list, "only the site itself and its subdomains");
+  assert.equal(forgetCutSite(list, ""), list);
   assert.equal(forgetCutSite([], "autoriteitpersoonsgegevens.nl").length, 0);
   assert.equal(cutsMainScreen(forgetCutSite([], "autoriteitpersoonsgegevens.nl"), "autoriteitpersoonsgegevens.nl"), true, "built in: still known");
 });

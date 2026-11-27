@@ -925,7 +925,7 @@ function connected() { return mainWin && !mainWin.closed; }
 // The main screen's button in Settings: orange while connected, an orange dashed screen once its
 // window is gone (closed, or cut off by its page: "cut"); the Settings button shows a dot then.
 const SCREEN_SAYS = { true: "Main screen connected, reconnect", false: "Connect main screen", cut: "Main screen cut off, reconnect" };
-const SCREEN_CUT_HELP = ". Its window was closed, or the page in it cut it off from the Prompter (some sites do, such as the Dutch Data Protection Authority). A window that was cut off still shows its page: close it when you are done. The next page opens a new main screen by itself; Reconnect opens one now.";
+const SCREEN_CUT_HELP = ". Its window was closed, or the page in it cut it off from the Prompter (some sites do, such as the Dutch Data Protection Authority). A window that was cut off still shows its page: close it when you are done. The next page tries to open a new main screen by itself (the browser may block that unless pop-ups are allowed); Reconnect opens one now.";
 function setConnected(on) {
   connectBtn.dataset.on = String(on);
   const name = SCREEN_SAYS[on];
@@ -978,7 +978,8 @@ function screenGone() {
     if (list !== cutSites) { cutSites = list; store.set(STORED.cutSites, JSON.stringify(list)); }
   }
   setConnected("cut");
-  showCutNote(soon && sent.site ? `${sent.site} cut the main screen off.` : "The main screen was closed or cut off.");
+  // "may have": a window closed by hand just then looks the same from here.
+  showCutNote(soon && sent.site ? `${sent.site} may have cut the main screen off.` : "The main screen was closed or cut off.");
 }
 
 // The cut-off note: one sentence and one button, above the control bar, with no timer. It stays until
@@ -1105,7 +1106,7 @@ function showLink(si, li, fromUser) {
       script.ownShown.add(url);
       ownInFront = hostOf(link.url);
       watchOwn(own, hostOf(link.url));
-      script.shownUrl = url;
+      script.ownUrl = url; // marked as showing too; the main screen keeps its page (shownUrl)
       script.missedKey = "";
       markShown();
       drawNext();
@@ -1138,18 +1139,21 @@ function showLink(si, li, fromUser) {
     skip = { url: "", site: "" };
   }
   script.missedKey = "";
+  script.ownUrl = "";
   markShown();
   drawNext();
-  const covered = ownInFront ? `. ${ownInFront}'s own window may still cover it: close that window.` : "";
+  const covered =ownInFront ? `. ${ownInFront}'s own window may still cover it: close that window.` : "";
   ownInFront = "";
   setStatus(`On main screen: ${s.links[li].label}${covered}`);
 }
 
-// The link buttons for the page the main screen shows are marked.
+// The link buttons for the page the main screen shows are marked, and for the page last opened in a
+// window of its own until the next page goes to the main screen.
 function markShown() {
   const script = scripts.now;
   main.querySelectorAll(".link, .mark, .inlink").forEach((b) => {
-    b.dataset.shown = String(screenUrl(script.sections[b.dataset.s].links[b.dataset.l].url) === script.shownUrl);
+    const url = screenUrl(script.sections[b.dataset.s].links[b.dataset.l].url);
+    b.dataset.shown = String(url === script.shownUrl || (Boolean(script.ownUrl) && url === script.ownUrl));
   });
 }
 
