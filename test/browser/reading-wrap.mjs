@@ -49,7 +49,7 @@ export async function run({ browser, base, out }) {
     const context = await browser.newContext({ viewport });
     try {
       await context.addInitScript(({ settings, size }) => {
-        for (const [name, value] of [["size", String(size)], ["width", "narrow"], ["spacing", "normal"]]) {
+        for (const [name, value] of [["size", String(size)], ["width", "narrow"], ["layout", "lines"]]) {
           localStorage.setItem(settings[name].key, value);
         }
       }, { settings: SETTINGS, size });
@@ -58,7 +58,7 @@ export async function run({ browser, base, out }) {
       await page.locator('.empty [data-action="paste"]').click();
       await page.locator("#paste-text").fill(size === 32 ? SCRIPT : LARGE_TITLE_SCRIPT);
       await page.locator('[data-action="open-paste"]').click();
-      const paragraph = page.locator(".script p.say").filter({ hasText: TOKEN });
+      const paragraph = page.locator(".script [data-k]").filter({ hasText: TOKEN });
       await paragraph.waitFor();
       await page.evaluate(() => document.fonts.ready);
       const layout = await paragraph.evaluate((el) => {

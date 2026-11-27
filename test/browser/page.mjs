@@ -18,6 +18,14 @@ const settingsSliderHits = (p) => Promise.all(["label:first-child", ".range-valu
   const edge = document.elementFromPoint(r.right - 2, r.top + r.height / 2);
   return [hit.closest(".range-value") ? "value" : hit.id, edge.closest(".range-value") !== null];
 })));
+// Set the line height or paragraph spacing slider ("line-height", "para-space") or the layout as the
+// reader would, with Settings open or closed.
+const spaceTo = (p, what, value) => p.evaluate(([what, value]) => {
+  if (what === "layout") return document.querySelector(`#settings input[name="layout"][value="${value}"]`).click();
+  const el = document.querySelector(`#settings .${what}`);
+  el.value = value;
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+}, [what, value]);
 const DEMO_SECTIONS = parse(DEMO_SCRIPT).length;
 
 // Replaces the browser's speech recognition with one the test drives:
@@ -435,7 +443,7 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await page.evaluate(() => location.hash), "#demo");
   const prep = page.locator(".section").first();
   assert.equal(await prep.locator(".actions, button, label, input").count(), 0, "the demo's PREP has no buttons");
-  assert.deepEqual(await prep.locator("p.bullet").allTextContents(), ["Water within reach", "Phone on silent", "Camera at eye level", "Text right under the lens", "Read it once aloud"]);
+  assert.deepEqual(await prep.locator(".bullet").allTextContents(), ["Water within reach", "Phone on silent", "Camera at eye level", "Text right under the lens", "Read it once aloud"]);
   assert.equal(await page.locator(".dock").isVisible(), true);
   assert.equal(await page.locator(".voice").isHidden(), true, "Follow my voice is hidden without the speech API");
   await page.evaluate(() => document.fonts.ready);
@@ -444,7 +452,7 @@ export async function run({ browser, base, mode, dist, out }) {
   // Text starts on the left inside a centred column; section title left, time right.
   const layout = await page.evaluate(() => {
     const sec = document.querySelectorAll(".section")[1];
-    const say = sec.querySelector("p.say");
+    const say = sec.querySelector(".para");
     const title = sec.querySelector(".title > span:first-child").getBoundingClientRect();
     const time = sec.querySelector(".time").getBoundingClientRect();
     const col = document.querySelector(".script");
@@ -473,14 +481,14 @@ export async function run({ browser, base, mode, dist, out }) {
   await shot(page, "demo-desktop");
   ok("Try the demo: #demo, PREP is a plain checklist (no buttons); text starts on the left in a centred 960px column; section title left, time right; the bar: Open, previous, play, next, clock, Settings (no mic or monitor: those are in Settings), centred at the bottom");
 
-  // Inactive lines stay readable: their colour is the AA dim token, not faded with opacity.
+  // Lines still to be read are white in every section (TOOLS-486), never faded with opacity.
   const looks = await page.evaluate(() => {
-    const other = document.querySelector('.section:not(.active) p.say');
+    const other = document.querySelector(".section:not(.active) [data-k]");
     const cs = getComputedStyle(other);
     return { color: cs.color, opacity: getComputedStyle(other.closest(".section")).opacity };
   });
-  assert.deepEqual(looks, { color: "oklch(0.64 0.04 282)", opacity: "1" });
-  ok("other sections use the dim AA colour (--dim, oklch 64% 0.04 282) at full opacity");
+  assert.deepEqual(looks, { color: "oklch(0.975 0.012 282)", opacity: "1" });
+  ok("other sections are white too (--text, oklch 97.5% 0.012 282) at full opacity");
 
   // The Open popover: above its button; Escape closes it and focus returns.
   await (await dock(page, ".open-btn")).click();
@@ -1127,12 +1135,12 @@ export async function run({ browser, base, mode, dist, out }) {
   await (await dock(page, ".settings-btn")).click();
   await popAbove(page, "#settings", ".settings-btn", "desktop Settings");
   assert.deepEqual(await page.locator("#settings").evaluate((el) => [...el.querySelectorAll(".setting")].map((row) => row.querySelector("legend, label").textContent.trim())),
-    ["Text size", "Scroll speed", "Width", "Line spacing"]);
+    ["Text size", "Scroll speed", "Line height", "Paragraph spacing", "Width", "Layout"]);
   assert.equal(await page.locator("#settings .camframe").getAttribute("aria-pressed"), "false", "the CamFrame link is off by default");
   // Follow my voice, the main screen and the CamFrame link: big buttons side by side (icons only).
   const bigButtons = (p) => p.locator("#settings .big-toggle:not([hidden])").evaluateAll((els) => els.map((el) => [el.getAttribute("aria-label"), el.innerText.trim()]));
   assert.deepEqual(await bigButtons(page), [["Connect main screen", ""], ["CamFrame link: off", ""]], "icons only; no Follow my voice without the speech API; the main screen's and CamFrame's buttons");
-  assert.equal(await page.locator("#settings").locator("input, select, button, textarea").count(), 13, "two sliders with their value boxes, three width and three line spacing choices, the voice, main screen and CamFrame buttons, nothing else");
+  assert.equal(await page.locator("#settings").locator("input, select, button, textarea").count(), 16, "four sliders with their value boxes, three width and two layout choices, the voice, main screen and CamFrame buttons, nothing else");
   assert.equal(await page.locator("#settings .camframe-status, #settings .check-row").count(), 0, "no CamFrame status text in Settings");
   const screenBox = await page.locator("#settings .screen").boundingBox();
   const rowBox = await page.locator("#settings .big-toggles").boundingBox();
@@ -1151,25 +1159,18 @@ export async function run({ browser, base, mode, dist, out }) {
     Math.abs(el.querySelector(".range-value").getBoundingClientRect().right - el.getBoundingClientRect().right) < 8,
   ]);
   assert.deepEqual(await page.locator("#settings .width .seg label").allTextContents(), ["Narrow", "Medium", "Full"]);
-  assert.deepEqual(await page.locator("#settings .spacing .seg label").allTextContents(), ["Normal", "Roomy", "Spacious"]);
-  assert.equal(await page.locator('input[name="spacing"]:checked').getAttribute("value"), "normal", "a new visitor gets normal line spacing (the old look)");
-  // Line spacing: more room between lines, and the line at the reading line stays put.
-  // From one script line to the next, and inside a line that wraps (the line height).
-  const lineGap = () => page.evaluate(() => {
-    const a = document.querySelector(".script p.say:has(+ p.say)");
-    return a.nextElementSibling.getBoundingClientRect().top - a.getBoundingClientRect().top;
-  });
+  assert.deepEqual(await page.locator("#settings .layout .seg label").allTextContents(), ["Lines", "Paragraphs"]);
+  assert.equal(await page.locator('input[name="layout"]:checked').getAttribute("value"), "lines", "a new visitor gets the Lines layout");
+  // Line height and paragraph spacing (TOOLS-486): taller rows, more room between paragraphs.
+  // The details are in paragraphs.mjs; here they are changed once and remembered after the reload below.
   const wrapGap = () => page.locator(".script").evaluate((el) => parseFloat(getComputedStyle(el).lineHeight) / parseFloat(getComputedStyle(el).fontSize));
-  assert.ok(Math.abs(await wrapGap() - 1.3) < 0.01, "normal keeps the old line height");
-  assert.equal(await page.evaluate(() => localStorage.getItem("prompter-spacing")), null, "a first visit stores nothing for the spacing");
-  const normalGap = await lineGap();
-  await page.locator('#settings .spacing .seg label:has-text("Spacious")').click();
-  const spaciousGap = await lineGap();
-  assert.ok(Math.abs(await wrapGap() - 1.7) < 0.01, "spacious: a line that wraps has taller lines too");
-  assert.ok(spaciousGap > normalGap + 20, `spacious lines sit further apart: ${normalGap} → ${spaciousGap}`);
-  await page.locator('#settings .spacing .seg label:has-text("Roomy")').click();
-  const roomyGap = await lineGap();
-  assert.ok(roomyGap > normalGap && roomyGap < spaciousGap, `roomy is in between: ${normalGap} < ${roomyGap} < ${spaciousGap}`);
+  assert.ok(Math.abs(await wrapGap() - 1.65) < 0.01, "line height 165% by default");
+  assert.deepEqual(await page.evaluate(() => ["prompter-line-height", "prompter-paragraph-spacing", "prompter-layout", "prompter-spacing"].map((k) => localStorage.getItem(k))),
+    [null, null, null, null], "a first visit stores nothing for them");
+  await page.locator(".line-height").fill("180");
+  assert.ok(Math.abs(await wrapGap() - 1.8) < 0.01, "180%: a line that wraps has taller rows");
+  await page.locator(".para-space").fill("120");
+  await page.locator('#settings .layout .seg label:has-text("Paragraphs")').click();
   await page.locator(".size").fill("70");
   await page.locator(".speed").fill("120");
   await page.locator('#settings .seg label:has-text("Narrow")').click();
@@ -1197,8 +1198,9 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.deepEqual(await page.evaluate(() => [
     getComputedStyle(document.documentElement).getPropertyValue("--size").trim(),
     document.querySelector(".size").value, document.querySelector(".speed").value, document.querySelector('input[name="width"]:checked').value,
-    document.querySelector('input[name="spacing"]:checked').value, document.documentElement.dataset.spacing,
-  ]), ["70px", "70", "120", "narrow", "roomy", "roomy"]);
+    document.querySelector(".line-height").value, document.querySelector(".para-space").value,
+    document.querySelector('input[name="layout"]:checked').value, document.documentElement.dataset.layout,
+  ]), ["70px", "70", "120", "narrow", "180", "120", "paragraphs", "paragraphs"]);
   await page.keyboard.press("+");
   await page.keyboard.press("]");
   assert.deepEqual(await page.evaluate(() => [document.querySelector(".size").value, document.querySelector(".speed").value]), ["74", "130"]);
@@ -1211,41 +1213,53 @@ export async function run({ browser, base, mode, dist, out }) {
   const fullCol = await page.locator(".script").evaluate((el) => el.getBoundingClientRect().width);
   assert.ok(fullCol > 1300, `full column is ${fullCol}px`);
   await page.locator('#settings .seg label:has-text("Medium")').click();
-  // Changing the line spacing keeps the line at the reading line where it was.
-  // What sits at the reading line: the paragraph and the word under it.
+  // Changing the line height, the paragraph spacing or the layout keeps the line at the reading line where it was.
+  const CHANGES = [["line-height", 200], ["para-space", 0], ["layout", "lines"], ["line-height", 110], ["para-space", 200], ["layout", "paragraphs"], ["line-height", 165], ["layout", "lines"]];
+  // What sits at the reading line: the script line (or reminder) and the word under it, its place
+  // in the page, and how far below the reading line its row starts (negative: the line is in it).
   const atLine = () => page.evaluate(() => {
-    const y = document.querySelector(".reading-line").getBoundingClientRect().top;
-    const p = [...document.querySelectorAll(".script p")].find((el) => el.getBoundingClientRect().bottom > y);
-    const r = p.getBoundingClientRect();
-    const hit = document.caretRangeFromPoint(r.left + 8, Math.min(y, r.bottom - 1));
+    const line = document.querySelector(".reading-line");
+    const y = line.getBoundingClientRect().top;
+    const els = [...document.querySelectorAll(".script [data-k], .script p:not(.para)")];
+    const i = els.findIndex((el) => el.getBoundingClientRect().bottom > y);
+    const r = [...els[i].getClientRects()].find((f) => f.bottom > y);
+    // The line's drag band sits over the text there: look past it.
+    line.style.visibility = "hidden";
+    const hit = document.caretRangeFromPoint(r.left + 8, Math.min(Math.max(y, r.top + 1), r.bottom - 1));
+    line.style.visibility = "";
     const t = hit?.startContainer?.textContent ?? "";
-    return [p.textContent, t.slice(Math.max(0, t.lastIndexOf(" ", hit.startOffset) + 1)).split(" ")[0]];
+    return [els[i].textContent, t.slice(Math.max(0, t.lastIndexOf(" ", hit.startOffset) + 1)).split(" ")[0], i, Math.round(r.top - y)];
   });
-  const lineBefore = await atLine();
-  await page.locator('#settings .spacing .seg label:has-text("Spacious")').click();
-  assert.deepEqual(await atLine(), lineBefore, "the same line is at the reading line");
-  await page.locator('#settings .spacing .seg label:has-text("Normal")').click();
-  assert.deepEqual(await atLine(), lineBefore, "and back");
-  // A paragraph that wraps onto several rows, with the reading line on its third row.
+  // After a layout change the rows are new: the same script line is still under the reading line
+  // (or, when the reading line was above it or in the room between two of its rows, one of its rows
+  // starts as far below it as before).
+  const stillUnder = ([, , i, below]) => page.evaluate(([i, below]) => {
+    const y = document.querySelector(".reading-line").getBoundingClientRect().top;
+    const rows = [...[...document.querySelectorAll(".script [data-k], .script p:not(.para)")][i].getClientRects()];
+    return rows.some((f) => (f.top <= y + 1 && f.bottom >= y - 1) || (below > 0 && Math.abs(f.top - y - below) <= 4));
+  }, [i, below]);
+  const keepsPlace = async (label, { textOnly = false } = {}) => {
+    for (const [what, value] of CHANGES) {
+      const before = await atLine();
+      await spaceTo(page, what, value);
+      if (what === "layout") assert.equal(await stillUnder(before), true, `${label}: the same line stays at the reading line (layout ${value})`);
+      else if (textOnly) assert.equal((await atLine())[0], before[0], `${label}: the same line stays at the reading line (${what} ${value})`);
+      else assert.deepEqual((await atLine()).slice(0, 2), before.slice(0, 2), `${label}: the same word stays at the reading line (${what} ${value})`);
+    }
+  };
+  await keepsPlace("mid-script");
+  // A paragraph that wraps onto several rows, with the reading line on one of its last rows.
   await page.locator('input[name="width"][value="narrow"]').evaluate((el) => el.click());
   await page.locator(".size-val").fill("70");
   await page.evaluate(() => {
-    const p = [...document.querySelectorAll(".script p.say")].reduce((a, b) => (b.getBoundingClientRect().height > a.getBoundingClientRect().height ? b : a));
+    const p = [...document.querySelectorAll(".script .para")].reduce((a, b) => (b.getBoundingClientRect().height > a.getBoundingClientRect().height ? b : a));
     const r = p.getBoundingClientRect();
     window.scrollBy(0, r.top + r.height * 0.8 - document.querySelector(".reading-line").getBoundingClientRect().top);
   });
-  const rowBefore = await atLine();
-  for (const name of ["Spacious", "Normal", "Roomy", "Normal"]) {
-    await page.locator(`#settings .spacing .seg label:has-text("${name}")`).click();
-    assert.deepEqual(await atLine(), rowBefore, `wrapped row: the same word stays at the reading line (${name})`);
-  }
-  // At the very top too: the page cannot scroll above 0, so check both ways there.
+  await keepsPlace("wrapped paragraph");
+  // At the very top too: the page cannot scroll above 0.
   await scrollToSection(page, 0);
-  const topBefore = await atLine();
-  await page.locator('#settings .spacing .seg label:has-text("Spacious")').click();
-  assert.equal((await atLine())[0], topBefore[0], "at the top, the same line stays at the reading line");
-  await page.locator('#settings .spacing .seg label:has-text("Normal")').click();
-  assert.equal((await atLine())[0], topBefore[0], "and after going back");
+  await keepsPlace("at the top", { textOnly: true });
   // The reading line on a section's row of links: that row stays under it.
   await page.evaluate(() => {
     const l = document.querySelector(".links");
@@ -1257,9 +1271,9 @@ export async function run({ browser, base, mode, dist, out }) {
     return r.top <= y && r.bottom > y;
   });
   assert.equal(await underLine(), true, "the links row starts under the reading line");
-  for (const name of ["Spacious", "Roomy", "Normal"]) {
-    await page.locator(`#settings .spacing .seg label:has-text("${name}")`).click();
-    assert.equal(await underLine(), true, `links row: still under the reading line (${name})`);
+  for (const [what, value] of CHANGES) {
+    await spaceTo(page, what, value);
+    assert.equal(await underLine(), true, `links row: still under the reading line (${what} ${value})`);
   }
   // Just after Next (the section's top at the reading line) and with the line in a gap between lines:
   // the section stays the active one and nothing moves under the line.
@@ -1272,28 +1286,32 @@ export async function run({ browser, base, mode, dist, out }) {
     return [a.dataset.i, Math.round(a.getBoundingClientRect().top - document.querySelector(".reading-line").getBoundingClientRect().top)];
   });
   const secBefore = await secState();
-  for (const name of ["Roomy", "Spacious", "Normal"]) {
-    await page.locator(`#settings .spacing .seg label:has-text("${name}")`).click();
+  for (const [what, value] of CHANGES) {
+    await spaceTo(page, what, value);
     await page.waitForTimeout(150);
     const now = await secState();
-    assert.equal(now[0], secBefore[0], `after Next, ${name}: the same section stays active`);
-    assert.ok(Math.abs(now[1]) <= 4, `after Next, ${name}: the section's top is not pushed below the reading line (${now[1]})`);
+    assert.equal(now[0], secBefore[0], `after Next, ${what} ${value}: the same section stays active`);
+    assert.ok(Math.abs(now[1]) <= 4, `after Next, ${what} ${value}: the section's top is not pushed below the reading line (${now[1]})`);
   }
+  // The reading line in the room between two paragraphs: the next line keeps its distance below it.
   await page.evaluate(() => {
-    const gap = document.querySelector(".gap");
-    window.scrollBy(0, gap.getBoundingClientRect().top + gap.getBoundingClientRect().height / 2 - document.querySelector(".reading-line").getBoundingClientRect().top);
+    const brk = [...document.querySelectorAll(".script .brk")].find((el) => el.previousElementSibling && !el.previousElementSibling.matches(".title"));
+    const top = brk.previousElementSibling.getBoundingClientRect().bottom;
+    window.scrollBy(0, (top + brk.getBoundingClientRect().top) / 2 - document.querySelector(".reading-line").getBoundingClientRect().top);
   });
   const belowGap = () => page.evaluate(() => {
     const y = document.querySelector(".reading-line").getBoundingClientRect().top;
-    const p = [...document.querySelectorAll(".script p")].find((el) => el.getBoundingClientRect().top > y);
+    const p = [...document.querySelectorAll(".script [data-k], .script p:not(.para)")].find((el) => el.getBoundingClientRect().top > y);
     return [p.textContent, Math.round(p.getBoundingClientRect().top - y)];
   });
-  const gapBefore = await belowGap();
-  await page.locator('#settings .spacing .seg label:has-text("Spacious")').click();
-  const gapAfter = await belowGap();
-  assert.equal(gapAfter[0], gapBefore[0], "in a gap: the same line is next below the reading line");
-  assert.ok(Math.abs(gapAfter[1] - gapBefore[1]) < 4, `in a gap: it is no further away (${gapBefore[1]} → ${gapAfter[1]})`);
-  await page.locator('#settings .spacing .seg label:has-text("Normal")').click();
+  // (Paragraph spacing only so far that the reading line stays in the room between them.)
+  for (const [what, value] of [["line-height", 200], ["para-space", 160], ["layout", "paragraphs"], ["line-height", 110], ["para-space", 200], ["layout", "lines"], ["line-height", 165]]) {
+    const gapBefore = await belowGap();
+    await spaceTo(page, what, value);
+    const gapAfter = await belowGap();
+    assert.equal(gapAfter[0], gapBefore[0], `between paragraphs: the same line is next below the reading line (${what} ${value})`);
+    assert.ok(Math.abs(gapAfter[1] - gapBefore[1]) < 4, `between paragraphs: it is no further away (${what} ${value}: ${gapBefore[1]} → ${gapAfter[1]})`);
+  }
   // The reading line on a section's title (a heading does not grow): the title stays under it.
   await page.evaluate(() => {
     const h = document.querySelectorAll(".script .title")[1];
@@ -1304,37 +1322,36 @@ export async function run({ browser, base, mode, dist, out }) {
     return [...document.querySelectorAll(".script .title")].map((h) => h.getBoundingClientRect()).some((r) => r.top <= y && r.bottom > y);
   });
   assert.equal(await titleUnder(), true, "the reading line starts on a section title");
-  for (const name of ["Spacious", "Roomy", "Normal"]) {
-    await page.locator(`#settings .spacing .seg label:has-text("${name}")`).click();
-    assert.equal(await titleUnder(), true, `title: still under the reading line (${name})`);
+  for (const [what, value] of CHANGES) {
+    await spaceTo(page, what, value);
+    assert.equal(await titleUnder(), true, `title: still under the reading line (${what} ${value})`);
   }
   // Scrolled below the last line (into the bottom padding): the last line keeps its distance from the reading line.
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
   const lastDist = () => page.evaluate(() => {
-    const lines = [...document.querySelectorAll(".script p")];
+    const lines = [...document.querySelectorAll(".script [data-k], .script p:not(.para)")];
     return Math.round(lines.at(-1).getBoundingClientRect().top - document.querySelector(".reading-line").getBoundingClientRect().top);
   });
-  const lastBefore = await lastDist();
-  for (const name of ["Spacious", "Roomy", "Normal"]) {
-    await page.locator(`#settings .spacing .seg label:has-text("${name}")`).click();
-    assert.ok(Math.abs(await lastDist() - lastBefore) <= 4, `below the last line: it keeps its distance from the reading line (${name}: ${lastBefore} → ${await lastDist()})`);
+  for (const [what, value] of CHANGES) {
+    const lastBefore = await lastDist();
+    await spaceTo(page, what, value);
+    // (When the script gets shorter, the page may end before that distance: then it is scrolled to its end.)
+    const atEnd = await page.evaluate(() => scrollY >= document.documentElement.scrollHeight - innerHeight - 1);
+    const dist = await lastDist();
+    assert.ok(Math.abs(dist - lastBefore) <= 4 || (atEnd && dist < 0 && dist > lastBefore), `below the last line: it keeps its distance from the reading line (${what} ${value}: ${lastBefore} → ${dist})`);
   }
-  // Arrow keys in the line spacing choices (a radio group) change it like a click, and it is remembered.
-  await page.locator('input[name="spacing"]:checked').focus();
-  const spacingNow = () => page.evaluate(() => [document.querySelector('input[name="spacing"]:checked').value, document.documentElement.dataset.spacing, localStorage.getItem("prompter-spacing")]);
+  // Arrow keys in the layout choices (a radio group) change it like a click, and it is remembered.
+  await page.locator('input[name="layout"]:checked').focus();
+  const layoutNow = () => page.evaluate(() => [document.querySelector('input[name="layout"]:checked').value, document.documentElement.dataset.layout, localStorage.getItem("prompter-layout")]);
   await page.keyboard.press("ArrowRight");
-  assert.deepEqual(await spacingNow(), ["roomy", "roomy", "roomy"], "→ goes to Roomy");
-  await page.keyboard.press("ArrowRight");
-  assert.deepEqual(await spacingNow(), ["spacious", "spacious", "spacious"], "→ again goes to Spacious");
+  assert.deepEqual(await layoutNow(), ["paragraphs", "paragraphs", "paragraphs"], "→ goes to Paragraphs");
   await page.keyboard.press("ArrowLeft");
-  assert.deepEqual(await spacingNow(), ["roomy", "roomy", "roomy"], "← goes back to Roomy");
-  await page.keyboard.press("ArrowLeft");
-  assert.deepEqual((await spacingNow()).slice(0, 2), ["normal", "normal"], "← again goes to Normal");
-  // An unknown remembered value falls back to normal.
-  await page.evaluate(() => localStorage.setItem("prompter-spacing", "huge"));
+  assert.deepEqual(await layoutNow(), ["lines", "lines", "lines"], "← goes back to Lines");
+  // Unknown remembered values fall back to the defaults.
+  await page.evaluate(() => { localStorage.setItem("prompter-layout", "columns"); localStorage.setItem("prompter-line-height", "tall"); });
   await page.reload();
   await page.locator(".section").first().waitFor();
-  assert.deepEqual(await page.evaluate(() => [document.querySelector('input[name="spacing"]:checked').value, document.documentElement.dataset.spacing]), ["normal", "normal"]);
+  assert.deepEqual(await page.evaluate(() => [document.querySelector('input[name="layout"]:checked').value, document.documentElement.dataset.layout, document.querySelector(".line-height").value]), ["lines", "lines", "165"]);
   await (await dock(page, ".settings-btn")).click();
   await page.locator("#settings:popover-open").waitFor();
   // Type an exact value: off the slider's step, past its end, half typed, empty, too small.
@@ -1382,7 +1399,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await page.locator(".speed-val").press("Enter");
   assert.equal(await page.locator("#settings:popover-open").count(), 1, "Enter in a value box keeps Settings open");
   await page.keyboard.press("Escape");
-  ok("Settings popover above its button: Text size, Scroll speed and a Narrow/Medium/Full width choice only; remembered after a reload; keys move the sliders; exact values typed into their boxes (also past the slider's ends); focus returns");
+  ok("Settings popover above its button: Text size, Scroll speed, Line height, Paragraph spacing, a Narrow/Medium/Full width and a Lines/Paragraphs layout choice only; remembered after a reload; a change of line height, paragraph spacing or layout keeps the line at the reading line (mid-script, a wrapped paragraph, the top, the links row, after Next, between paragraphs, a title, below the last line); damaged values fall back; keys move the sliders; exact values typed into their boxes (also past the slider's ends); focus returns");
 
   // Without CSS anchor positioning the page places the popovers itself.
   const noAnchor = await browser.newContext(DESKTOP);
@@ -1770,35 +1787,35 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.notEqual(await v.locator(".auto").evaluate((el) => getComputedStyle(el).backgroundColor), "oklch(0.65 0.227 32.3)", "greyed out: not the orange play colour");
   await v.waitForFunction(() => !document.querySelector(".auto").hasAttribute("data-show-tip"), null, { timeout: 3000 });
   // Word by word, line by line: a finished line moves on to the next one.
-  const curText = () => v.evaluate(() => document.querySelector("p.cur")?.textContent ?? null);
+  const curText = () => v.evaluate(() => document.querySelector(".cur")?.textContent ?? null);
   await v.evaluate(() => window.__speech.say("writing scripts takes"));
-  await v.waitForFunction(() => document.querySelector("p.cur")?.textContent === "Writing scripts takes too long.");
+  await v.waitForFunction(() => document.querySelector(".cur")?.textContent === "Writing scripts takes too long.");
   await v.evaluate(() => window.__speech.say("too long reading"));
-  await v.waitForFunction(() => document.querySelector("p.cur")?.textContent === "Reading them looks stiff.");
+  await v.waitForFunction(() => document.querySelector(".cur")?.textContent === "Reading them looks stiff.");
   // Interim words: a cut-off word or one word of a later line never jumps.
   await v.evaluate(() => window.__speech.say("them looks stiff to", true));
   await v.evaluate(() => window.__speech.say("them looks stiff to", true));
-  await v.waitForFunction(() => document.querySelector("p.cur")?.textContent === "Today: a calmer way.");
+  await v.waitForFunction(() => document.querySelector(".cur")?.textContent === "Today: a calmer way.");
   await v.evaluate(() => window.__speech.say("them looks", true));
-  await v.waitForFunction(() => document.querySelector("p.cur")?.textContent === "Reading them looks stiff.");
+  await v.waitForFunction(() => document.querySelector(".cur")?.textContent === "Reading them looks stiff.");
   await v.evaluate(() => window.__speech.say("them looks question", true));
   await v.waitForTimeout(100);
   assert.equal(await curText(), "Reading them looks stiff.", "a word of a later line does not jump");
   await v.evaluate(() => window.__speech.say("them looks stiff today a calmer way hi i'm"));
-  await v.waitForFunction(() => document.querySelector("p.cur")?.textContent === "Hi, I'm Sam. Welcome.");
+  await v.waitForFunction(() => document.querySelector(".cur")?.textContent === "Hi, I'm Sam. Welcome.");
   await v.waitForFunction(() => {
-    const top = document.querySelector("p.cur").getBoundingClientRect().top;
+    const top = document.querySelector(".cur").getBoundingClientRect().top;
     return Math.abs(top - window.innerHeight * 0.34) < 12;
   });
   await v.waitForTimeout(400); // let the colours settle
-  // The line being read is pure white, the lines after it dimmer (AA), no box or underline.
+  // The line being read is pure white, the lines after it white too (TOOLS-486), no box or underline.
   assert.deepEqual(await v.evaluate(() => {
-    const cur = document.querySelector("p.cur");
+    const cur = document.querySelector(".cur");
     const cs = getComputedStyle(cur);
-    const lines = [...cur.parentElement.querySelectorAll("p.say, p.now")];
+    const lines = [...cur.closest(".section").querySelectorAll("[data-k]")];
     const [before, after] = [lines[lines.indexOf(cur) - 1], lines[lines.indexOf(cur) + 1]];
     return [cs.color, cs.backgroundColor, cs.boxShadow, getComputedStyle(after).color, getComputedStyle(before).color];
-  }), ["oklch(1 0 none)", "rgba(0, 0, 0, 0)", "none", "oklch(0.8 0.03 282)", "oklch(0.975 0.012 282)"], "the current line is white; the lines after it dimmer; read lines keep their colour under the veil");
+  }), ["oklch(1 0 none)", "rgba(0, 0, 0, 0)", "none", "oklch(0.975 0.012 282)", "oklch(0.975 0.012 282)"], "the current line is pure white; the lines after it white; read lines keep their colour under the veil");
   await shot(v, "voice-follow-desktop");
   // QL lines are never followed, and a pair of words from a later line does not jump.
   await v.evaluate(() => window.__speech.say("why one question per section"));
@@ -1806,34 +1823,42 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await curText(), "Hi, I'm Sam. Welcome.");
   // Scrolling by hand: the line at the reading line becomes the current one, without a jump.
   await v.evaluate(() => {
-    const el = [...document.querySelectorAll("p[data-k]")].find((p) => p.textContent === "One question keeps you focused.");
+    const el = [...document.querySelectorAll("[data-k]")].find((p) => p.textContent === "One question keeps you focused.");
     window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - document.querySelector(".reading-line").getBoundingClientRect().top + 2);
   });
   await v.mouse.wheel(0, 1);
-  await v.waitForFunction(() => document.querySelector("p.cur")?.textContent === "One question keeps you focused.");
+  await v.waitForFunction(() => document.querySelector(".cur")?.textContent === "One question keeps you focused.");
   await v.evaluate(() => window.__speech.say("one question keeps you focused you"));
-  await v.waitForFunction(() => document.querySelector("p.cur")?.textContent === "You answer, not recite.");
-  // Changing the line spacing while the voice moves the page on: the line being read goes to the reading line.
-  const curAtLine = () => v.evaluate(() => [document.querySelector("p.cur")?.textContent,
-    Math.abs(document.querySelector("p.cur").getBoundingClientRect().top - document.querySelector(".reading-line").getBoundingClientRect().top) < 12]);
-  // The move to the next line starts (smooth scroll) in the same moment the spacing changes.
-  await v.evaluate(() => { window.__speech.say("you answer not recite short lines guide"); document.querySelector('input[name="spacing"][value="spacious"]').click(); });
-  await v.waitForFunction(() => document.querySelector("p.cur")?.textContent === "Short lines guide your eyes." && Math.abs(document.querySelector("p.cur").getBoundingClientRect().top - document.querySelector(".reading-line").getBoundingClientRect().top) < 12);
+  await v.waitForFunction(() => document.querySelector(".cur")?.textContent === "You answer, not recite.");
+  // Changing the line height while the voice moves the page on: the line being read goes to the reading line.
+  const curAtLine = () => v.evaluate(() => [document.querySelector(".cur")?.textContent,
+    Math.abs(document.querySelector(".cur").getBoundingClientRect().top - document.querySelector(".reading-line").getBoundingClientRect().top) < 12]);
+  // The move to the next line starts (smooth scroll) in the same moment the line height changes.
+  await v.evaluate(() => {
+    window.__speech.say("you answer not recite short lines guide");
+    const el = document.querySelector("#settings .line-height");
+    el.value = 200;
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await v.waitForFunction(() => document.querySelector(".cur")?.textContent === "Short lines guide your eyes." && Math.abs(document.querySelector(".cur").getBoundingClientRect().top - document.querySelector(".reading-line").getBoundingClientRect().top) < 12);
   await v.waitForTimeout(500);
-  assert.deepEqual(await curAtLine(), ["Short lines guide your eyes.", true], "spacious, mid-move: the line being read is at the reading line");
-  await v.evaluate(() => document.querySelector('input[name="spacing"][value="normal"]').click());
-  assert.deepEqual(await curAtLine(), ["Short lines guide your eyes.", true], "and back to normal");
+  assert.deepEqual(await curAtLine(), ["Short lines guide your eyes.", true], "line height 200%, mid-move: the line being read is at the reading line");
+  await spaceTo(v, "layout", "paragraphs");
+  assert.deepEqual(await curAtLine(), ["Short lines guide your eyes.", true], "and in the Paragraphs layout");
+  await spaceTo(v, "line-height", 165);
+  await spaceTo(v, "layout", "lines");
+  assert.deepEqual(await curAtLine(), ["Short lines guide your eyes.", true], "and back to the defaults");
   // Voice on, then Next, then a spacing change: the section just reached stays active and in place.
   await (await dock(v, ".next")).click();
   await v.waitForTimeout(500);
   const voiceSec = () => v.evaluate(() => { const a = document.querySelector(".section.active"); return [a.dataset.i, Math.round(a.getBoundingClientRect().top - document.querySelector(".reading-line").getBoundingClientRect().top)]; });
   const voiceSecBefore = await voiceSec();
-  await v.evaluate(() => document.querySelector('input[name="spacing"][value="spacious"]').click());
+  await spaceTo(v, "para-space", 100);
   await v.waitForTimeout(300);
   const voiceSecAfter = await voiceSec();
   assert.equal(voiceSecAfter[0], voiceSecBefore[0], "voice on, after Next: the same section stays active");
   assert.ok(Math.abs(voiceSecAfter[1] - voiceSecBefore[1]) <= 4, `voice on, after Next: it stays in place (${voiceSecBefore[1]} → ${voiceSecAfter[1]})`);
-  await v.evaluate(() => document.querySelector('input[name="spacing"][value="normal"]').click());
+  await spaceTo(v, "para-space", 200);
   // Voice on, the reading line on a section's row of links: that row stays under it.
   await v.mouse.wheel(0, 1); // the reader's hand: no voice move is under way
   await v.evaluate(() => {
@@ -1846,49 +1871,50 @@ export async function run({ browser, base, mode, dist, out }) {
     return r.top <= y && r.bottom > y;
   });
   assert.equal(await voiceLinksUnder(), true, "voice on: the links row starts under the reading line");
-  for (const name of ["spacious", "roomy", "normal"]) {
-    await v.evaluate((n) => document.querySelector(`input[name="spacing"][value="${n}"]`).click(), name);
+  for (const [what, value] of [["line-height", 200], ["layout", "paragraphs"], ["para-space", 50], ["line-height", 165], ["layout", "lines"], ["para-space", 200]]) {
+    await spaceTo(v, what, value);
     await v.waitForTimeout(150);
-    assert.equal(await voiceLinksUnder(), true, `voice on, links row: still under the reading line (${name})`);
+    assert.equal(await voiceLinksUnder(), true, `voice on, links row: still under the reading line (${what} ${value})`);
   }
   // Hand-scrolling just after a voice move, in a browser that sends no scrollend: a spacing change keeps
   // what the reader moved to (the wheel ends the voice move), it does not snap back to the voiced line.
   await v.evaluate(() => { window.__blockScrollend = (e) => e.stopImmediatePropagation(); window.addEventListener("scrollend", window.__blockScrollend, true); });
   await v.evaluate(() => {
-    const el = [...document.querySelectorAll("p[data-k]")].find((p) => p.textContent === "One question keeps you focused.");
+    const el = [...document.querySelectorAll("[data-k]")].find((p) => p.textContent === "One question keeps you focused.");
     window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - document.querySelector(".reading-line").getBoundingClientRect().top + 2);
   });
   await v.mouse.wheel(0, 1);
-  await v.waitForFunction(() => document.querySelector("p.cur")?.textContent === "One question keeps you focused.");
+  await v.waitForFunction(() => document.querySelector(".cur")?.textContent === "One question keeps you focused.");
   const [spokenNow, spokenNext] = await v.evaluate(() => {
-    const cur = document.querySelector("p.cur");
-    const all = [...document.querySelectorAll("p[data-k]")];
+    const cur = document.querySelector(".cur");
+    const all = [...document.querySelectorAll("[data-k]")];
     return [cur.textContent, all[all.indexOf(cur) + 1].textContent];
   });
   const voiceMoveAt = Date.now();
   await v.evaluate((t) => window.__speech.say(t.toLowerCase().replace(/[^a-z' ]/g, "")), spokenNow);
-  await v.waitForFunction((t) => document.querySelector("p.cur")?.textContent === t, spokenNext);
-  const voicedLine = await v.evaluate(() => document.querySelector("p.cur").textContent);
+  await v.waitForFunction((t) => document.querySelector(".cur")?.textContent === t, spokenNext);
+  const voicedLine = await v.evaluate(() => document.querySelector(".cur").textContent);
   await v.waitForTimeout(700); // the voice's smooth scroll has arrived; the 2 s guard is still running
   assert.ok(Date.now() - voiceMoveAt < 1500, "the wheel comes well inside the 2 s guard, so only the wheel can end the voice move");
   await v.mouse.wheel(0, 700);
   await v.waitForTimeout(500);
   const handLine = () => v.evaluate(() => {
     const y = document.querySelector(".reading-line").getBoundingClientRect().top;
-    return [...document.querySelectorAll(".script p")].find((el) => el.getBoundingClientRect().bottom > y).textContent;
+    return [...document.querySelectorAll(".script [data-k], .script p:not(.para)")].find((el) => el.getBoundingClientRect().bottom > y).textContent;
   });
   const handBefore = await handLine();
   assert.notEqual(handBefore, voicedLine, "the wheel moved the page away from the voiced line");
-  await v.evaluate(() => document.querySelector('input[name="spacing"][value="spacious"]').click());
+  await spaceTo(v, "line-height", 200);
   await v.waitForTimeout(300);
-  assert.equal(await handLine(), handBefore, "a spacing change after hand-scrolling keeps the line the reader moved to");
-  assert.notEqual(await v.evaluate(() => document.querySelector("p.cur")?.textContent), voicedLine, "after the wheel the line being read follows the reader, not the old voiced line");
-  await v.evaluate(() => { window.removeEventListener("scrollend", window.__blockScrollend, true); document.querySelector('input[name="spacing"][value="normal"]').click(); });
+  assert.equal(await handLine(), handBefore, "a line height change after hand-scrolling keeps the line the reader moved to");
+  assert.notEqual(await v.evaluate(() => document.querySelector(".cur")?.textContent), voicedLine, "after the wheel the line being read follows the reader, not the old voiced line");
+  await v.evaluate(() => window.removeEventListener("scrollend", window.__blockScrollend, true));
+  await spaceTo(v, "line-height", 165);
   await v.evaluate(() => window.__speech.fail("not-allowed"));
   await v.locator(".note-row.alert:not([hidden])").waitFor();
   assert.match(await v.locator(".alert-text").textContent(), /microphone is blocked/);
   assert.equal(await v.locator(".voice").getAttribute("aria-pressed"), "false");
-  assert.equal(await v.locator("p.cur").count(), 0, "voice off: no line marked");
+  assert.equal(await v.locator(".cur").count(), 0, "voice off: no line marked");
   assert.equal(await v.locator(".settings-btn").getAttribute("data-dot"), null);
   assert.equal(await v.locator(".auto").getAttribute("aria-pressed"), "true", "auto-scroll resumes");
   await (await dock(v, ".auto")).click();
@@ -1980,7 +2006,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await v.waitForTimeout(1500);
   assert.equal(await v.evaluate(() => window.__speech.made), madeBefore + 1, "one try, no retry loop");
   await voiced.close();
-  ok("Follow my voice: a big mic button in Settings (orange when on) with the API, notice before first use, follows line by line to the reading line (white current line, dimmer lines after it), interim and later-line words never jump, skips QL, picks up after scrolling by hand, pauses auto-scroll, handles a blocked mic, keeps going when speech drops (a fresh recognizer at once after a blip or a session end, no note for one blip; Reconnecting to speech by the reading line, read out once, only while it keeps failing, tries a little apart and never two at once; heard words hide it; a silent stall replaced by a fresh recognizer) and gives up with the message only after about 15 s of failing with no word heard (a browser without the speech service), uses on-device recognition where the browser has it, says it could not start (off at once, one try) when the recognizer cannot start, remembers consent");
+  ok("Follow my voice: a big mic button in Settings (orange when on) with the API, notice before first use, follows line by line to the reading line (pure white current line, white lines after it), interim and later-line words never jump, skips QL, picks up after scrolling by hand, pauses auto-scroll, handles a blocked mic, keeps going when speech drops (a fresh recognizer at once after a blip or a session end, no note for one blip; Reconnecting to speech by the reading line, read out once, only while it keeps failing, tries a little apart and never two at once; heard words hide it; a silent stall replaced by a fresh recognizer) and gives up with the message only after about 15 s of failing with no word heard (a browser without the speech service), uses on-device recognition where the browser has it, says it could not start (off at once, one try) when the recognizer cannot start, remembers consent");
 
   // ---- The Producer's cues with Follow my voice, and going quiet while the box shows ----
   if (mode === "wrangler") {
@@ -2001,7 +2027,7 @@ export async function run({ browser, base, mode, dist, out }) {
     await c.locator('[data-action="voice-ok"]').click();
     await c.keyboard.press("Escape");
     await c.evaluate(() => window.__speech.say("writing scripts takes"));
-    await c.waitForFunction(() => /Writing scripts/.test(document.querySelector("p.cur")?.textContent || ""));
+    await c.waitForFunction(() => /Writing scripts/.test(document.querySelector(".cur")?.textContent || ""));
     // The host reads the cue aloud while the box shows; the browser is still hearing the phrase (one
     // unfinished result) when the box closes.
     const cueText = "One question keeps you focused.";
@@ -2017,16 +2043,16 @@ export async function run({ browser, base, mode, dist, out }) {
     await c.clock.fastForward(1200);
     await c.evaluate(() => { const s = window.__speech; s.say("one question"); s.say("keeps you focused"); });
     await c.waitForTimeout(300);
-    assert.match(await c.locator("p.cur").textContent(), /Writing scripts/, "the rest of the cue's phrase, come late and split, never moves the script");
+    assert.match(await c.locator(".cur").textContent(), /Writing scripts/, "the rest of the cue's phrase, come late and split, never moves the script");
     // Less than a pause after the phrase ended, more words (a later line's) are still held.
     await c.clock.fastForward(900);
     await c.evaluate(() => window.__speech.say("short lines guide your eyes"));
     await c.waitForTimeout(300);
-    assert.match(await c.locator("p.cur").textContent(), /Writing scripts/, "no pause yet: still not followed");
+    assert.match(await c.locator(".cur").textContent(), /Writing scripts/, "no pause yet: still not followed");
     // After a pause the host goes on with the script: followed from where they were.
     await c.clock.fastForward(1100);
     await c.evaluate(() => window.__speech.say("too long reading"));
-    await c.waitForFunction(() => /Reading them/.test(document.querySelector("p.cur")?.textContent || ""));
+    await c.waitForFunction(() => /Reading them/.test(document.querySelector(".cur")?.textContent || ""));
     await viaSettings(c, ".voice"); // off
     await c.keyboard.press("Escape");
     // Auto-scroll on, a cue opens (scrolling waits), Follow my voice turned on meanwhile: auto-scroll stays off
@@ -2082,7 +2108,7 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await markEl.textContent(), "↗Patchstack", "a quiet marker: no \"opens here\" text");
   assert.equal(await markEl.getAttribute("title"), "patchstack.com · opens on the main screen when it reaches the reading line");
   assert.equal(await markEl.getAttribute("data-k"), null, "the marker is not a spoken line");
-  assert.equal(await L.evaluate(() => document.querySelector(".section:nth-child(2) .mark").previousElementSibling.textContent), "Patchstack finds the holes.");
+  assert.equal(await L.evaluate(() => [...document.querySelector(".section:nth-child(2) .mark").previousElementSibling.querySelectorAll("[data-k]")].at(-1).textContent), "Patchstack finds the holes.", "the marker comes right after the paragraph that ends with its line");
   await viaSettings(L, ".screen");
   assert.equal(await L.locator("#settings .screen").getAttribute("data-on"), "true");
   assert.deepEqual([await L.locator("#settings .screen").getAttribute("aria-label"), await L.locator("#settings .screen").getAttribute("title"), await L.locator(".settings-btn").getAttribute("data-dot"), await L.locator(".settings-btn").getAttribute("aria-label")],
@@ -2201,7 +2227,7 @@ export async function run({ browser, base, mode, dist, out }) {
   });
   // The words after the link sit exactly where they sit in the same line without a link.
   const after = (sel) => X.evaluate((q) => {
-    const p = [...document.querySelectorAll(".section p")].find((el) => el.textContent === "Read the docs first." && el.matches(q));
+    const p = [...document.querySelectorAll(".section [data-k]")].find((el) => el.textContent === "Read the docs first." && el.matches(q));
     const range = document.createRange();
     range.selectNodeContents(p.lastChild);
     return range.getBoundingClientRect().right - p.getBoundingClientRect().left;
@@ -2246,12 +2272,12 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await X.evaluate(() => window.__screen.visits.at(-1)), "https://www.wordfence.com");
   assert.match(await X.locator(".status").textContent(), /On main screen: the firewall/);
   assert.equal(await X.evaluate(() => location.hash.startsWith("#s=")), true, "clicking does not follow the link in the prompter");
-  // Its section no longer active: the link takes the dim colour of the line.
+  // Its section no longer active: the link keeps the line's colour, white like every line still to be read (TOOLS-486).
   await X.keyboard.press("ArrowRight");
   await X.waitForTimeout(350);
   const dimmed = await linkLooks();
   assert.deepEqual(dimmed.same, [], "inactive section: still the line's own colour");
-  assert.equal(dimmed.color, "oklch(0.64 0.04 282)");
+  assert.equal(dimmed.color, "oklch(0.975 0.012 282)");
   await X.evaluate(() => window.scrollTo(0, 0));
   await X.waitForTimeout(350);
   const row = X.locator(".section").first().locator(".links .link").first();
@@ -2262,7 +2288,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await X.keyboard.press("4");
   assert.equal(await X.evaluate(() => window.__screen.visits.at(-1)), "https://www.wordfence.com");
   await textCtx.close();
-  ok("a link inside a sentence: the line shows only its words in the line's own font and colour (also dimmed), a faint dotted orange underline; hover turns it orange on a soft tint; at the reading line it opens and gets a thin orange border without underline; no layout shift; click and number keys open it; the top row is small and muted");
+  ok("a link inside a sentence: the line shows only its words in the line's own font and colour (also in another section), a faint dotted orange underline; hover turns it orange on a soft tint; at the reading line it opens and gets a thin orange border without underline; no layout shift; click and number keys open it; the top row is small and muted");
 
   // The control bar tucks away when scrolling down and returns on scrolling up or near the bottom edge.
   const tuckCtx = await browser.newContext(DESKTOP);
@@ -2756,8 +2782,8 @@ export async function run({ browser, base, mode, dist, out }) {
     const V = await open(link);
     await viaSettings(V, ".voice");
     await V.evaluate(() => window.__speech.say("writing scripts takes"));
-    await V.waitForFunction(() => document.querySelector("p.cur")?.textContent === "Writing scripts takes too long.");
-    await V.waitForFunction((y) => Math.abs(document.querySelector("p.cur").getBoundingClientRect().top - y) < 12, Y);
+    await V.waitForFunction(() => document.querySelector(".cur")?.textContent === "Writing scripts takes too long.");
+    await V.waitForFunction((y) => Math.abs(document.querySelector(".cur").getBoundingClientRect().top - y) < 12, Y);
     await V.close();
     await ctx.close();
   }
@@ -2850,7 +2876,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await noOverflow(m, "mobile Settings popover");
   await m.locator('#settings .seg label:has-text("Narrow")').click();
   assert.deepEqual(await bigButtons(m), [["Follow my voice", ""], ["Connect main screen", ""], ["CamFrame link: off", ""]]);
-  for (const sel of ["#settings .voice", "#settings .screen", "#settings .camframe", "#settings .size", "#settings .speed", "#settings .width label", "#settings .spacing label"]) {
+  for (const sel of ["#settings .voice", "#settings .screen", "#settings .camframe", "#settings .size", "#settings .speed", "#settings .line-height", "#settings .para-space", "#settings .width label", "#settings .layout label"]) {
     for (const loc of await m.locator(sel).all()) {
       const box = await loc.boundingBox();
       assert.ok(box.height >= 44 && box.x >= 0 && box.x + box.width <= 390, `${sel} fits a phone as a 44px target: ${JSON.stringify(box)}`);
@@ -2877,9 +2903,9 @@ export async function run({ browser, base, mode, dist, out }) {
   await m.locator("#settings").evaluate((el) => { el.scrollTop = el.scrollHeight; });
   const [tg, st] = [await m.locator("#settings .big-toggles").boundingBox(), await m.locator("#settings").boundingBox()];
   assert.ok(tg.y >= st.y && tg.y + tg.height <= st.y + st.height, "landscape phone: the last row can be scrolled into view");
-  await m.locator('#settings .spacing label:has-text("Roomy")').click();
-  assert.equal(await m.evaluate(() => document.documentElement.dataset.spacing), "roomy", "landscape phone: the line spacing choices can be reached");
-  await m.locator('#settings .spacing label:has-text("Normal")').click();
+  await m.locator('#settings .layout label:has-text("Paragraphs")').click();
+  assert.equal(await m.evaluate(() => document.documentElement.dataset.layout), "paragraphs", "landscape phone: the layout choices can be reached");
+  await m.locator('#settings .layout label:has-text("Lines")').click();
   await m.keyboard.press("Escape");
   await m.setViewportSize({ width: 390, height: 844 });
   await viaSettings(m, ".voice");
@@ -3043,8 +3069,8 @@ export async function run({ browser, base, mode, dist, out }) {
     const rest = getComputedStyle(el.querySelector(".cue-rest"));
     return { what: what.color, weight: what.fontWeight, rest: rest.color, size: parseFloat(getComputedStyle(el).fontSize) / parseFloat(getComputedStyle(el.closest(".script")).fontSize) };
   });
-  assert.equal(cueLook.what, "oklch(0.975 0.012 282)", "in the active section the camera words are as bright as the spoken lines");
-  assert.equal(cueLook.weight, "700");
+  assert.equal(cueLook.what, "oklch(0.763 0.027 282)", "the camera words are small and dimmed like a reminder (TOOLS-486)");
+  assert.equal(cueLook.weight, "700", "and bold, so they still read as an instruction");
   assert.equal(cueLook.rest, "oklch(0.763 0.027 282)", "the line's other words stay muted");
   assert.ok(cueLook.size > 0.5, "a little larger than an ordinary reminder (half the text size)");
   await passCue(0);
@@ -3269,7 +3295,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await V.waitForFunction(() => window.__speech.started === 1);
   const voiceTo = async (words, line) => {
     await V.evaluate((w) => window.__speech.say(w), words);
-    await V.waitForFunction((l) => document.querySelector("p.cur")?.textContent === l, line);
+    await V.waitForFunction((l) => document.querySelector(".cur")?.textContent === l, line);
   };
   await voiceTo("welcome to the camera cue test", "Purple elephants dance quietly tonight.");
   await voiceTo("purple elephants dance quietly tonight", "Seven orange kites drift over hills.");
@@ -3280,7 +3306,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await voiceTo("copper trains whistle beyond rivers", "Silver foxes nap beside lanterns.");
   await V.waitForTimeout(900);
   assert.deepEqual(cam.cues().slice(sentBeforeVoice), [{ size: "small", position: "bottom-right" }], "Follow my voice sends the cue it passes, once");
-  // Changing the line spacing with the reading line on a cue line sends no cue (nothing crossed the line).
+  // Changing the line height, paragraph spacing or layout with the reading line on a cue line sends no cue (nothing crossed the line).
   await V.evaluate(() => {
     const el = document.querySelector("[data-cue]");
     window.scrollBy(0, el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2 - document.querySelector(".reading-line").getBoundingClientRect().top);
@@ -3293,11 +3319,11 @@ export async function run({ browser, base, mode, dist, out }) {
     const r = document.querySelector("[data-cue]").getBoundingClientRect();
     return r.top <= y + 4 && r.bottom > y - 4;
   });
-  for (const name of ["spacious", "roomy", "normal"]) {
-    await V.evaluate((n) => document.querySelector(`input[name="spacing"][value="${n}"]`).click(), name);
+  for (const [what, value] of [["line-height", 200], ["para-space", 50], ["layout", "paragraphs"], ["line-height", 165], ["para-space", 200], ["layout", "lines"]]) {
+    await spaceTo(V, what, value);
     await V.waitForTimeout(900);
-    assert.equal(cam.cues().length, sentBeforeSpacing, `a spacing change (${name}) sends no CamFrame cue`);
-    assert.equal(await cueUnder(), true, `voice on, cue line: still at the reading line (${name})`);
+    assert.equal(cam.cues().length, sentBeforeSpacing, `a change (${what} ${value}) sends no CamFrame cue`);
+    assert.equal(await cueUnder(), true, `voice on, cue line: still at the reading line (${what} ${value})`);
   }
   await voiceCtx.close();
   // CamFrame gone: the button says so (a quiet crossed-out camera), with the permission help in its title.
@@ -3341,7 +3367,7 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal((await camLook()).state, "off");
   assert.equal(await C.evaluate(() => localStorage.getItem("prompter-camframe")), null);
   await camCtx.close();
-  ok("CamFrame link: cue lines read as a camera instruction (a camera mark, \"Camera: face small\" bright and bold, the line's other words muted) whether or not the link is on; off by default (no calls at all); CamFrame's big button in Settings, beside Follow my voice and the main screen and built like them (Enter, Space or a click turn the same remembered setting on and off), says its state in its name and title: off a quiet outline camera, looking or reconnecting a blinking orange camera (reduced motion: a dashed ring, no blinking), connected a filled orange camera with a steady glow (and a dot on Settings), not found a quiet crossed-out camera with a thin orange ring and the permission help in its title; connected and not found are read out once, not on every check; a cue line sends its cue to 127.0.0.1:47833 once per pass down (by hand, a section jump sending only the last cue it passed, auto-scroll, and Follow my voice), again after scrolling back above it, never the script; a refused cue keeps the link on; a reload with the link remembered connects by itself and sends nothing for cues already above; one missed check says reconnecting and connects again by itself, several in a row say not found; a cue that does not get through is sent once more, and twice not through reconnects; a cue still on its way when the link is turned off and on changes nothing; no note pops up for a cue (switched, refused or not reached)", reloadNote);
+  ok("CamFrame link: cue lines read as a camera instruction (a camera mark, \"Camera: face small\" bold but small and dimmed like a reminder, the line's other words muted) whether or not the link is on; off by default (no calls at all); CamFrame's big button in Settings, beside Follow my voice and the main screen and built like them (Enter, Space or a click turn the same remembered setting on and off), says its state in its name and title: off a quiet outline camera, looking or reconnecting a blinking orange camera (reduced motion: a dashed ring, no blinking), connected a filled orange camera with a steady glow (and a dot on Settings), not found a quiet crossed-out camera with a thin orange ring and the permission help in its title; connected and not found are read out once, not on every check; a cue line sends its cue to 127.0.0.1:47833 once per pass down (by hand, a section jump sending only the last cue it passed, auto-scroll, and Follow my voice), again after scrolling back above it, never the script; a refused cue keeps the link on; a reload with the link remembered connects by itself and sends nothing for cues already above; one missed check says reconnecting and connects again by itself, several in a row say not found; a cue that does not get through is sent once more, and twice not through reconnects; a cue still on its way when the link is turned off and on changes nothing; no note pops up for a cue (switched, refused or not reached)", reloadNote);
 
   // ---- Camera layouts: the Prompter saves the two layout Scenes in a CamFrame with API 2 ----
   await cam.start();
