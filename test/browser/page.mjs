@@ -205,6 +205,7 @@ ${CUE_FILL.split("\n").slice(0, 4).join("\n")}
 [Face full]
 Back to the full camera.
 ${CUE_FILL}
+[Face small]
 
 ### **1 · DOCS · 01:00**
 
@@ -3757,7 +3758,7 @@ export async function run({ browser, base, mode, dist, out }) {
     // Off by default: the page draws exactly what it drew before, and Settings offers the choice.
     const offHtml = await T.locator(".script").innerHTML();
     const offLook = await hiddenLook(T);
-    assert.deepEqual([offLook.notes, offLook.marks, offLook.links, offLook.cues], [3, 1, 1, 2], "off: reminders, cue lines, the link line and the top link row all show");
+    assert.deepEqual([offLook.notes, offLook.marks, offLook.links, offLook.cues], [4, 1, 1, 3], "off: reminders, cue lines, the link line and the top link row all show");
     assert.equal(await T.locator(".next-up").isVisible(), false, "off: no strip");
     assert.equal(await T.evaluate(() => localStorage.getItem("prompter-text-only")), null, "nothing stored");
     await (await dock(T, ".settings-btn")).click();
@@ -3770,7 +3771,7 @@ export async function run({ browser, base, mode, dist, out }) {
     const onLook = await hiddenLook(T);
     assert.deepEqual([onLook.notes, onLook.marks, onLook.links], [0, 0, 0], "on: no reminder, cue line, link line or top link row");
     assert.deepEqual(onLook.spoken, offLook.spoken, "every spoken line is still there, numbered as before");
-    assert.deepEqual(onLook.cueBoxes, [[0, ""], [0, ""]], "the cues are still marked in place, with nothing to see");
+    assert.deepEqual(onLook.cueBoxes, [[0, ""], [0, ""], [0, ""]], "the cues are still marked in place, with nothing to see");
     assert.equal(await T.evaluate(() => document.querySelector(".script").textContent.includes("Share screen")), false);
     // The strip: small, muted, beside the text (never over it), no border or ring.
     await T.locator(".next-up").waitFor();
@@ -3786,6 +3787,14 @@ export async function run({ browser, base, mode, dist, out }) {
     assert.deepEqual([stripLook.clear, stripLook.inside, stripLook.border, stripLook.shadow], [true, true, "none", "none"], "beside the text, inside the window, no border, ring or shadow");
     assert.equal(stripLook.color, "oklch(0.763 0.027 282)", "muted");
     assert.ok(stripLook.size <= 14, "small");
+    // The column stays centred (a camera over the middle of the screen), only narrower.
+    const colMid = (page) => page.evaluate(() => {
+      const m = document.querySelector(".script");
+      const r = m.getBoundingClientRect();
+      const cs = getComputedStyle(m);
+      return Math.round((r.left + parseFloat(cs.paddingLeft) + r.right - parseFloat(cs.paddingRight)) / 2 - innerWidth / 2);
+    });
+    assert.ok(Math.abs(await colMid(T)) <= 2, `the column stays centred beside the strip (${await colMid(T)}px off)`);
     // Top link: the main screen opens it at the section start, as before.
     await viaSettings(T, ".screen");
     const tVisits = () => T.evaluate(() => window.__screen.visits.slice());
@@ -3820,8 +3829,11 @@ export async function run({ browser, base, mode, dist, out }) {
     await T.waitForFunction((k) => document.querySelector(".cur")?.dataset.k === k, back, { timeout: 2000 });
     // Turned off while the voice's move is still under way: the line being read stays marked and is
     // at the reading line (as for any layout change during a voice move), and the strip goes.
+    const visitsBefore = await tVisits();
     await viaSettings(T, 'input[name="show"][value="all"]');
     assert.equal(await T.evaluate(() => document.querySelector(".cur")?.dataset.k), back, "the line being read stays marked");
+    await T.waitForTimeout(900);
+    assert.deepEqual(await tVisits(), visitsBefore, "turning it off opens no page by itself");
     const curAtLine = await T.evaluate(() => {
       const y = document.querySelector(".reading-line").getBoundingClientRect().top;
       return [...document.querySelector(".cur").getClientRects()].some((r) => r.top <= y + 4 && r.bottom >= y - 4);
@@ -3869,9 +3881,11 @@ export async function run({ browser, base, mode, dist, out }) {
     await passEl(M, ".link-at");
     await M.waitForFunction(() => document.querySelector(".next-up li")?.dataset.state === "missed" && document.querySelector(".next-up li .sw-what").textContent === "Patchstack", null, { timeout: 2000 });
     assert.equal((await M.evaluate(() => window.__screen.visits.slice())).at(-1), "https://example.com/intro", "cut off: nothing opens by itself");
-    // A later camera cue happened: the missed page still comes first.
+    // A later camera cue happened: the missed page still comes first, and its Open button keeps focus.
+    await M.locator(".next-up .redo").focus();
     await passEl(M, "[data-cue]", 0, 1);
     await M.waitForTimeout(100);
+    assert.equal(await M.evaluate(() => document.activeElement?.matches(".next-up .redo")), true, "the Open button keeps focus while the rows change");
     assert.deepEqual((await stripRows(M)).slice(0, 2), ["missed | Page | Patchstack | Open", "done | Camera | face full | "]);
     await M.locator(".next-up .redo").click();
     await M.waitForFunction(() => window.__screen.visits.at(-1) === "https://patchstack.com", null, { timeout: 2000 });
@@ -3901,6 +3915,20 @@ export async function run({ browser, base, mode, dist, out }) {
     await passCueOn(TC, 0, 60);
     await TC.waitForTimeout(300);
     assert.deepEqual(toCam.cues(), [{ size: "small" }], "reading on sends nothing again");
+    // Turning Text only off and on again sends no cue by itself.
+    await viaSettings(TC, 'input[name="show"][value="all"]');
+    await viaSettings(TC, 'input[name="show"][value="text"]');
+    await TC.waitForTimeout(400);
+    assert.deepEqual(toCam.cues(), [{ size: "small" }], "switching Text only sends nothing");
+    // A cue at a section's very end happens at that section's end, as its line would, before the next heading.
+    assert.equal(await TC.evaluate(() => document.querySelector('[data-cue="2"]').closest(".sw-end, .section")?.classList.contains("sw-end") && document.querySelector('[data-cue="2"]').closest(".section").dataset.i), "1", "its place is the end of its own section");
+    await passCueOn(TC, 2, -40);
+    await TC.waitForTimeout(400);
+    const sentBefore = toCam.cues().length;
+    await passCueOn(TC, 2);
+    await TC.waitForTimeout(400);
+    assert.deepEqual(toCam.cues().slice(sentBefore), [{ size: "small" }], "sent when the section's end reaches the line");
+    assert.equal(await TC.evaluate(() => document.querySelectorAll(".section")[2].getBoundingClientRect().top > document.querySelector(".reading-line").getBoundingClientRect().top), true, "the next heading is still below the line");
     await camOnly.close();
     await toCam.stop();
     ok("Text only: a hidden camera cue still reaches CamFrame when the next spoken line reaches the reading line, once per pass, not before");
@@ -3920,8 +3948,45 @@ export async function run({ browser, base, mode, dist, out }) {
     });
     assert.deepEqual([card.fits, card.top < 40, card.aboveLine], [true, true, true], "a card at the top, above the reading line, nothing scrolls sideways");
     assert.equal((await stripRows(TP)).length, 2, "the switch that just happened and the next one");
+    assert.equal(await TP.evaluate(() => { const cs = getComputedStyle(document.querySelector(".script")); return cs.paddingLeft === cs.paddingRight; }), true, "the column's sides stay even");
     await shot(TP, "text-only-mobile");
     await toPhone.close();
+    // A page with a long name that missed the main screen, with the reading line dragged high: Missed and
+    // Open stay in view, and the card moves clear of the line being read.
+    const longLink = await makeLink(TEXT_ONLY_SCRIPT.replace("- Intro: https", "- The introduction page with a very long name that keeps on going for a good while: https"), "lex", base);
+    const highPhone = await browser.newContext(MOBILE);
+    await highPhone.addInitScript(() => { localStorage.setItem("prompter-text-only", "on"); localStorage.setItem("prompter-line", "0.1"); });
+    const TH = await highPhone.newPage();
+    watch(TH, "text only phone, high line");
+    await TH.goto(longLink);
+    await TH.locator(".section").first().waitFor();
+    await scrollToSection(TH, 1);
+    await TH.waitForFunction(() => document.querySelector(".next-up li")?.dataset.state === "missed", null, { timeout: 2000 });
+    const high = await TH.evaluate(() => {
+      const card = document.querySelector(".next-up").getBoundingClientRect();
+      const inCard = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.top >= card.top && r.bottom <= card.bottom && r.left >= card.left && r.right <= card.right; };
+      const y = document.querySelector(".reading-line").getBoundingClientRect().top;
+      const note = document.querySelector(".dock-wrap").getBoundingClientRect();
+      const hint = document.querySelector(".screen-hint");
+      return { open: inCard(document.querySelector(".next-up .redo")), missed: inCard(document.querySelector(".next-up .sw-state")), clear: card.bottom < y || card.top > y + 60,
+        hint: !hint.hidden, uncovered: card.bottom <= note.top };
+    });
+    assert.deepEqual(high, { open: true, missed: true, clear: true, hint: true, uncovered: true }, "Missed and Open in view; the card clear of the reading line and above the main screen note");
+    await shot(TH, "text-only-mobile-high-line");
+    await highPhone.close();
+    // A script with nothing hidden: Text only draws the column exactly where Everything does.
+    const plainCtx = await browser.newContext(DESKTOP);
+    await plainCtx.addInitScript(() => { localStorage.setItem("prompter-text-only", "on"); });
+    const TPl = await plainCtx.newPage();
+    watch(TPl, "text only, nothing hidden");
+    await TPl.goto(await makeLink("### **ONLY WORDS · 00:00**\n\nJust words to say here.\nAnd a few more of them.\n", "lex", base));
+    await TPl.locator(".section").first().waitFor();
+    const colBox = () => TPl.evaluate(() => { const r = document.querySelector("[data-k]").getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right)]; });
+    const textOnlyBox = await colBox();
+    assert.equal(await TPl.locator(".next-up").isVisible(), false, "no strip with nothing hidden");
+    await viaSettings(TPl, 'input[name="show"][value="all"]');
+    assert.deepEqual(await colBox(), textOnlyBox, "the column stays where Everything puts it");
+    await plainCtx.close();
     ok("Text only on a phone: the strip is a compact card at the top with two rows, above the reading line; nothing scrolls sideways");
   }
 

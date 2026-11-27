@@ -774,6 +774,7 @@ function setLine(frac, keepText = false) {
   const delta = reading.place(y);
   root.style.setProperty("--line", `${y}px`);
   placePill(); // dragged high, the pill goes low
+  placeNext(); // and so does Text only's card on a phone
   const pct = Math.round(lineFrac * 100);
   handle.setAttribute("aria-valuenow", String(pct));
   handle.setAttribute("aria-valuetext", `${pct}% from the top`);
@@ -1042,17 +1043,41 @@ function markShown() {
 // go on the main screen says Missed, with Open: a click, so it may open a new window.
 const nextUp = $(".next-up");
 const nextList = $(".next-up .next-list");
-let nextDrawn = "";
+const rowDrawn = new WeakMap(); // each row's html, so a row that stays is kept (and its Open button keeps focus)
 const SW_STATE = { done: "Just now", next: "Next" };
+const stripOn = () => textOnly() && !isEmpty() && scripts.now.switches.length > 0;
 function drawNext() {
   const script = scripts.now;
-  const on = textOnly() && !isEmpty() && script.switches.length > 0;
+  const on = stripOn();
   nextUp.hidden = !on;
+  root.toggleAttribute("data-next-up", on); // the column keeps room for it
   const missed = script.missedKey && script.missedKey === script.anchorKey ? script.missedKey : "";
-  const html = !on ? "" : nextUpRows(script.switches, script.passed, missed).map((r) =>
-    `<li data-state="${r.state}"><span class="sr-only">${r.state === "missed" ? "" : `${SW_STATE[r.state]}: `}</span><span class="sw-kind">${SWITCH_KINDS[r.kind]}</span> <span class="sw-what">${esc(r.text)}</span>${
-      r.state === "missed" ? ` <span class="sw-state">Missed</span> <button class="redo" type="button" data-action="redo" data-s="${r.s}" data-l="${r.l}" aria-label="Open ${esc(r.text)} on the main screen">Open</button>` : ""}</li>`).join("");
-  if (html !== nextDrawn) { nextList.innerHTML = html; nextDrawn = html; }
+  const rows = !on ? [] : nextUpRows(script.switches, script.passed, missed).map((r) =>
+    `<li data-state="${r.state}" data-at="${r.at}"><span class="sr-only">${r.state === "missed" ? "" : `${SW_STATE[r.state]}: `}</span><span class="sw-kind">${SWITCH_KINDS[r.kind]}</span> <span class="sw-what">${esc(r.text)}</span>${
+      r.state === "missed" ? ` <span class="sw-state">Missed</span> <button class="redo" type="button" data-action="redo" data-s="${r.s}" data-l="${r.l}" aria-label="Open ${esc(r.text)} on the main screen">Open</button>` : ""}</li>`);
+  // Rows that stay are kept as they are; only new ones are made and old ones taken away.
+  const old = new Map([...nextList.children].map((li) => [rowDrawn.get(li), li]));
+  const lis = rows.map((html) => {
+    const kept = old.get(html);
+    if (kept) { old.delete(html); return kept; }
+    const t = document.createElement("template");
+    t.innerHTML = html;
+    rowDrawn.set(t.content.firstChild, html);
+    return t.content.firstChild;
+  });
+  for (const li of old.values()) li.remove();
+  lis.forEach((li, n) => { if (nextList.children[n] !== li) nextList.insertBefore(li, nextList.children[n] ?? null); });
+  placeNext();
+}
+// On a narrow screen the card sits at the top, over text already read, unless the reading line is
+// dragged up into it: then it goes above the control bar and the notes over it (their height is --dock-h).
+const dockWrap = $(".dock-wrap");
+new ResizeObserver(() => root.style.setProperty("--dock-h", `${dockWrap.offsetHeight}px`)).observe(dockWrap);
+function placeNext() {
+  if (nextUp.hidden) return;
+  const narrow = matchMedia("(max-width: 999px)").matches;
+  nextUp.removeAttribute("data-low");
+  if (narrow && nextUp.getBoundingClientRect().bottom + 12 > reading.y) nextUp.setAttribute("data-low", "");
 }
 
 // Text only: drawn again in place, the spoken line at the reading line staying put (and the line
@@ -1074,6 +1099,7 @@ function setTextOnly(on, keep = true) {
     script.switches = [];
     script.active = -1;
     render({ redraw: true });
+    root.toggleAttribute("data-next-up", stripOn()); // before the place is found again: the column's width may change
     if (curK !== undefined) main.querySelector(`[data-k="${curK}"]`)?.classList.add("cur");
     if (script.shownUrl) markShown();
   };
