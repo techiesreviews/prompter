@@ -46,6 +46,7 @@ const voiceBtn = $(".voice"); // in Settings
 const voiceNotice = $(".voice-notice");
 const alertEl = $(".note-row.alert");
 const hintEl = $(".screen-hint");
+const cutEl = $(".cut-note");
 const pasteDialog = $(".paste-dialog");
 const fileInput = $(".file-input");
 const continueBtn = $(".continue");
@@ -477,6 +478,7 @@ function drawAsk() {
   askShowing = box;
   askBox.hidden = !box;
   askVeil.hidden = !box;
+  drawCutNote(); // not over the box: it comes back when the box closes
   if (box) {
     const cur = ask.current;
     const name = ASK_KINDS[cur.kind][1];
@@ -923,7 +925,7 @@ function connected() { return mainWin && !mainWin.closed; }
 // The main screen's button in Settings: orange while connected, an orange dashed screen once its
 // window is gone (closed, or cut off by its page: "cut"); the Settings button shows a dot then.
 const SCREEN_SAYS = { true: "Main screen connected, reconnect", false: "Connect main screen", cut: "Main screen cut off, reconnect" };
-const SCREEN_CUT_HELP = ". Its window was closed, or the page in it cut it off from the Prompter (some sites do, such as the Dutch Data Protection Authority). A window that was cut off still shows its page: close it when you are done. Reconnect opens a new main screen for the next pages.";
+const SCREEN_CUT_HELP = ". Its window was closed, or the page in it cut it off from the Prompter (some sites do, such as the Dutch Data Protection Authority). A window that was cut off still shows its page: close it when you are done. The next page opens a new main screen by itself; Reconnect opens one now.";
 function setConnected(on) {
   connectBtn.dataset.on = String(on);
   const name = SCREEN_SAYS[on];
@@ -936,24 +938,80 @@ function setConnected(on) {
 // Dutch Data Protection Authority's pages send): its window stays open and shows it, but the browser
 // no longer lets the Prompter reach that window, which looks closed from here, and no script can get
 // it back. From here that looks the same as a window someone closed, so both say "cut off" on the
-// button, with no alert and no window opening by itself (it could land on the Prompter's own screen,
-// over the script). Closed this soon after a page was sent, that page may be what cut it off:
-// nothing sends it again by itself until another page is sent; its link button still does.
+// button and in one note above the control bar, and the next page opens a new main screen by itself
+// (TOOLS-492, Lex's pick). Closed this soon after a page was sent, that page may be what cut it off:
+// nothing sends it again by itself until another page is sent (its link button still does), and its
+// site is remembered on this device, so from then on its links open in a window of their own and the
+// main screen stays connected (src/main-screen.mjs).
 const CUT_MS = 30000;
 let sent = { url: "", site: "", at: 0 }; // the last page sent to the main screen: its address, the link's site, when
 let skip = { url: "", site: "" }; // a page held back
+let cutSites = readCutSites(store.get(STORED.cutSites));
+const cutsLink = (link) => cutsMainScreen(cutSites, hostOf(link.url));
 let screenWatch = 0;
 function watchScreen() {
   clearInterval(screenWatch);
   screenWatch = setInterval(() => { if (!connected()) screenGone(); }, 500);
 }
+// A remembered site's own window that is still connected after CUT_MS shows its site did not cut it
+// off (that window had only been closed): the site comes off the list, so the device is never stuck
+// with it. One gone sooner (cut off, or closed) changes nothing.
+let ownInFront = ""; // the site of an own window opened since the last page went to the main screen
+function watchOwn(win, host) {
+  const at = Date.now();
+  const watch = setInterval(() => {
+    if (win.closed) { clearInterval(watch); return; }
+    if (Date.now() - at < CUT_MS) return;
+    clearInterval(watch);
+    const list = forgetCutSite(cutSites, host);
+    if (list !== cutSites) { cutSites = list; store.set(STORED.cutSites, JSON.stringify(list)); }
+  }, 500);
+}
 function screenGone() {
   clearInterval(screenWatch);
   mainWin = null;
-  if (Date.now() - sent.at < CUT_MS) skip = { url: sent.url, site: sent.site };
+  const soon = Date.now() - sent.at < CUT_MS;
+  if (soon) {
+    skip = { url: sent.url, site: sent.site };
+    const host = hostOf(sent.url);
+    const list = host === location.hostname ? cutSites : rememberCutSite(cutSites, host); // the page's own player view never cuts
+    if (list !== cutSites) { cutSites = list; store.set(STORED.cutSites, JSON.stringify(list)); }
+  }
   setConnected("cut");
-  setStatus("The main screen was cut off. Reconnect it in Settings.");
+  showCutNote(soon && sent.site ? `${sent.site} cut the main screen off.` : "The main screen was closed or cut off.");
 }
+
+// The cut-off note: one sentence and one button, above the control bar, with no timer. It stays until
+// a new main screen is open, and steps aside while the Producer's cue box shows. When the browser
+// blocks the new main screen that should open by itself, it says so; its button (a click) still works.
+const CUT_BLOCKED = " The browser blocked a new main screen: allow pop-ups for this page so the next one opens by itself.";
+let cutSays = "";
+function showCutNote(text) {
+  cutSays = text;
+  $(".cut-text").textContent = text;
+  drawCutNote();
+  setStatus(text);
+}
+function hideCutNote() {
+  cutSays = "";
+  drawCutNote();
+}
+function drawCutNote() { cutEl.hidden = !cutSays || askShowing; }
+
+// Where a new main screen goes: with the browser's window placement permission (Chrome and Edge ask
+// once per visit, from the first Connect click; already allowed, it is read at start-up without
+// asking), full size on a screen the Prompter is not on, asking for full screen too; else a plain
+// window the person drags.
+let screenDetails = null;
+let screensAsk = null; // the one ask, also while it waits for its answer
+function askScreens() {
+  if (!window.getScreenDetails) return Promise.resolve(null);
+  if (!screensAsk) screensAsk = window.getScreenDetails().then((d) => (screenDetails = d), () => null);
+  return screensAsk;
+}
+navigator.permissions?.query({ name: "window-management" }).then((p) => { if (p.state === "granted") askScreens(); }, () => {});
+const screenArea = () => screenDetails && mainScreenArea(screenDetails.screens, screenDetails.currentScreen);
+function openScreen(url, name) { return window.open(url, name, mainScreenFeatures(screenArea())); }
 
 // A dot on the Settings button, and its name, while Follow my voice is on, a main screen is connected
 // or cut off, or CamFrame is connected.
@@ -967,24 +1025,41 @@ function updateSettingsBtn() {
 
 function connect() {
   if (connectBtn.dataset.on === "true" && !connected()) screenGone(); // before the watch saw it
-  mainWin = window.open("", WINDOW_NAME, "popup=yes,width=1400,height=900");
+  const placed = Boolean(screenArea());
+  const win = mainWin = openScreen("", WINDOW_NAME);
   if (!mainWin) { blocked(); return; }
   try {
     if (mainWin.location.href === "about:blank") {
       mainWin.document.title = "Main screen";
       mainWin.document.body.style.cssText = "margin:0;box-sizing:border-box;display:grid;place-items:center;height:100vh;background:#000;color:#f4f1ea;font:600 32px system-ui;text-align:center;padding:0 5vw;overflow-wrap:anywhere";
-      mainWin.document.body.textContent = "Drag this window to your main screen and make it full size. Pages will open here."
+      mainWin.document.body.textContent = (placed ? "Main screen. Pages will open here." : "Drag this window to your main screen and make it full size. Pages will open here.")
         + (skip.url ? ` The last page (${skip.site}) was not sent again, as it may cut this window off too: its link button opens it anyway.` : "");
     }
   } catch { /* already showing another site; fine */ }
+  // Asked once per visit, from the first Connect click: allowed, this window moves to the main screen
+  // while it still waits, and every later main screen opens there.
+  if (!placed) askScreens().then(() => {
+    const area = screenArea();
+    if (!area || win !== mainWin) return;
+    try {
+      if (win.location.href !== "about:blank") return;
+      win.moveTo(area.left, area.top);
+      win.resizeTo(area.width, area.height);
+      win.document.body.textContent = win.document.body.textContent.replace(/^Drag this window to your main screen and make it full size\. /, "Main screen. ");
+    } catch { /* already showing another site: it stays where it is */ }
+  });
   setConnected(true);
   setStatus("");
   hideHint();
+  hideCutNote();
   watchScreen();
   const { anchor } = scripts.now;
   scripts.now.shownUrl = "";
   markShown();
-  if (anchor) showLink(anchor.s, anchor.l, false);
+  // A site that cuts the main screen off opens in a window of its own (from its link, or as the reader
+  // reached it), so connecting does not open another one for it.
+  const link = anchor && scripts.now.sections[anchor.s]?.links[anchor.l];
+  if (link && !cutsLink(link)) showLink(anchor.s, anchor.l, false);
   drawNext();
   if (skip.url && !scripts.now.shownUrl) setStatus(`Main screen connected. The last page (${skip.site}) was not sent again: its link button opens it.`);
 }
@@ -1010,24 +1085,54 @@ function showLink(si, li, fromUser) {
   const script = scripts.now;
   const s = script.sections[si];
   if (!s || !s.links[li]) return;
-  const url = screenUrl(s.links[li].url);
+  const link = s.links[li];
+  const url = screenUrl(link.url);
   // A page that could not go on the main screen by itself: Text only's strip says Missed, with Open.
   const missed = () => { script.missedKey = `${si}:${li}`; drawNext(); };
-  if (!connected()) {
-    if (connectBtn.dataset.on === "true") screenGone(); // before the watch saw it
-    if (!fromUser) {
-      if (connectBtn.dataset.on === "false") showHint(s.links[li].label); // cut off: the button already says reconnect
-      missed();
+  if (connectBtn.dataset.on === "true" && !connected()) screenGone(); // before the watch saw it
+  if (!fromUser && connectBtn.dataset.on === "false") { showHint(link.label); missed(); return; } // never connected: nothing opens by itself
+  if (!fromUser && url === skip.url) { missed(); return; } // held back: it may cut a window off too; its link button still sends it
+  if (cutsLink(link)) {
+    // A site known to cut the main screen off: a window of its own, on top of the main screen, which
+    // stays connected behind it. By itself once per page in an open script (the Prompter cannot close
+    // it again, and a site that cuts it off also drops its name, so another would pile up); its link
+    // button opens it again. It stays in front until it is closed by hand: bringing the main screen
+    // forward without a click would take the keys from the Prompter. Blocked (no click and pop-ups
+    // not allowed): it goes to the main screen as before.
+    if (!fromUser && script.ownShown.has(url)) return;
+    const own = openScreen(url, `${WINDOW_NAME}-own`);
+    if (own) {
+      script.ownShown.add(url);
+      ownInFront = hostOf(link.url);
+      watchOwn(own, hostOf(link.url));
+      script.shownUrl = url;
+      script.missedKey = "";
+      markShown();
+      drawNext();
+      if (!fromUser) window.focus(); // the Prompter keeps the keys (clicker, Space) where the browser allows it
+      setStatus(`In its own window: ${link.label}`);
       return;
     }
-    mainWin = window.open(url, WINDOW_NAME, "popup=yes,width=1400,height=900");
-    if (!mainWin) { blocked(); return; }
+  }
+  const opened = !connected();
+  if (opened) {
+    // Cut off: the next page opens a new main screen by itself (Lex's pick); a link button does too.
+    mainWin = openScreen(url, WINDOW_NAME);
+    if (!mainWin) {
+      if (fromUser) blocked();
+      else {
+        if (!cutSays.endsWith(CUT_BLOCKED)) showCutNote((cutSays + CUT_BLOCKED).trim()); // said once, not on every page
+        missed();
+      }
+      return;
+    }
     setConnected(true);
     watchScreen();
+    hideCutNote();
+    if (!fromUser) window.focus(); // the Prompter keeps the keys (clicker, Space) where the browser allows it
   }
-  if (!fromUser && url === skip.url) { missed(); return; } // held back: it may cut this window off too; its link button still sends it
-  if (url !== script.shownUrl || fromUser) {
-    try { mainWin.location.href = url; } catch { mainWin = window.open(url, WINDOW_NAME); }
+  if (opened || url !== script.shownUrl || fromUser) {
+    if (!opened) try { mainWin.location.href = url; } catch { mainWin = window.open(url, WINDOW_NAME); }
     script.shownUrl = url;
     sent = { url, site: hostOf(s.links[li].url), at: Date.now() };
     skip = { url: "", site: "" };
@@ -1035,7 +1140,9 @@ function showLink(si, li, fromUser) {
   script.missedKey = "";
   markShown();
   drawNext();
-  setStatus(`On main screen: ${s.links[li].label}`);
+  const covered = ownInFront ? `. ${ownInFront}'s own window may still cover it: close that window.` : "";
+  ownInFront = "";
+  setStatus(`On main screen: ${s.links[li].label}${covered}`);
 }
 
 // The link buttons for the page the main screen shows are marked.

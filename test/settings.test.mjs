@@ -34,7 +34,7 @@ const LIVE_KEYS = {
 
 test("each setting keeps the key the live site saves under", () => {
   assert.deepEqual(Object.fromEntries(Object.entries(SETTINGS).map(([name, s]) => [name, s.key])), LIVE_KEYS);
-  assert.deepEqual(STORED, { lastScript: "prompter-last-script", lastSaved: "prompter-last-saved", agent: "prompter-agent" });
+  assert.deepEqual(STORED, { lastScript: "prompter-last-script", lastSaved: "prompter-last-saved", agent: "prompter-agent", cutSites: "prompter-cut-sites" });
   const all = [...Object.values(SETTINGS).map((s) => s.key), ...Object.values(STORED)];
   assert.equal(new Set(all).size, all.length, "no two share a key");
   // The old Line spacing (Normal, Roomy, Spacious) is no longer read: Lex's new defaults apply to everyone

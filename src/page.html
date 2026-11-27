@@ -41,7 +41,8 @@
     --ql: oklch(88% 0.11 80);
     --next: oklch(83% 0.085 282);
     --read-veil: oklch(16% 0.06 282 / 0.86); /* the page colour over read text: ~14% of it shows */
-    --shadow: 0 1px 1px oklch(4% 0.06 282 / 0.5), 0 4px 8px oklch(4% 0.06 282 / 0.4), 0 16px 32px oklch(4% 0.06 282 / 0.3), inset 0 1px 0 oklch(97.5% 0.012 282 / 0.07);
+    --lift: 0 1px 1px oklch(4% 0.06 282 / 0.5), 0 4px 8px oklch(4% 0.06 282 / 0.4), 0 16px 32px oklch(4% 0.06 282 / 0.3); /* --shadow without its 1px top highlight: no edge line */
+    --shadow: var(--lift), inset 0 1px 0 oklch(97.5% 0.012 282 / 0.07);
     --radius: 10px;
     --font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
     --font-mono: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -309,7 +310,7 @@
      card. The control bar (z-index 20) stays above the veil. Dark page text on each kind's colour is AA. */
   .ask-pill, .ask-box {
     --kind: var(--ql);
-    --ask-lift: 0 1px 1px oklch(4% 0.06 282 / 0.5), 0 4px 8px oklch(4% 0.06 282 / 0.4), 0 16px 32px oklch(4% 0.06 282 / 0.3); /* --shadow without its 1px top highlight: no edge line */
+    --ask-lift: var(--lift);
   }
   :is(.ask-pill, .ask-box)[data-kind="point"] { --kind: var(--ok); }
   :is(.ask-pill, .ask-box)[data-kind="audience"] { --kind: var(--next); }
@@ -422,6 +423,8 @@
   }
   .note-row > span { flex-basis: 100%; }
   .note-row.alert, .screen-hint { box-shadow: var(--shadow), inset 0 0 0 1px var(--accent); }
+  /* The main screen was cut off (TOOLS-492): raised, with no border, ring or edge line. */
+  .note-row.cut-note { background: var(--panel-2); box-shadow: var(--lift); font-weight: 600; overflow-wrap: anywhere; }
   .note-row .btn { font-size: 14px; padding: 8px 14px; }
   .note-row .btn.primary { font-size: 19px; padding: 8px 16px; }
 
@@ -612,6 +615,10 @@
     <span class="hint-text"></span>
     <button class="btn primary" type="button" data-action="connect">Connect main screen</button>
     <button class="btn" type="button" data-action="hint-ok">OK</button>
+  </p>
+  <p class="note-row cut-note" hidden>
+    <span class="cut-text"></span>
+    <button class="btn primary" type="button" data-action="connect">Open a new main screen</button>
   </p>
   <span class="status sr-only" role="status"></span>
   <nav class="dock" aria-label="Prompter controls">

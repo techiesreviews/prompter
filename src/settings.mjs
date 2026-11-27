@@ -27,8 +27,11 @@ export const SETTINGS = {
   textOnly: { key: "prompter-text-only", fallback: false, on: "on" },
 };
 
-/** Other things kept on this device: the last script opened, the day it was saved, the agent's token. */
-export const STORED = { lastScript: "prompter-last-script", lastSaved: "prompter-last-saved", agent: "prompter-agent" };
+/**
+ * Other things kept on this device: the last script opened, the day it was saved, the agent's token,
+ * and the sites that cut the main screen off (host names only, src/main-screen.mjs).
+ */
+export const STORED = { lastScript: "prompter-last-script", lastSaved: "prompter-last-saved", agent: "prompter-agent", cutSites: "prompter-cut-sites" };
 
 /**
  * Keys no setting may use again: the old Line spacing (Normal, Roomy, Spacious), which Line height,
