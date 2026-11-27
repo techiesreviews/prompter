@@ -39,6 +39,7 @@ function dirty(s) {
   s.switches.push({ kind: "you", text: "Smile" });
   s.passed = 1;
   s.missedKey = "0:0";
+  s.anchorDue = 120;
 }
 
 function assertClean(s) {
@@ -55,6 +56,7 @@ function assertClean(s) {
   assert.deepEqual(s.switches, [], "no Text only switches");
   assert.equal(s.passed, 0, "none of them reached the reading line");
   assert.equal(s.missedKey, "", "no page missed the main screen");
+  assert.equal(s.anchorDue, null, "no page owed to the main screen by a Text only switch");
 }
 
 test("a fresh state holds the script and nothing else", () => {

@@ -12,7 +12,9 @@ import { voiceStart } from "./follow.mjs";
  * fills while it is read:
  * - `active`: the section at the reading line (-1 before the first look);
  * - `anchor`, `anchorKey`: the link above the reading line ({ s, l } and "s:l", see linkAt), and
- *   `settleTimer`, its wait before it goes on the main screen;
+ *   `settleTimer`, its wait before it goes on the main screen, and `anchorDue`, the scroll place where
+ *   turning Text only on or off carried a later link above the reading line without sending it (it goes
+ *   on the main screen at the reader's next move away from there; null when none);
  * - `shownUrl`: the page this script last put on the main screen;
  * - `voiceLines` (speechWords of each spoken line, by data-k) and `voice` (Follow my voice's state, see
  *   voiceStart and voiceStep: where the voice is, the speech results already followed, the link the voice
@@ -34,6 +36,7 @@ export function scriptState({ text = "", saved = null, sections = [] } = {}) {
     anchor: null,
     anchorKey: "",
     settleTimer: 0,
+    anchorDue: null,
     shownUrl: "",
     voiceLines: [],
     voice: voiceStart(-1),
