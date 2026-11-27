@@ -276,6 +276,8 @@ export async function run({ browser, base, out }) {
     await openSettings();
     await page.locator('#settings .layout .seg label:has-text("Lines")').click();
     await page.evaluate(() => document.querySelector("#settings").hidePopover());
+    // The voice's own move and the layout change settle first, so the hand scroll below starts from rest.
+    for (let last = -1, n = 0; n < 40; n++) { const y = await page.evaluate(() => scrollY); if (y === last) break; last = y; await page.waitForTimeout(150); }
     const second = await page.evaluate(() => {
       const el = document.querySelector(".para .row + .row [data-k]");
       const f = el.getClientRects()[0];
