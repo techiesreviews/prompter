@@ -16,6 +16,8 @@ import { voiceStart } from "./follow.mjs";
  *   turning Text only on or off carried a later link above the reading line without sending it (it goes
  *   on the main screen at the reader's next move away from there; null when none);
  * - `shownUrl`: the page this script last put on the main screen;
+ * - `ownShown`: the pages this script opened in a window of their own (sites that cut the main screen
+ *   off), so none opens a second one by itself;
  * - `voiceLines` (speechWords of each spoken line, by data-k) and `voice` (Follow my voice's state, see
  *   voiceStart and voiceStep: where the voice is, the speech results already followed, the link the voice
  *   last opened by its label and the speech result it was heard in);
@@ -38,6 +40,7 @@ export function scriptState({ text = "", saved = null, sections = [] } = {}) {
     settleTimer: 0,
     anchorDue: null,
     shownUrl: "",
+    ownShown: new Set(),
     voiceLines: [],
     voice: voiceStart(-1),
     cues: [],

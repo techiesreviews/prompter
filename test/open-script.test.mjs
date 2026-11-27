@@ -31,6 +31,7 @@ function dirty(s) {
   s.anchor = { s: 0, l: 0 };
   s.anchorKey = "0:0";
   s.shownUrl = "https://a.test/";
+  s.ownShown.add("https://a.test/");
   s.voiceLines.push(["hello", "world"]);
   s.voice = { follow: { ...s.voice.follow, line: 4, word: 2, moved: true }, final: 3, linkKey: "0:0", linkAt: 7 };
   s.cues.push({ size: "small" });
@@ -48,6 +49,7 @@ function assertClean(s) {
   assert.equal(s.anchorKey, "");
   assert.equal(s.settleTimer, 0, "no link waiting to go on the main screen");
   assert.equal(s.shownUrl, "", "the main screen's page is not this script's yet");
+  assert.equal(s.ownShown.size, 0, "no page opened in a window of its own yet");
   assert.deepEqual(s.voiceLines, []);
   assert.deepEqual(s.voice, voiceStart(-1), "the voice starts from the top, with no result followed and no link opened by voice");
   assert.deepEqual(s.cues, []);
@@ -175,7 +177,7 @@ test("a wait whose timer slipped through still checks its script", () => {
 test("app.js keeps no per-script state loose", () => {
   // Each of these lives in the open script's state; a loose copy in app.js is one a reset can forget.
   const app = readFileSync(resolve(import.meta.dirname, "../src/app.js"), "utf8");
-  const loose = ["scriptText", "scriptSaved", "sections", "active", "shownUrl", "settleTimer", "anchor", "anchorKey",
+  const loose = ["scriptText", "scriptSaved", "sections", "active", "shownUrl", "ownShown", "settleTimer", "anchor", "anchorKey",
     "voiceLinkKey", "voiceLinkAt", "voiceLines", "voiceState", "voice", "voiceFinal", "cues", "cueAbove"]
     .filter((name) => new RegExp(`^(let|var|const)\\s(.*[,\\s])?${name}\\s*(=|;|,|$)`, "m").test(app));
   assert.deepEqual(loose, []);

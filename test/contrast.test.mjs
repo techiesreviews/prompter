@@ -61,7 +61,7 @@ const PAIRS = [
   ["bg", "next", "an audience question's cue pill"],
   ["bg", "accent", "a steer-back cue pill"],
   ["ql", "panel", "the QL box"],
-  ["text", "panel-2", "hovered menu items"],
+  ["text", "panel-2", "hovered menu items, the main screen's cut-off note"],
   ["muted", "panel-2", "code on raised surfaces"],
   ["text", "chip", "buttons, chosen width, tooltips"],
   ["muted", "chip", "section times, the save date on the start screen's Continue button"],
