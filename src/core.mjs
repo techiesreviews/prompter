@@ -504,10 +504,10 @@ export function parse(md) {
 }
 
 // A row of the Lines layout ends after a comma, a full stop or the like, in any script (Latin,
-// Chinese and Japanese, Arabic, Hindi), with any closing quote or bracket after it.
-const ROW_END = /[,.;:!?…。、，；：！？،؛؟।]["'”’»›」』)）\]]*$/;
-// Chinese and Japanese put no space between words.
-const NO_SPACE_END = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}　-〿＀-￯]$/u;
+// Chinese and Japanese, Arabic, Hindi), with any closing quote or bracket after it (German closes with “ ‘).
+const ROW_END = /[,.;:!?…。、，；：！？،؛؟।]["'”’“‘»›」』)）\]]*$/;
+// Chinese and Japanese put no space between words (the Katakana block holds the long-vowel mark ー too).
+const NO_SPACE_END = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}゠-ヿ　-〿＀-￯]$/u;
 
 /**
  * How each spoken line of a paragraph (their texts, in order) joins the next: `row` when a new

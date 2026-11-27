@@ -463,7 +463,8 @@ test("lineJoins: a new row only after a closing mark, in any script; no space af
   assert.deepEqual(rows(["今日は。", "次に、", "好吗？", "终", "end"]), [true, true, true, false]);
   assert.deepEqual(rows(["مرحبا،", "كيف؟", "नमस्ते।", "end"]), [true, true, true]);
   assert.deepEqual(rows(["「はい」", "『終わり。』", "end"]), [false, true]);
+  assert.deepEqual(rows(["Er sagte „gut.“", "und ‚so.‘", "end"]), [true, true], "German closing quotes");
   assert.deepEqual(rows(["Read https://example.com/a", "the plugin page: https://wp.org/x.", "end"]), [false, true], "a line ending in a link's words joins the next unless a mark closes it");
-  assert.deepEqual(lineJoins(["今日は", "Hello", "end"]).map((j) => j.space), ["", " "], "no space after a Chinese or Japanese line, a space after any other");
+  assert.deepEqual(lineJoins(["今日は", "コーヒー", "Hello", "end"]).map((j) => j.space), ["", "", " "],"no space after a Chinese or Japanese line, a space after any other");
   assert.deepEqual(lineJoins(["今日は。", "end"]), [{ row: true, space: "" }]);
 });

@@ -70,6 +70,10 @@ test("look: where spoken lines share a row, the first one still on the row at th
   assert.deepEqual([line.look().line, line.look().lastLine], [0, 1]);
   line.place(-100);
   assert.deepEqual([line.look().line, line.look().lastLine], [-1, -1]);
+  // The page passes the row's bottom: line 1's letters end at 160, its row at 180.
+  const rows = readingLine({ script: fakeScript(shared), view: fakeView(), frame: fakeFrames(), onLook() {}, rowBottom: (el) => el.getBoundingClientRect().bottom + 20 });
+  rows.place(170);
+  assert.deepEqual([rows.look().line, rows.look().lastLine], [1, 3], "in the room under the letters the line is still on its row");
 });
 
 test("look: above every section the first one counts; no lines or links reached give -1", () => {
