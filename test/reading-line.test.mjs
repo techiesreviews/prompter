@@ -62,6 +62,10 @@ test("look: the section, its link, the cues and the spoken line at the reading l
 
 test("look: a hidden link line's place (Text only) counts as its link", () => {
   assert.equal(LINKS_AT, ".mark, .inlink, .link-at", "own-line links, in-text links and the hidden link lines' places");
+  // The section's last link above the line is a hidden link line's place, numbered 3.
+  const line = readingLine({ script: fakeScript([{ top: -100, links: [{ top: -60, l: 1 }, { top: 90, l: 3 }, { top: 300, l: 4 }] }]), view: fakeView(), frame: fakeFrames(), onLook() {} });
+  line.place(100);
+  assert.equal(line.look().link, 3);
 });
 
 test("look: where spoken lines share a row, the first one still on the row at the line; lastLine the last one started", () => {
