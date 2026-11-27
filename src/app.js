@@ -53,7 +53,7 @@ const continueTitle = $(".continue-title");
 const continueSaved = $(".continue-saved");
 const saveNote = $(".save-note");
 const widthInputs = document.querySelectorAll('input[name="width"]');
-const spacingInputs = document.querySelectorAll('input[name="spacing"]');
+const layoutInputs = document.querySelectorAll('input[name="layout"]');
 const toastEl = $(".toast");
 const toastText = $(".toast-text");
 const camframeBtn = $(".big-toggle.camframe"); // in Settings
@@ -234,24 +234,22 @@ async function route() {
 }
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const SPOKEN = new Set(["say", "bullet", "next", "now"]);
 const OPENS_AT_LINE = "opens on the main screen when it reaches the reading line";
 // Links stay quiet: a small row at the top of the section, a small marker for
 // a link on its own line mid-section, and words with a faint underline for a
 // link inside a line. The address is only in the tooltip.
 const ARROW = `<span class="arrow" aria-hidden="true">↗</span>`;
 const hostLabel = (l) => esc(hostOf(l.url) || l.url);
-const mark = (l, i, j) =>
-  `<button class="mark" type="button" data-s="${i}" data-l="${j}" title="${hostLabel(l)} · ${OPENS_AT_LINE}">${ARROW}<span>${esc(l.label)}</span></button>`;
+const mark = (l, i, j, space = "") =>
+  `<button class="mark blk${space}" type="button" data-s="${i}" data-l="${j}" title="${hostLabel(l)} · ${OPENS_AT_LINE}">${ARROW}<span>${esc(l.label)}</span></button>`;
 const textLink = (l, i, j) =>
   `<a class="inlink" href="${esc(l.url)}" rel="noopener noreferrer" data-s="${i}" data-l="${j}" title="${hostLabel(l)} · ${OPENS_AT_LINE}">${esc(l.label)}</a>`;
 
-/** A line's text: a Next:/Now: label in bold, links written inside it in place. */
+/** A line's text, plain (also a Next:/Now: line), with links written inside it in place. */
 function lineHtml(it, i) {
   const t = it.text;
-  const bold = it.type === "next" || it.type === "now" ? (t.match(/^[^:]{1,12}:/)?.[0].length ?? 0) : 0;
-  let html = bold ? `<b>${esc(t.slice(0, bold))}</b>` : "";
-  let at = bold;
+  let html = "";
+  let at = 0;
   for (const span of it.spans || []) {
     html += esc(t.slice(at, span.from)) + textLink(scripts.now.sections[i].links[span.l], i, span.l);
     at = span.to;
@@ -262,9 +260,40 @@ function lineHtml(it, i) {
 // A camera cue line, whether or not the CamFrame link is on: a camera mark and
 // what the camera will do, then the line's other words ("Share screen.").
 const CAMERA_ICON = `<svg class="cue-icon" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="6" width="13" height="12" rx="2"/><path d="m15.5 10.5 6-3.5v10l-6-3.5"/></svg>`;
-function cueHtml(it) {
+function cueHtml(it, space) {
   const rest = cueRest(it.text);
-  return `<p class="note cue" data-cue="${scripts.now.cues.push(it.cue) - 1}">${CAMERA_ICON}<span class="cue-what">Camera: ${esc(cueWords(it.cue))}</span>${rest ? `<span class="cue-rest"> · ${esc(rest)}</span>` : ""}</p>`;
+  return `<p class="note cue blk${space}" data-cue="${scripts.now.cues.push(it.cue) - 1}">${CAMERA_ICON}<span class="cue-what">Camera: ${esc(cueWords(it.cue))}</span>${rest ? `<span class="cue-rest"> · ${esc(rest)}</span>` : ""}</p>`;
+}
+
+// The script reads in paragraphs: lines that follow each other are one. In the Lines layout a
+// row ends after a comma, a full stop or the like, never in the middle of a sentence; in the
+// Paragraphs layout the rows flow together (CSS). Each script line keeps its own place (data-k)
+// for Follow my voice.
+const ROW_END = /[,.;:!?…]["'”’)\]]*$/;
+const PARA = new Set(["say", "next", "now"]);
+
+/**
+ * A section's items as blocks: a paragraph (lines that follow each other), a run of points, a
+ * reminder or cue, a link line. `space` is the room before it: " brk" a new paragraph (after a
+ * blank line or points, or a reminder, cue or link line after spoken words), " half" points
+ * under the sentence leading into them (its `lead`), "" a quarter of the text size, as a
+ * reminder, cue or link line heads what follows it.
+ */
+function blocksOf(items) {
+  const blocks = [];
+  let gap = false;
+  for (const it of items) {
+    if (it.type === "gap") { gap = true; continue; }
+    const kind = PARA.has(it.type) ? "para" : it.type === "bullet" ? "points" : it.type === "mark" ? "mark" : "note";
+    const prev = blocks.at(-1);
+    if (prev?.kind === kind && !gap && (kind === "para" || kind === "points")) { prev.items.push(it); continue; }
+    let space = "";
+    if (prev && kind === "points" && prev.kind === "para") { space = " half"; prev.lead = true; }
+    else if (prev && (gap || prev.kind === "points" || (kind !== "para" && prev.kind === "para"))) space = " brk";
+    blocks.push({ kind, items: [it], space });
+    gap = false;
+  }
+  return blocks;
 }
 
 /** Draws the script just opened, once: its state (scripts.now) is fresh, and gets its spoken lines and cues here. */
@@ -283,14 +312,22 @@ function render() {
     const marksAt = (n) => s.links.flatMap((l, j) => (l.inline && !l.inText && l.at === n ? [{ type: "mark", l, j }] : []));
     const rest = s.items.flatMap((it, n) => [...marksAt(n), it]).concat(marksAt(s.items.length))
       .filter((it) => it.type !== "ql");
-    while (rest[0]?.type === "gap") rest.shift();
-    while (rest.at(-1)?.type === "gap") rest.pop();
-    const items = rest.map((it) => {
-      if (it.type === "gap") return `<div class="gap"></div>`;
-      if (it.type === "mark") return mark(it.l, i, it.j);
-      if (it.cue) return cueHtml(it);
-      const k = SPOKEN.has(it.type) ? ` data-k="${voiceLines.push(speechWords(it.text)) - 1}"` : "";
-      return `<p class="${it.type}"${k}>${SPOKEN.has(it.type) ? lineHtml(it, i) : esc(it.text)}</p>`;
+    // Drawn in page order, so the spoken lines (data-k) and cues are numbered top to bottom.
+    const unit = (it, cls) => `<span class="${cls}" data-k="${voiceLines.push(speechWords(it.text)) - 1}">${lineHtml(it, i)}</span>`;
+    const rows = (its) => {
+      const out = [[]];
+      its.forEach((it, n) => {
+        out.at(-1).push(unit(it, it.type));
+        if (n < its.length - 1 && ROW_END.test(it.text.trim())) out.push([]);
+      });
+      return out.map((row) => `<span class="row">${row.join(" ")}</span>`).join(" ");
+    };
+    const items = blocksOf(rest).map(({ kind, items: its, space, lead }) => {
+      const it = its[0];
+      if (kind === "mark") return mark(it.l, i, it.j, space);
+      if (kind === "note") return it.cue ? cueHtml(it, space) : `<p class="note blk${space}">${esc(it.text)}</p>`;
+      if (kind === "points") return `<div class="points blk${space}">${its.map((b) => `<p class="bullet">${unit(b, "point")}</p>`).join("")}</div>`;
+      return `<p class="para${lead ? " lead" : ""} blk${space}">${rows(its)}</p>`;
     }).join("");
     return `<section class="section" data-i="${i}"><h2 class="title"><span>${esc(s.title)}</span><span class="time">${esc(s.time)}</span></h2>${links}${qls}${items}</section>`;
   }).join("");
@@ -743,7 +780,7 @@ handle.addEventListener("keydown", (e) => {
   moveLine(e.key === "Home" ? LINE.min : e.key === "End" ? LINE.max : (pct + LINE_STEPS[e.key]) / 100, true);
 });
 
-/** The place under the reading line moved (the line, a section jump, line spacing): all that follows it, from one look. */
+/** The place under the reading line moved (the line, a section jump, line height, paragraph spacing, layout): all that follows it, from one look. */
 function followLine() {
   const at = reading.look();
   updateActive(at); // the page may not have scrolled (at the top), so no scroll event will do it
@@ -1065,30 +1102,86 @@ function setWidth(name) {
   widthInputs.forEach((input) => { input.checked = input.value === w; });
 }
 
-// Line spacing: more room between the lines; the row at the reading line stays there.
+// Line height, paragraph spacing and layout: the row at the reading line stays there.
 // Only while Follow my voice's own move is in progress (until its scrollend, the reader's wheel or touch, or 2 s if none comes)
 // does the line being read go to the reading line instead.
-function setSpacing(name) {
-  const v = settingValue("spacing", name);
+function keepPlace(change) {
   // With no voice move in progress, keep what is under the reading line, as with Follow my voice off.
   const y = reading.y;
-  const cur = voiceOn && voiceScrolling ? main.querySelector("p.cur") : null;
-  const lines = [...main.querySelectorAll("p, .mark, .links")];
+  const cur = voiceOn && voiceScrolling ? main.querySelector(".cur") : null;
+  const lines = [...main.querySelectorAll("[data-k], p:not(.para, .bullet), .mark, .links")];
+  // In the Paragraphs layout several lines can share the row at the reading line: with Follow my
+  // voice on, keep the one being read when it is on that row.
+  const read = voiceOn ? main.querySelector(".cur") : null;
+  const onRow = read && [...read.getClientRects()].some((f) => f.top <= y && f.bottom > y) ? read : null;
   // Below the last line (the page scrolls into the bottom padding): hold the last line's distance.
-  const keep = cur || lines.find((p) => p.getBoundingClientRect().bottom > y) || lines.at(-1);
-  // Where the reading line falls on that line: inside it, a share of its height (its rows grow too);
-  // above it (a heading, a link row or a gap, which do not grow), the same distance in pixels.
-  const kr = keep?.getBoundingClientRect();
-  const dist = kr ? y - kr.top : 0;
-  const inside = kr && kr.height > 0 && dist >= 0 && dist <= kr.height;
-  const frac = inside ? dist / kr.height : 0;
-  root.dataset.spacing = v;
-  spacingInputs.forEach((input) => { input.checked = input.value === v; });
-  prefs.save("spacing", v); // nothing is stored until the default is left
+  const keep = cur || onRow || lines.find((el) => el.getBoundingClientRect().bottom > y) || lines.at(-1);
+  if (!keep) { change(); followLine(); return; }
+  // The row of that line at the reading line (a line in a paragraph may wrap, or share a row with
+  // others): inside it, a share of its height (rows grow too); above it (a heading, a link row or the
+  // room between paragraphs), the same distance in pixels to its letters.
+  // A line inside a paragraph is an inline span: its boxes are as tall as the letters, while its row
+  // is as tall as the line height (the letters centred in it).
+  const top = () => keep.getBoundingClientRect().top;
+  const rowsOf = () => {
+    const inline = getComputedStyle(keep).display === "inline";
+    const lh = inline ? parseFloat(getComputedStyle(keep).lineHeight) : NaN;
+    return [...keep.getClientRects()].map((f) => {
+      if (!(lh > 0)) return { top: f.top, height: f.height, letters: f.top, spill: 0 };
+      // Where the letters are taller than the row, they reach into the rows next to it.
+      return { top: f.top + (f.height - lh) / 2, height: lh, letters: f.top, spill: Math.max(0, (f.height - lh) / 2) };
+    });
+  };
+  const none = () => ({ top: top(), height: 0, letters: top(), spill: 0 });
+  const before = rowsOf();
+  const n = Math.max(0, before.findIndex((r) => r.top + r.height > y));
+  const row = before[n] ?? none();
+  const inside = row.height > 0 && y >= row.top && y <= row.top + row.height;
+  const frac = inside ? (y - row.top) / row.height : 0;
+  const fromLetters = y - row.letters;
+  change();
   // (The voice path scrolls at once, not smoothly: this is a settings change, not a move on.)
   if (cur) reading.bring(cur);
-  else if (keep) reading.bring(keep, { at: inside ? frac * keep.getBoundingClientRect().height : dist });
+  else {
+    const after = rowsOf();
+    const r = after[Math.min(n, after.length - 1)] ?? none();
+    // Inside the row: the same share of it, kept clear of the letters of the rows next to it.
+    const at = inside
+      ? r.top + Math.min(Math.max(frac * r.height, r.spill + 1), r.height - r.spill - 1)
+      : r.letters + fromLetters;
+    reading.bring(keep, { at: at - top() });
+  }
   followLine();
+}
+
+const showLineHeight = rangeField($(".line-height-field"), (v) => setLineHeight(v));
+const showParaSpace = rangeField($(".para-space-field"), (v) => setParaSpace(v));
+
+function setLineHeight(v, keep = true) {
+  const set = () => {
+    v = prefs.save("lineHeight", v); // nothing is stored until the default is left
+    root.style.setProperty("--line-height", String(v / 100));
+    showLineHeight(v);
+  };
+  if (keep) keepPlace(set); else set();
+}
+
+function setParaSpace(v, keep = true) {
+  const set = () => {
+    v = prefs.save("paraSpace", v);
+    root.style.setProperty("--para", String(v / 100));
+    showParaSpace(v);
+  };
+  if (keep) keepPlace(set); else set();
+}
+
+function setLayout(name, keep = true) {
+  const set = () => {
+    const v = prefs.save("layout", name);
+    root.dataset.layout = v;
+    layoutInputs.forEach((input) => { input.checked = input.value === v; });
+  };
+  if (keep) keepPlace(set); else set();
 }
 
 function goSection(delta) {
@@ -1110,12 +1203,12 @@ function voiceFromReadingLine(k) {
   markLine(k, false);
 }
 
-// The line being read is bright; the lines after it a little dimmer (CSS).
+// The line being read is pure white (CSS); the lines after it stay white.
 // The prompter's own scroll is over at its "scrollend", the reader's wheel or touch, or after 2 s if none comes.
 let voiceScrolling = false;
 let voiceScrollTimer = 0;
 function markLine(k, scroll = true) {
-  main.querySelector("p.cur")?.classList.remove("cur");
+  main.querySelector(".cur")?.classList.remove("cur");
   const el = main.querySelector(`[data-k="${k}"]`);
   if (!el) return;
   el.classList.add("cur");
@@ -1187,7 +1280,7 @@ function stopVoice(message = "") {
   voiceKeeper?.stop();
   hideToast();
   setVoiceButton();
-  main.querySelector("p.cur")?.classList.remove("cur");
+  main.querySelector(".cur")?.classList.remove("cur");
   if (message) showAlert(message);
   if (resumeAuto) {
     resumeAuto = false;
@@ -1207,7 +1300,7 @@ function onVoiceResult(e) {
   const results = voiceUnheld(heard, voiceHold);
   const { voice, line, link } = voiceStep(script.voiceLines, script.voice, results, { links: voiceLinkCandidates(), shownUrl: script.shownUrl });
   script.voice = voice;
-  const cur = main.querySelector("p.cur");
+  const cur = main.querySelector(".cur");
   if (line >= 0 && (!cur || Number(cur.dataset.k) !== line)) markLine(line);
   if (!link) return;
   scripts.unsettle();
@@ -1446,7 +1539,7 @@ voiceBtn.addEventListener("click", toggleVoice);
 $(".prev").addEventListener("click", () => goSection(-1));
 $(".next").addEventListener("click", () => goSection(1));
 widthInputs.forEach((input) => input.addEventListener("change", () => setWidth(input.value)));
-spacingInputs.forEach((input) => input.addEventListener("change", () => setSpacing(input.value)));
+layoutInputs.forEach((input) => input.addEventListener("change", () => setLayout(input.value)));
 camframeBtn.addEventListener("click", () => setCamframeOn(!camframe.on));
 $("#settings").addEventListener("toggle", (e) => { if (e.newState === "open") camframe.check(); });
 main.addEventListener("click", (e) => {
@@ -1532,6 +1625,8 @@ setLine(prefs.read("line"));
 setSpeed(speed);
 setSize(prefs.read("size"));
 setWidth(prefs.read("width"));
-setSpacing(prefs.read("spacing"));
+setLineHeight(prefs.read("lineHeight"), false);
+setParaSpace(prefs.read("paraSpace"), false);
+setLayout(prefs.read("layout"), false);
 camframe.turn(prefs.read("camframe"));
 route();
