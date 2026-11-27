@@ -1032,6 +1032,9 @@ function connect() {
   if (connectBtn.dataset.on === "true" && !connected()) screenGone(); // before the watch saw it
   const placed = Boolean(screenArea());
   const asking = !placed && Boolean(window.getScreenDetails);
+  // Asked before the window opens: opening it uses up the click, and the browser shows the ask only
+  // from a click.
+  const answer = asking ? askScreens() : null;
   const win = mainWin = openScreen("", WINDOW_NAME);
   if (!mainWin) { blocked(); return; }
   try {
@@ -1060,7 +1063,9 @@ function connect() {
     const held = placingHeld?.script === scripts.now ? placingHeld : null;
     placingHeld = null;
     if (win !== mainWin || !connected()) return;
-    const at = held || scripts.now.anchor; // a page that came during the wait (Follow my voice, a settled scroll), else the reading line's
+    // A page that came during the wait (Follow my voice, a settled scroll), else the reading line's;
+    // none when a newer choice was already handled meanwhile (a link button, a page's own window).
+    const at = held ? (held.done ? null : held) : scripts.now.anchor;
     const link = at && scripts.now.sections[at.s]?.links[at.l];
     if (link && !cutsLink(link)) showLink(at.s, at.l, false);
     drawNext();
@@ -1072,7 +1077,7 @@ function connect() {
   // window showing another site can no longer be moved), or SCREENS_WAIT_MS when none comes.
   placing = true;
   placingHeld = null;
-  Promise.race([askScreens(), new Promise((done) => setTimeout(done, SCREENS_WAIT_MS))]).then(() => {
+  Promise.race([answer, new Promise((done) => setTimeout(done, SCREENS_WAIT_MS))]).then(() => {
     placing = false;
     const area = screenArea();
     if (win === mainWin) {
@@ -1115,6 +1120,9 @@ function showLink(si, li, fromUser) {
   if (!s || !s.links[li]) return;
   const link = s.links[li];
   const url = screenUrl(link.url);
+  // During the first Connect's placement wait, a link button is the newest choice: nothing held
+  // before it goes over it when the wait ends.
+  if (placing && fromUser) placingHeld = { script, done: true };
   // A page that could not go on the main screen by itself: Text only's strip says Missed, with Open.
   const missed = () => { script.missedKey = `${si}:${li}`; drawNext(); };
   if (connectBtn.dataset.on === "true" && !connected()) screenGone(); // before the watch saw it
@@ -1129,6 +1137,7 @@ function showLink(si, li, fromUser) {
     // not allowed): never the main screen, which it would cut off; it waits for its link button (Text
     // only says Missed, with Open).
     if (!fromUser && script.ownShown.has(url)) return;
+    if (placing) placingHeld = { script, done: true }; // newer than a page held during the placement wait
     const own = openScreen(url, `${WINDOW_NAME}-own`);
     if (own) {
       script.ownShown.add(url);
