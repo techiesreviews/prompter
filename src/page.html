@@ -458,6 +458,9 @@
   }
   .big-toggle:is([aria-pressed="true"], [data-on="true"]) { color: var(--accent-bright); }
   .big-toggle:is([aria-pressed="true"], [data-on="true"]) rect { fill: currentColor; }
+  /* The main screen after a page cut its link: an orange dashed screen, no fill (no ring or border). */
+  .big-toggle.screen[data-on="cut"] { color: var(--accent-bright); }
+  .screen[data-on="cut"] rect { stroke-dasharray: 3 2.5; }
   @media (hover: hover) and (pointer: fine) {
     .big-toggle:hover { color: var(--text); background: var(--chip-hover); }
     .big-toggle:is([aria-pressed="true"], [data-on="true"]):hover { color: var(--accent-bright); }
