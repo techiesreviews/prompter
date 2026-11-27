@@ -2422,7 +2422,8 @@ export async function run({ browser, base, mode, dist, out }) {
   await HC.locator('.screen-hint [data-action="connect"]').click();
   assert.equal(await HC.locator(".screen-hint").isHidden(), true);
   assert.equal(await HC.locator(".settings-btn").getAttribute("data-hint"), null);
-  assert.equal(await HC.evaluate(() => window.__screen.visits.at(-1)), "https://example.com/intro");
+  // Once the browser has answered the window placement ask (here it says no at once).
+  await HC.waitForFunction(() => window.__screen.visits.at(-1) === "https://example.com/intro", null, { timeout: 3000 });
   assert.equal(await HC.locator("#settings .screen").getAttribute("data-on"), "true");
   assert.equal(await HC.locator("#settings .screen").getAttribute("aria-label"), "Main screen connected, reconnect");
   await hintConnect.close();
@@ -2692,6 +2693,26 @@ export async function run({ browser, base, mode, dist, out }) {
   await later(31000);
   await CW.waitForFunction(() => !JSON.parse(localStorage.getItem("prompter-cut-sites")).includes("localhost"), null, { timeout: 3000 });
   assert.deepEqual(await stored(), ["cut1.localhost", "cut2.localhost", "cut3.localhost"], "a site whose own window stayed connected comes off the list; the sites that cut stay");
+  // A remembered site whose own window the browser blocks (no click, pop-ups not allowed) never goes
+  // to the connected main screen, which it would cut off: the main screen keeps its page, and the
+  // page waits for its link button.
+  await ownAgain.close();
+  await (await dock(CW, ".open-btn")).click();
+  await CW.locator('#open-menu [data-action="paste"]').click();
+  await CW.locator(".paste-dialog[open]").waitFor();
+  await CW.locator("#paste-text").fill(`### **FIRST · 00:00**\n\n- After: ${site}/after\n\nA plain page.\nOn the main screen.\n\n### **RULES · 01:00**\n\n- Leak rules: ${cut1}/cuts\n\nA site that cuts.\nIts own window is blocked.\n`);
+  await CW.locator('[data-action="open-paste"]').click();
+  await CW.locator(".paste-dialog:not([open])").waitFor({ state: "attached" });
+  await scrollToSection(CW, 0);
+  await seventhWin.waitForURL(`${site}/after`);
+  await popups(false);
+  const pagesThen = cutCtx.pages().length;
+  await scrollToSection(CW, 1);
+  await CW.waitForTimeout(1200);
+  assert.deepEqual([seventhWin.url(), (await screenOf(CW))[0], cutCtx.pages().length, await CW.locator(".status").textContent()],
+    [`${site}/after`, "true", pagesThen, "Not opened: Leak rules needs a window of its own, which the browser blocked. Its link button opens it."],
+    "a blocked own window: the main screen keeps its page and stays connected; said through the status line");
+  await popups(true);
   await cutCtx.close();
   await new Promise((done) => standIn.close(done));
   ok("a page that cuts the main screen off (Cross-Origin-Opener-Policy, as the Dutch Data Protection Authority's page), or a closed main screen window: the button says cut off (an orange dashed screen, its name and title, a dot on Settings), one plain note above the control bar names the site (no border, ring or highlight; read out once) with one button, Open a new main screen, and no alert; the next page opens a new main screen by itself (blocked: the note says so, once); the site is remembered on this device and opens in a window of its own from then on (once per page by itself, the keys back to the Prompter), so the main screen stays connected, and comes off the list when that window stays connected; the longest note fits 195px; also when the next page comes before the Prompter looked and for a slow site; Reconnect does not send again a page that may have cut it off");
@@ -2721,7 +2742,35 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(await PL.evaluate(() => window.__features.at(-1)), "popup=yes,left=1366,top=0,width=1920,height=1040,fullscreen=yes", "the next one opens full size on the other screen, asking for full screen");
   assert.equal(await nextWin.evaluate(() => document.body.textContent), "Main screen. Pages will open here.", "no drag-me message");
   await placeCtx.close();
-  ok("with the window placement permission (asked from the Connect click), a new main screen opens full size on the other screen and asks for full screen; without it, a plain window to drag");
+  // The first Connect with a page at the reading line: the window waits on its own page until the
+  // permission is answered, moves to the other screen, and only then gets the page (a window showing
+  // another site can no longer be moved).
+  const slowCtx = await browser.newContext(DESKTOP);
+  await slowCtx.addInitScript(NO_SPEECH);
+  await slowCtx.addInitScript(() => {
+    const screens = [{ isPrimary: false, availLeft: 0, availTop: 0, availWidth: 1366, availHeight: 860 }, { isPrimary: true, availLeft: 1366, availTop: 0, availWidth: 1920, availHeight: 1040 }];
+    window.getScreenDetails = () => new Promise((done) => { window.__allow = () => done({ screens, currentScreen: screens[0] }); });
+    const real = window.open;
+    window.__moved = [];
+    window.open = function (...args) {
+      const win = real.apply(this, args);
+      if (win) win.moveTo = (...at) => window.__moved.push([...at, win.location.href]);
+      return win;
+    };
+  });
+  const SL = await slowCtx.newPage();
+  watch(SL, "main screen placement, slow answer");
+  await SL.goto(await makeLink(`### **INTRO · 00:00**\n\n- Licence: ${base}/fonts/OFL.txt\n\nA page at the reading line.\nWaiting for the answer.\n`, "lex", base));
+  await SL.locator(".section").first().waitFor();
+  await scrollToSection(SL, 0);
+  const [slowWin] = await Promise.all([slowCtx.waitForEvent("page"), viaSettings(SL, ".screen")]);
+  await SL.waitForTimeout(1200);
+  assert.equal(slowWin.url(), "about:blank", "the page waits for the permission's answer");
+  await SL.evaluate(() => window.__allow());
+  await slowWin.waitForURL(`${base}/fonts/OFL.txt`);
+  assert.deepEqual(await SL.evaluate(() => window.__moved), [[1366, 0, "about:blank"]], "moved to the other screen before the page went to it");
+  await slowCtx.close();
+  ok("with the window placement permission (asked from the Connect click), a new main screen opens full size on the other screen and asks for full screen; without it, a plain window to drag; the first Connect sends the page only once the permission is answered and the window has moved");
 
   // ---- The reading line: dragged to camera height; read text fades above it ----
   const lineOf = (page) => page.evaluate(() => {
@@ -3028,6 +3077,13 @@ export async function run({ browser, base, mode, dist, out }) {
       assert.ok(box.height >= 44 && box.x >= 0 && box.x + box.width <= 390, `${sel} fits a phone as a 44px target: ${JSON.stringify(box)}`);
     }
   }
+  assert.ok(await m.evaluate(() => {
+    const note = document.querySelector(".cut-note");
+    note.hidden = false;
+    const height = note.querySelector(".btn").getBoundingClientRect().height;
+    note.hidden = true;
+    return height >= 44;
+  }), "the cut-off note's Open a new main screen is a 44px target on a phone");
   assert.deepEqual(await settingsSliderHits(m), [["size", false], ["value", true]], "mobile Settings: the name presses the slider, the value takes typing");
   await m.locator("#settings .size-field .range-value").tap();
   assert.equal(await m.evaluate(() => document.activeElement.classList.contains("size-val")), true, "a tap on the value opens it for typing");
