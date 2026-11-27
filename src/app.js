@@ -496,7 +496,7 @@ function drawAsk() {
     askSaid = cur.text;
   } else askSaid = "";
   // What the veil covers takes no focus or click while the box shows (Tab stays on the box and the control bar).
-  for (const covered of [$(".empty"), main, $(".reading-line")]) covered.inert = box;
+  for (const covered of [$(".empty"), main, $(".reading-line"), $(".next-up")]) covered.inert = box;
   if (box && !was) {
     hideHint(); // it sits above the dock and would cover the box's Skip and Use on a phone
     runAuto(); // the scrolling waits while the box shows; Play keeps showing whether auto-scroll is on
@@ -858,11 +858,19 @@ function updateActive(look = reading.look()) {
   const at = linkAt(script.sections, idx, look.link);
   const key = at ? `${at.s}:${at.l}` : "";
   if (key !== script.anchorKey) {
+    const was = script.anchor;
     script.anchor = at;
     script.anchorKey = key;
-    // Text only turned on or off moves the link lines: what belongs on the main screen then waits for the next move.
-    if (anchorQuiet) scripts.unsettle();
-    else if (at) scripts.settle(() => showLink(at.s, at.l, false), SETTLE_MS); else scripts.unsettle();
+    script.anchorDue = null;
+    // Text only turned on or off moves the link lines and sends nothing by itself. A later link it
+    // carried above the line was never crossed: it goes on the main screen at the reader's next move.
+    if (anchorQuiet) {
+      scripts.unsettle();
+      if (at && (!was || at.s > was.s || (at.s === was.s && at.l > was.l))) script.anchorDue = window.scrollY;
+    } else if (at) scripts.settle(() => showLink(at.s, at.l, false), SETTLE_MS); else scripts.unsettle();
+  } else if (at && script.anchorDue !== null && !anchorQuiet && Math.abs(window.scrollY - script.anchorDue) > 1) {
+    script.anchorDue = null;
+    scripts.settle(() => showLink(at.s, at.l, false), SETTLE_MS);
   }
   drawNext();
 }
@@ -1043,6 +1051,8 @@ function markShown() {
 // go on the main screen says Missed, with Open: a click, so it may open a new window.
 const nextUp = $(".next-up");
 const nextList = $(".next-up .next-list");
+const dockWrap = $(".dock-wrap");
+const NEXT_GAP = 28; // the strip's distance from the reading line, as in the page's CSS
 const rowDrawn = new WeakMap(); // each row's html, so a row that stays is kept (and its Open button keeps focus)
 const SW_STATE = { done: "Just now", next: "Next" };
 const stripOn = () => textOnly() && !isEmpty() && scripts.now.switches.length > 0;
@@ -1058,31 +1068,49 @@ function drawNext() {
   // Rows that stay are kept as they are; only new ones are made and old ones taken away.
   const old = new Map([...nextList.children].map((li) => [rowDrawn.get(li), li]));
   const focused = nextList.contains(document.activeElement);
+  let made = false;
   const lis = rows.map((html) => {
     const kept = old.get(html);
     if (kept) { old.delete(html); return kept; }
+    made = true;
     const t = document.createElement("template");
     t.innerHTML = html;
     rowDrawn.set(t.content.firstChild, html);
     return t.content.firstChild;
   });
+  const changed = made || old.size > 0;
   for (const li of old.values()) li.remove();
   lis.forEach((li, n) => { if (nextList.children[n] !== li) nextList.insertBefore(li, nextList.children[n] ?? null); });
+  if (changed) placeNext(); // only when the rows change: never a layout on every scroll frame
   if (focused && !nextList.contains(document.activeElement)) nextList.focus({ preventScroll: true }); // Open's row went: the keyboard stays in the strip
 }
 // On a narrow screen the card sits at the top, over text already read, unless the reading line (or the
 // cue pill just above it) is dragged up into it: then it goes above the control bar and the notes over it
 // (their height is --dock-h), and above the cue pill when that went low too.
-const dockWrap = $(".dock-wrap");
 new ResizeObserver(() => root.style.setProperty("--dock-h", `${dockWrap.offsetHeight}px`)).observe(dockWrap);
 new ResizeObserver(() => placeNext()).observe(nextUp); // shown, or a row more or less: never a layout on every scroll frame
+// On a wide screen the strip hangs under the reading line; when it would run under the control bar it
+// goes above the line if there is more room there, and on a window too short for it either way the rows
+// furthest ahead wait (never the one just done, where Missed and Open show) until there is room.
 function placeNext() {
   if (nextUp.hidden) return;
   const narrow = matchMedia("(width < 1240px)").matches;
-  const pillAbove = !askPill.hidden && askPill.dataset.place === "above";
-  const limit = pillAbove ? Math.min(reading.y, askPill.getBoundingClientRect().top) : reading.y;
   nextUp.removeAttribute("data-low");
-  if (narrow && nextUp.getBoundingClientRect().bottom + 12 > limit) nextUp.setAttribute("data-low", "");
+  nextUp.removeAttribute("data-up");
+  for (const li of nextList.children) li.hidden = false;
+  if (narrow) {
+    const pillAbove = !askPill.hidden && askPill.dataset.place === "above";
+    const limit = pillAbove ? Math.min(reading.y, askPill.getBoundingClientRect().top) : reading.y;
+    if (nextUp.getBoundingClientRect().bottom + 12 > limit) nextUp.setAttribute("data-low", "");
+    return;
+  }
+  const floor = innerHeight - dockWrap.offsetHeight - 8;
+  const box = nextUp.getBoundingClientRect();
+  if (box.bottom <= floor) return;
+  if (reading.y - NEXT_GAP - 8 > floor - box.top) nextUp.setAttribute("data-up", "");
+  const fits = () => { const r = nextUp.getBoundingClientRect(); return r.top >= 8 && r.bottom <= floor; };
+  const lis = [...nextList.children];
+  for (let n = lis.length - 1; n > 0 && !fits(); n--) lis[n].hidden = true;
 }
 
 // Text only: drawn again in place, the spoken line at the reading line staying put (and the line
@@ -1111,6 +1139,8 @@ function setTextOnly(on, keep = true) {
   if (!keep || isEmpty()) { set(); drawNext(); return; }
   anchorQuiet = true;
   try { keepPlace(set, { redraw: true }); } finally { anchorQuiet = false; }
+  const script = scripts.now;
+  if (script.anchorDue !== null) script.anchorDue = window.scrollY; // where the place was found again
 }
 
 // Status messages are for screen readers only (the line is visually hidden); errors use showAlert.
@@ -1758,7 +1788,7 @@ document.addEventListener("keydown", (e) => {
   // The focused reading line keeps its keys (arrows, Page Up/Down, Home, End).
   if (e.target.closest(".line-handle") && LINE_KEYS.includes(k)) return;
   // Space on these buttons (and the Producer's cue pill, and Use and Skip in its box) presses them; on the control bar and the links it still means auto-scroll.
-  if (k === " " && e.target.closest(".note-row, .pop, .ask-box, .ask-pill")) return;
+  if (k === " " && e.target.closest(".note-row, .pop, .ask-box, .ask-pill, .next-up button")) return;
   if (k === " ") { e.preventDefault(); toggleAuto(); }
   else if (k === "ArrowRight" || k === "PageDown") { e.preventDefault(); goSection(1); }
   else if (k === "ArrowLeft" || k === "PageUp") { e.preventDefault(); goSection(-1); }

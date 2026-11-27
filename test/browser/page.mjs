@@ -3887,13 +3887,73 @@ export async function run({ browser, base, mode, dist, out }) {
     await M.waitForTimeout(100);
     assert.equal(await M.evaluate(() => document.activeElement?.matches(".next-up .redo")), true, "the Open button keeps focus while the rows change");
     assert.deepEqual((await stripRows(M)).slice(0, 2), ["missed | Page | Patchstack | Open", "done | Camera | face full | "]);
-    await M.locator(".next-up .redo").click();
+    await M.keyboard.press(" "); // Space on the focused Open button opens the page, as Enter or a click would
     await M.waitForFunction(() => window.__screen.visits.at(-1) === "https://patchstack.com", null, { timeout: 2000 });
     await M.waitForFunction(() => !document.querySelector('.next-up li[data-state="missed"]'));
     assert.equal(await M.evaluate(() => Boolean(document.activeElement?.closest(".next-up"))), true, "Open's row went, and the keyboard stays in the strip");
+    assert.equal(await M.locator(".dock-btn.auto").getAttribute("aria-pressed"), "false", "Space on Open did not start auto-scroll");
     assert.equal(await M.locator(".next-up .sw-what").first().getAttribute("title"), await M.locator(".next-up .sw-what").first().textContent(), "a name cut at two lines shows in full on hover");
     await missCtx.close();
-    ok("Text only, missed: with no main screen, or one cut off, the page's row says Missed (also after a later cue) and nothing opens by itself; its Open button opens it by hand");
+    ok("Text only, missed: with no main screen, or one cut off, the page's row says Missed (also after a later cue) and nothing opens by itself; its Open button opens it by hand (a click, or Space from the keyboard)");
+
+    // Turned off just before a hidden link reaches the reading line: the link line moves above the line
+    // without sending anything, and the page goes on the main screen once the reader moves on.
+    const quietCtx = await browser.newContext(DESKTOP);
+    await quietCtx.addInitScript(SCREEN_STUB);
+    await quietCtx.addInitScript(() => { localStorage.setItem("prompter-text-only", "on"); });
+    const TS = await quietCtx.newPage();
+    watch(TS, "text only, switched before a link");
+    await TS.goto(textOnlyLink);
+    await TS.locator(".section").first().waitFor();
+    await viaSettings(TS, ".screen");
+    await scrollToSection(TS, 1);
+    await TS.waitForFunction(() => window.__screen.visits.at(-1) === "https://example.com/intro", null, { timeout: 2000 });
+    await passEl(TS, ".link-at", -6); // the reading line in the room just above the spoken line the link waits for
+    await TS.waitForTimeout(900);
+    await viaSettings(TS, 'input[name="show"][value="all"]');
+    const linkAbove = await TS.evaluate(() => {
+      const y = document.querySelector(".reading-line").getBoundingClientRect().top;
+      const line = [...document.querySelectorAll(".script .mark")].find((el) => el.textContent.includes("Patchstack"));
+      return line.getBoundingClientRect().top < y;
+    });
+    assert.equal(linkAbove, true, "Everything draws the link line above the reading line");
+    await TS.waitForTimeout(900);
+    assert.equal((await TS.evaluate(() => window.__screen.visits.slice())).at(-1), "https://example.com/intro", "switching sends no page by itself");
+    await TS.mouse.wheel(0, 40);
+    await TS.waitForFunction(() => window.__screen.visits.at(-1) === "https://patchstack.com", null, { timeout: 2000 });
+    await quietCtx.close();
+    ok("Text only switched off just before a hidden link: nothing is sent by the switch, and the page still goes on the main screen once the reader moves on");
+
+    // A wide but short window with the reading line low: the strip goes above the line, every row in view.
+    const longRows = `### **SHORT · 00:00**\n\nThe first words to say.\n[Pick up the remote control that lies on the desk next to the keyboard]\nSecond words to say.\n[Look at the second camera on the left side of the room for a while]\nThird words to say.\n[Hold the product box up to the camera so the label can be read clearly]\nFourth words to say.\n[Put the box down again and slide it out of the shot to the right]\nFifth words to say.\n`;
+    const shortCtx = await browser.newContext({ ...DESKTOP, viewport: { width: 1240, height: 600 } });
+    await shortCtx.addInitScript(() => { localStorage.setItem("prompter-text-only", "on"); localStorage.setItem("prompter-line", "0.75"); });
+    const TL = await shortCtx.newPage();
+    watch(TL, "text only, short window");
+    await TL.goto(await makeLink(longRows, "lex", base));
+    await TL.locator(".next-up").waitFor();
+    await passEl(TL, "[data-k]", 0, 1); // past the first reminder: the one just done and the next three
+    await TL.waitForFunction(() => document.querySelector(".next-up li")?.dataset.state === "done");
+    await TL.waitForTimeout(200);
+    const shortLook = await TL.evaluate(() => {
+      const y = document.querySelector(".reading-line").getBoundingClientRect().top;
+      const bar = document.querySelector(".dock-wrap").getBoundingClientRect().top;
+      const rows = [...document.querySelectorAll(".next-up li")].filter((el) => getComputedStyle(el).display !== "none").map((el) => el.getBoundingClientRect());
+      return { rows: rows.length, inView: rows.every((r) => r.top >= 0 && r.bottom <= bar), clear: rows.every((r) => r.bottom < y - 8 || r.top > y + 8), twoLines: rows.filter((r) => r.height > 30).length };
+    });
+    assert.deepEqual([shortLook.rows, shortLook.inView, shortLook.clear], [4, true, true], "four rows, all in view above the control bar and clear of the reading line");
+    assert.ok(shortLook.twoLines >= 3, "long names take two lines");
+    await shot(TL, "text-only-short-window");
+    await TL.setViewportSize({ width: 1240, height: 260 });
+    await TL.waitForTimeout(200);
+    const tiny = await TL.evaluate(() => {
+      const bar = document.querySelector(".dock-wrap").getBoundingClientRect().top;
+      const rows = [...document.querySelectorAll(".next-up li")].filter((el) => getComputedStyle(el).display !== "none");
+      return { first: rows[0] === document.querySelector(".next-up li"), inView: rows.every((el) => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.bottom <= bar; }) };
+    });
+    assert.deepEqual(tiny, { first: true, inView: true }, "too short for all of them: the rows furthest ahead wait, the first stays");
+    await shortCtx.close();
+    ok("Text only on a short wide window: the strip moves above a low reading line with every row in view, and on a window too short for it the rows furthest ahead wait");
 
     // A hidden camera cue reaches CamFrame at the next spoken line, once per pass, not before.
     const toCam = fakeCamFrame();
@@ -4003,6 +4063,19 @@ export async function run({ browser, base, mode, dist, out }) {
         return { place: document.querySelector(".ask-pill").dataset.place, overlap, clear: card.bottom < y || card.top > y + 60 };
       });
       assert.deepEqual(await apart(), { place: "above", overlap: false, clear: true }, "the pill just above the line, the card clear of both");
+      // The cue box covers the card: the keyboard cannot reach it behind the box.
+      await TQ.locator(".ask-pill").click();
+      await TQ.locator(".ask-box").waitFor();
+      assert.equal(await TQ.evaluate(() => document.querySelector(".next-up").inert), true, "the card is out of reach while the cue box shows");
+      for (const key of ["Shift+Tab", "Shift+Tab", "Tab", "Tab", "Tab"]) {
+        await TQ.keyboard.press(key);
+        assert.equal(await TQ.evaluate(() => Boolean(document.activeElement?.closest(".next-up"))), false, `${key} never reaches the card behind the cue box`);
+      }
+      await TQ.keyboard.press("Escape");
+      await TQ.waitForFunction(() => !document.querySelector(".next-up").inert);
+      await agentCall(stripToken, "push_suggestions", { items: [{ kind: "point", text: "The session cookie proves the login." }] }); // Esc skipped the first
+      await TQ.locator(".ask-pill").waitFor();
+      await TQ.waitForFunction(() => document.querySelector(".ask-pill").dataset.place === "above");
       await TQ.setViewportSize({ width: 390, height: 440 });
       await TQ.waitForFunction(() => document.querySelector(".ask-pill").dataset.place === "low");
       assert.deepEqual(await apart(), { place: "low", overlap: false, clear: true }, "on a short screen the pill goes low, and the card above it");

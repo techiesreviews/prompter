@@ -243,7 +243,8 @@
     inline-size: var(--strip); margin: 0; padding: 0;
     font: 500 13px/1.4 var(--font-body); color: var(--muted);
   }
-  .next-up[hidden] { display: none; }
+  .next-up[hidden], .next-up li[hidden] { display: none; }
+  .next-up[data-up] { inset-block: auto calc(100% - var(--line) + 28px); } /* a wide strip with no room under the line: above it */
   /* The column keeps its set width where the strip fits beside it, and narrows only as much as the strip
      needs, centred all the same. Under 1240px wide the card at the top takes the strip's place. */
   @media (width >= 1240px) {
