@@ -2749,10 +2749,14 @@ export async function run({ browser, base, mode, dist, out }) {
   await slowCtx.addInitScript(NO_SPEECH);
   await slowCtx.addInitScript(() => {
     const screens = [{ isPrimary: false, availLeft: 0, availTop: 0, availWidth: 1366, availHeight: 860 }, { isPrimary: true, availLeft: 1366, availTop: 0, availWidth: 1920, availHeight: 1040 }];
-    window.getScreenDetails = () => new Promise((done) => { window.__allow = () => done({ screens, currentScreen: screens[0] }); });
+    window.getScreenDetails = () => {
+      window.__asked = [navigator.userActivation.isActive, Boolean(window.__opened)]; // the browser shows the ask only from a click
+      return new Promise((done) => { window.__allow = () => done({ screens, currentScreen: screens[0] }); });
+    };
     const real = window.open;
     window.__moved = [];
     window.open = function (...args) {
+      window.__opened = true;
       const win = real.apply(this, args);
       if (win) win.moveTo = (...at) => window.__moved.push([...at, win.location.href]);
       return win;
@@ -2766,6 +2770,7 @@ export async function run({ browser, base, mode, dist, out }) {
   const [slowWin] = await Promise.all([slowCtx.waitForEvent("page"), viaSettings(SL, ".screen")]);
   await SL.waitForTimeout(1200);
   assert.equal(slowWin.url(), "about:blank", "the page waits for the permission's answer");
+  assert.deepEqual(await SL.evaluate(() => window.__asked), [true, false], "asked from the click, before the window opens and uses it up");
   assert.match(await slowWin.evaluate(() => document.body.textContent), /Pages will open here\. Allow window placement in the Prompter to move this window to your main screen\.$/, "the waiting window says where the ask is");
   assert.equal(await SL.evaluate(() => document.hasFocus()), true, "the Prompter comes back to the front, so the ask is not hidden behind the new window");
   await SL.evaluate(() => window.__allow());
@@ -2802,6 +2807,27 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.deepEqual(muteVisits, [`${base}/fonts/OFL.txt?next=1`], "only the page that came during the wait, once");
   assert.deepEqual(await ML.evaluate(() => window.__moved), [], "with no answer the window stays where it is");
   await muteCtx.close();
+  // A link chosen by hand during the wait is the newest choice: the page held before it is not sent
+  // over it when the answer comes.
+  const pickCtx = await browser.newContext(DESKTOP);
+  await pickCtx.addInitScript(NO_SPEECH);
+  await pickCtx.addInitScript(() => { window.getScreenDetails = () => new Promise((done) => { window.__deny = () => done(null); }); });
+  const PK = await pickCtx.newPage();
+  watch(PK, "main screen placement, a pick during the wait");
+  await PK.goto(await makeLink(`### **INTRO · 00:00**\n\n- Licence: ${base}/fonts/OFL.txt\n- Other: ${base}/fonts/OFL.txt?other=1\n\nA page at the reading line.\nWaiting for the answer.\n\n### **NEXT · 00:30**\n\n- Licence again: ${base}/fonts/OFL.txt?next=1\n\nThe next section.\nReached during the wait.\n`, "lex", base));
+  await PK.locator(".section").first().waitFor();
+  await scrollToSection(PK, 0);
+  const [pickWin] = await Promise.all([pickCtx.waitForEvent("page"), viaSettings(PK, ".screen")]);
+  const pickVisits = [];
+  pickWin.on("framenavigated", (frame) => { if (frame === pickWin.mainFrame() && frame.url() !== "about:blank") pickVisits.push(frame.url()); });
+  await scrollToSection(PK, 1);
+  await PK.waitForTimeout(1500); // the next section's page is held now
+  await PK.locator('.section[data-i="0"] .links .link').nth(1).dispatchEvent("click");
+  await pickWin.waitForURL(`${base}/fonts/OFL.txt?other=1`);
+  await PK.evaluate(() => window.__deny());
+  await PK.waitForTimeout(800);
+  assert.deepEqual(pickVisits, [`${base}/fonts/OFL.txt?other=1`], "the held page does not go over the link chosen during the wait");
+  await pickCtx.close();
   ok("with the window placement permission (asked from the Connect click), a new main screen opens full size on the other screen and asks for full screen; without it, a plain window to drag; the first Connect sends the page only once the permission is answered and the window has moved (the Prompter comes to the front for the ask; with no answer, after 10 s), and a page that came meanwhile goes instead, once");
 
   // ---- The reading line: dragged to camera height; read text fades above it ----
