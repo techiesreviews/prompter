@@ -456,14 +456,13 @@
     display: grid; place-items: center; min-block-size: 64px; padding: 6px 8px;
     color: var(--muted); background: var(--chip); border: 0; border-radius: 14px; cursor: pointer;
   }
-  .big-toggle:is([aria-pressed="true"], [data-on="true"]) { color: var(--accent-bright); }
+  .big-toggle:is([aria-pressed="true"], [data-on="true"], [data-on="cut"]) { color: var(--accent-bright); }
   .big-toggle:is([aria-pressed="true"], [data-on="true"]) rect { fill: currentColor; }
-  /* The main screen after a page cut its link: an orange dashed screen, no fill (no ring or border). */
-  .big-toggle.screen[data-on="cut"] { color: var(--accent-bright); }
-  .screen[data-on="cut"] rect { stroke-dasharray: 3 2.5; }
+  /* The main screen cut off: an orange dashed screen, no fill (no ring or border). */
+  .screen[data-on="cut"] rect { stroke-dasharray: 3 2.5; stroke-linecap: butt; }
   @media (hover: hover) and (pointer: fine) {
     .big-toggle:hover { color: var(--text); background: var(--chip-hover); }
-    .big-toggle:is([aria-pressed="true"], [data-on="true"]):hover { color: var(--accent-bright); }
+    .big-toggle:is([aria-pressed="true"], [data-on="true"], [data-on="cut"]):hover { color: var(--accent-bright); }
   }
   /* CamFrame: looking or reconnecting blinks orange (an outline camera);
      connected is a filled orange camera with a calm, steady glow; not found

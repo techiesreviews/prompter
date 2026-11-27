@@ -816,8 +816,8 @@ function connected() { return mainWin && !mainWin.closed; }
 
 // The main screen's button in Settings: orange while connected, an orange dashed screen after a page
 // cut its link ("cut"); the Settings button shows a dot then.
-const SCREEN_SAYS = { true: "Main screen connected, reconnect", false: "Connect main screen", cut: "Main screen: the page cut its link, reconnect" };
-const SCREEN_CUT_HELP = ". The page asked the browser to cut it off from the Prompter, so it stays in its own window: close that one when you are done. Reconnect opens a new main screen for the next pages.";
+const SCREEN_SAYS = { true: "Main screen connected, reconnect", false: "Connect main screen", cut: "Main screen cut off, reconnect" };
+const SCREEN_CUT_HELP = ". Its window was closed, or the page in it cut it off from the Prompter (some sites do, such as the Dutch Data Protection Authority). A window that was cut off still shows its page: close it when you are done. Reconnect opens a new main screen for the next pages.";
 function setConnected(on) {
   connectBtn.dataset.on = String(on);
   const name = SCREEN_SAYS[on];
@@ -826,32 +826,34 @@ function setConnected(on) {
   updateSettingsBtn();
 }
 
-// A page can cut the main screen's link as it loads (Cross-Origin-Opener-Policy: same-origin, as the
+// A page can cut the main screen off as it loads (Cross-Origin-Opener-Policy: same-origin, as the
 // Dutch Data Protection Authority's pages send): its window stays open and shows it, but the browser
 // no longer lets the Prompter reach that window, which looks closed from here, and no script can get
-// it back. Closed this soon after a page was sent counts as that. No new window opens by itself: it
-// could land on the Prompter's own screen, over the script.
-const CUT_MS = 10000;
-let cutUrl = ""; // the page that cut the main screen's link; it still shows in that window
-let cutWatch = 0;
-function watchCut(url) {
-  clearInterval(cutWatch);
-  const sent = Date.now();
-  const win = mainWin;
-  cutWatch = setInterval(() => {
-    if (win !== mainWin || Date.now() - sent > CUT_MS) { clearInterval(cutWatch); return; }
-    if (!win.closed) return;
-    clearInterval(cutWatch);
-    cutUrl = url;
-    mainWin = null;
-    setConnected("cut");
-    setStatus("The page on the main screen cut its link to the Prompter. Reconnect the main screen in Settings for the next pages.");
-  }, 250);
+// it back. From here that looks the same as a window someone closed, so both say "cut off" on the
+// button, with no alert and no window opening by itself (it could land on the Prompter's own screen,
+// over the script). Closed this soon after a page was sent, that page may be what cut it off:
+// Reconnect does not send it again until another page is sent.
+const CUT_MS = 30000;
+let sentUrl = "";
+let sentAt = 0;
+let skipUrl = "";
+let screenWatch = 0;
+function watchScreen() {
+  clearInterval(screenWatch);
+  screenWatch = setInterval(() => { if (!connected()) screenGone(); }, 500);
+}
+function screenGone() {
+  clearInterval(screenWatch);
+  mainWin = null;
+  if (Date.now() - sentAt < CUT_MS) skipUrl = sentUrl;
+  setConnected("cut");
+  setStatus("The main screen was cut off. Reconnect it in Settings.");
 }
 
-// A dot on the Settings button, and its name, while Follow my voice is on or a main screen is connected.
+// A dot on the Settings button, and its name, while Follow my voice is on, a main screen is connected
+// or cut off, or CamFrame is connected.
 function updateSettingsBtn() {
-  const on = [voiceOn && "Follow my voice on", connectBtn.dataset.on === "true" && "main screen connected", connectBtn.dataset.on === "cut" && "main screen link cut", camframe.on && camframe.state === "on" && "CamFrame connected"].filter(Boolean);
+  const on = [voiceOn && "Follow my voice on", connectBtn.dataset.on === "true" && "main screen connected", connectBtn.dataset.on === "cut" && "main screen cut off", camframe.on && camframe.state === "on" && "CamFrame connected"].filter(Boolean);
   if (on.length) settingsBtn.dataset.dot = "on"; else delete settingsBtn.dataset.dot;
   const label = ["Settings", ...on].join(" · ");
   settingsBtn.setAttribute("aria-label", label);
@@ -865,16 +867,17 @@ function connect() {
     if (mainWin.location.href === "about:blank") {
       mainWin.document.title = "Main screen";
       mainWin.document.body.style.cssText = "margin:0;display:grid;place-items:center;height:100vh;background:#000;color:#f4f1ea;font:600 32px system-ui;text-align:center;padding:0 5vw";
-      mainWin.document.body.textContent = "Drag this window to your main screen and make it full size. Pages will open here.";
+      mainWin.document.body.textContent = "Drag this window to your main screen and make it full size. Pages will open here."
+        + (skipUrl ? " The last page was not sent again, as it may cut this window off too: its link button opens it anyway." : "");
     }
   } catch { /* already showing another site; fine */ }
   setConnected(true);
   setStatus("");
   hideHint();
+  sentAt = 0;
+  watchScreen();
   const { anchor } = scripts.now;
-  // The page that cut the last window's link still shows there; sent again it would cut this one too.
-  scripts.now.shownUrl = cutUrl;
-  cutUrl = "";
+  scripts.now.shownUrl = skipUrl;
   if (anchor) showLink(anchor.s, anchor.l, false);
 }
 
@@ -901,22 +904,20 @@ function showLink(si, li, fromUser) {
   if (!s || !s.links[li]) return;
   const url = screenUrl(s.links[li].url);
   if (!connected()) {
-    const was = connectBtn.dataset.on;
-    if (was === "true") setConnected(false);
+    if (connectBtn.dataset.on === "true") screenGone(); // before the watch saw it
     if (!fromUser) {
-      if (was === "true") lost();
-      else if (was === "false") showHint(s.links[li].label); // after a cut the button already says reconnect
+      if (connectBtn.dataset.on === "false") showHint(s.links[li].label); // cut off: the button already says reconnect
       return;
     }
     mainWin = window.open(url, WINDOW_NAME, "popup=yes,width=1400,height=900");
     if (!mainWin) { blocked(); return; }
-    cutUrl = "";
     setConnected(true);
+    watchScreen();
   }
   if (url !== script.shownUrl || fromUser) {
     try { mainWin.location.href = url; } catch { mainWin = window.open(url, WINDOW_NAME); }
     script.shownUrl = url;
-    watchCut(url);
+    [sentUrl, sentAt, skipUrl] = [url, Date.now(), ""];
   }
   main.querySelectorAll(".link, .mark, .inlink").forEach((b) => {
     b.dataset.shown = String(screenUrl(script.sections[b.dataset.s].links[b.dataset.l].url) === script.shownUrl);
@@ -967,7 +968,6 @@ function hideHint() {
   delete settingsBtn.dataset.hint;
 }
 
-function lost() { showAlert("Main screen window lost. Connect it again in Settings, or click a link button."); }
 function blocked() { showAlert("No window could open. Allow pop-ups for this page."); }
 
 const fmt = (sec) => `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`;
