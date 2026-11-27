@@ -17,7 +17,8 @@ import { voiceStart } from "./follow.mjs";
  *   on the main screen at the reader's next move away from there; null when none);
  * - `shownUrl`: the page this script last put on the main screen;
  * - `ownShown`: the pages this script opened in a window of their own (sites that cut the main screen
- *   off), so none opens a second one by itself;
+ *   off), so none opens a second one by itself, and `ownUrl`, the last of them, marked as showing until
+ *   the next page goes to the main screen;
  * - `voiceLines` (speechWords of each spoken line, by data-k) and `voice` (Follow my voice's state, see
  *   voiceStart and voiceStep: where the voice is, the speech results already followed, the link the voice
  *   last opened by its label and the speech result it was heard in);
@@ -41,6 +42,7 @@ export function scriptState({ text = "", saved = null, sections = [] } = {}) {
     anchorDue: null,
     shownUrl: "",
     ownShown: new Set(),
+    ownUrl: "",
     voiceLines: [],
     voice: voiceStart(-1),
     cues: [],

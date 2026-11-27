@@ -34,14 +34,17 @@ export function rememberCutSite(list, host) {
 }
 
 /**
- * The remembered sites without `host`, or the same list when it is not there. A site comes off the
- * list when its own window stayed connected (so it did not cut it off: the window had only been
- * closed); the built-in sites never come off. A site where only some pages cut it off can go on and
- * off the list this way; that is rare, and each time costs one cut-off main screen.
+ * The remembered sites without the ones that sent `host` to a window of its own (the site itself, or
+ * a site it is a subdomain of), or the same list when none did. A site comes off the list when its
+ * own window stayed connected (so it did not cut it off: the window had only been closed); the
+ * built-in sites never come off. A site where only some pages cut it off can go on and off the list
+ * this way; that is rare, and each time costs one cut-off main screen.
  */
 export function forgetCutSite(list, host) {
   const site = cutSite(host);
-  return list.includes(site) ? list.filter((known) => known !== site) : list;
+  if (!site) return list;
+  const kept = list.filter((known) => site !== known && !site.endsWith(`.${known}`));
+  return kept.length === list.length ? list : kept;
 }
 
 /** Whether a link on `host` cuts the main screen off: a known site or a subdomain of one. */
