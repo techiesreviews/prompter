@@ -2766,11 +2766,43 @@ export async function run({ browser, base, mode, dist, out }) {
   const [slowWin] = await Promise.all([slowCtx.waitForEvent("page"), viaSettings(SL, ".screen")]);
   await SL.waitForTimeout(1200);
   assert.equal(slowWin.url(), "about:blank", "the page waits for the permission's answer");
+  assert.match(await slowWin.evaluate(() => document.body.textContent), /Pages will open here\. Allow window placement in the Prompter to move this window to your main screen\.$/, "the waiting window says where the ask is");
+  assert.equal(await SL.evaluate(() => document.hasFocus()), true, "the Prompter comes back to the front, so the ask is not hidden behind the new window");
   await SL.evaluate(() => window.__allow());
   await slowWin.waitForURL(`${base}/fonts/OFL.txt`);
   assert.deepEqual(await SL.evaluate(() => window.__moved), [[1366, 0, "about:blank"]], "moved to the other screen before the page went to it");
   await slowCtx.close();
-  ok("with the window placement permission (asked from the Connect click), a new main screen opens full size on the other screen and asks for full screen; without it, a plain window to drag; the first Connect sends the page only once the permission is answered and the window has moved");
+  // No answer at all: after 10 s the page goes anyway (the window stays where it is), and a page that
+  // came during the wait (here a scroll to the next section that settled) goes instead, once.
+  const muteCtx = await browser.newContext(DESKTOP);
+  await muteCtx.addInitScript(NO_SPEECH);
+  await muteCtx.addInitScript(() => {
+    window.getScreenDetails = () => new Promise(() => {});
+    const real = window.open;
+    window.__moved = [];
+    window.open = function (...args) {
+      const win = real.apply(this, args);
+      if (win) win.moveTo = (...at) => window.__moved.push(at);
+      return win;
+    };
+  });
+  const ML = await muteCtx.newPage();
+  watch(ML, "main screen placement, no answer");
+  await ML.goto(await makeLink(`### **INTRO · 00:00**\n\n- Licence: ${base}/fonts/OFL.txt\n\nA page at the reading line.\nWaiting for the answer.\n\n### **NEXT · 00:30**\n\n- Licence again: ${base}/fonts/OFL.txt?next=1\n\nThe next section.\nReached during the wait.\n`, "lex", base));
+  await ML.locator(".section").first().waitFor();
+  await scrollToSection(ML, 0);
+  const [muteWin] = await Promise.all([muteCtx.waitForEvent("page"), viaSettings(ML, ".screen")]);
+  const muteVisits = [];
+  muteWin.on("framenavigated", (frame) => { if (frame === muteWin.mainFrame() && frame.url() !== "about:blank") muteVisits.push(frame.url()); });
+  await scrollToSection(ML, 1);
+  await ML.waitForTimeout(1500);
+  assert.equal(muteWin.url(), "about:blank", "still waiting: the settled scroll's page is held back");
+  await muteWin.waitForURL(`${base}/fonts/OFL.txt?next=1`, { timeout: 12000 });
+  await ML.waitForTimeout(800);
+  assert.deepEqual(muteVisits, [`${base}/fonts/OFL.txt?next=1`], "only the page that came during the wait, once");
+  assert.deepEqual(await ML.evaluate(() => window.__moved), [], "with no answer the window stays where it is");
+  await muteCtx.close();
+  ok("with the window placement permission (asked from the Connect click), a new main screen opens full size on the other screen and asks for full screen; without it, a plain window to drag; the first Connect sends the page only once the permission is answered and the window has moved (the Prompter comes to the front for the ask; with no answer, after 10 s), and a page that came meanwhile goes instead, once");
 
   // ---- The reading line: dragged to camera height; read text fades above it ----
   const lineOf = (page) => page.evaluate(() => {

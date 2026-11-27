@@ -1007,6 +1007,8 @@ let screenDetails = null;
 let screensAsk = null; // the one ask, also while it waits for its answer
 const SCREENS_WAIT_MS = 10000; // how long the first Connect waits for that answer before it sends the page
 let placing = false; // while that first Connect waits
+let placingHeld = null; // the last page that came meanwhile ({ script, s, l }), sent when the wait ends
+const PLACING_NOTE = " Allow window placement in the Prompter to move this window to your main screen.";
 function askScreens() {
   if (!window.getScreenDetails) return Promise.resolve(null);
   if (!screensAsk) screensAsk = window.getScreenDetails().then((d) => (screenDetails = d), () => null);
@@ -1029,6 +1031,7 @@ function updateSettingsBtn() {
 function connect() {
   if (connectBtn.dataset.on === "true" && !connected()) screenGone(); // before the watch saw it
   const placed = Boolean(screenArea());
+  const asking = !placed && Boolean(window.getScreenDetails);
   const win = mainWin = openScreen("", WINDOW_NAME);
   if (!mainWin) { blocked(); return; }
   try {
@@ -1036,9 +1039,13 @@ function connect() {
       mainWin.document.title = "Main screen";
       mainWin.document.body.style.cssText = "margin:0;box-sizing:border-box;display:grid;place-items:center;height:100vh;background:#000;color:#f4f1ea;font:600 32px system-ui;text-align:center;padding:0 5vw;overflow-wrap:anywhere";
       mainWin.document.body.textContent = (placed ? "Main screen. Pages will open here." : "Drag this window to your main screen and make it full size. Pages will open here.")
-        + (skip.url ? ` The last page (${skip.site}) was not sent again, as it may cut this window off too: its link button opens it anyway.` : "");
+        + (skip.url ? ` The last page (${skip.site}) was not sent again, as it may cut this window off too: its link button opens it anyway.` : "")
+        + (asking ? PLACING_NOTE : "");
     }
   } catch { /* already showing another site; fine */ }
+  // The browser asks for window placement in the Prompter's window: it comes back to the front so the
+  // ask is not hidden behind the new window.
+  if (asking) window.focus();
   setConnected(true);
   setStatus("");
   hideHint();
@@ -1050,27 +1057,34 @@ function connect() {
   // opens in a window of its own (from its link, or as the reader reached it), so connecting does not
   // open another one for it.
   const sendAnchor = () => {
+    const held = placingHeld?.script === scripts.now ? placingHeld : null;
+    placingHeld = null;
     if (win !== mainWin || !connected()) return;
-    const { anchor } = scripts.now;
-    const link = anchor && scripts.now.sections[anchor.s]?.links[anchor.l];
-    if (link && !cutsLink(link)) showLink(anchor.s, anchor.l, false);
+    const at = held || scripts.now.anchor; // a page that came during the wait (Follow my voice, a settled scroll), else the reading line's
+    const link = at && scripts.now.sections[at.s]?.links[at.l];
+    if (link && !cutsLink(link)) showLink(at.s, at.l, false);
     drawNext();
     if (skip.url && !scripts.now.shownUrl) setStatus(`Main screen connected. The last page (${skip.site}) was not sent again: its link button opens it.`);
   };
-  if (placed || !window.getScreenDetails) { sendAnchor(); return; }
+  if (!asking) { sendAnchor(); return; }
   // Asked once per visit, from the first Connect click: allowed, this window moves to the main screen
   // while it still waits, and every later main screen opens there. The page waits for that answer (a
   // window showing another site can no longer be moved), or SCREENS_WAIT_MS when none comes.
   placing = true;
+  placingHeld = null;
   Promise.race([askScreens(), new Promise((done) => setTimeout(done, SCREENS_WAIT_MS))]).then(() => {
     placing = false;
     const area = screenArea();
-    if (area && win === mainWin) {
+    if (win === mainWin) {
       try {
         if (win.location.href === "about:blank") {
-          win.moveTo(area.left, area.top);
-          win.resizeTo(area.width, area.height);
-          win.document.body.textContent = win.document.body.textContent.replace(/^Drag this window to your main screen and make it full size\. /, "Main screen. ");
+          let text = win.document.body.textContent.replace(PLACING_NOTE, "");
+          if (area) {
+            win.moveTo(area.left, area.top);
+            win.resizeTo(area.width, area.height);
+            text = text.replace(/^Drag this window to your main screen and make it full size\. /, "Main screen. ");
+          }
+          win.document.body.textContent = text;
         }
       } catch { /* already showing another site: it stays where it is */ }
     }
@@ -1133,8 +1147,9 @@ function showLink(si, li, fromUser) {
     return;
   }
   // The first Connect is still waiting for the placement answer: it sends the page at the reading line
-  // itself once the window has moved (a scroll that settled meanwhile would send it too soon).
-  if (!fromUser && placing) return;
+  // once the window has moved; a page that comes meanwhile (a settled scroll, Follow my voice) is held
+  // and sent then instead. A window closed during the wait holds nothing back.
+  if (!fromUser && placing && connected()) { placingHeld = { script, s: si, l: li }; return; }
   const opened = !connected();
   if (opened) {
     // Cut off: the next page opens a new main screen by itself (Lex's pick); a link button does too.
