@@ -700,7 +700,11 @@ const reading = readingLine({
     updateActive(at);
     if (voice && voiceOn && !voiceScrolling) voiceFromReadingLine(at);
   },
-  // The row, not just the letters: lines sharing a row count as on it in the room under the letters too.
+  // The row, not just the letters: lines sharing a row count as on it in the room above and under the letters too.
+  rowTop(el) {
+    const first = rowBoxes(el)[0];
+    return first ? first.top : el.getBoundingClientRect().top;
+  },
   rowBottom(el) {
     const last = rowBoxes(el).at(-1);
     return last ? last.top + last.height : el.getBoundingClientRect().bottom;

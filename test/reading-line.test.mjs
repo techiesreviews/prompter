@@ -74,6 +74,15 @@ test("look: where spoken lines share a row, the first one still on the row at th
   const rows = readingLine({ script: fakeScript(shared), view: fakeView(), frame: fakeFrames(), onLook() {}, rowBottom: (el) => el.getBoundingClientRect().bottom + 20 });
   rows.place(170);
   assert.deepEqual([rows.look().line, rows.look().lastLine], [1, 3], "in the room under the letters the line is still on its row");
+  // And its row's top: lines 1 and 2 start the row whose letters begin at 100, its row at 80.
+  const above = [{ top: -50, lines: [[0, 60], [100, 160], [100, 160]] }];
+  const edges = { rowTop: (el) => el.getBoundingClientRect().top - 20, rowBottom: (el) => el.getBoundingClientRect().bottom + 20 };
+  const top = readingLine({ script: fakeScript(above), view: fakeView(), frame: fakeFrames(), onLook() {}, ...edges });
+  top.place(85);
+  assert.deepEqual([top.look().line, top.look().lastLine], [1, 2], "in the room above the letters the row has begun");
+  const plain = readingLine({ script: fakeScript(above), view: fakeView(), frame: fakeFrames(), onLook() {} });
+  plain.place(85);
+  assert.deepEqual([plain.look().line, plain.look().lastLine], [0, 0], "without row edges only the letters count");
 });
 
 test("look: above every section the first one counts; no lines or links reached give -1", () => {
