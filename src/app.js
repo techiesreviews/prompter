@@ -74,6 +74,7 @@ const store = {
 };
 // The settings (SETTINGS in src/settings.mjs): read and saved through their one table.
 const prefs = settingsStore(store, { phone: window.innerWidth < 640 });
+RETIRED.forEach((k) => store.del(k)); // a retired setting's old choice is not left behind on the device
 
 // The open script's own state (openScripts in src/open-script.mjs): its text and save date, sections, the
 // section and link at the reading line, the voice's place, the cues. Made fresh on each open, so nothing
@@ -266,10 +267,9 @@ function cueHtml(it, space) {
 }
 
 // The script reads in paragraphs: lines that follow each other are one. In the Lines layout a
-// row ends after a comma, a full stop or the like, never in the middle of a sentence; in the
-// Paragraphs layout the rows flow together (CSS). Each script line keeps its own place (data-k)
-// for Follow my voice.
-const ROW_END = /[,.;:!?…]["'”’)\]]*$/;
+// row ends after a comma, a full stop or the like, never in the middle of a sentence (lineJoins);
+// in the Paragraphs layout the rows flow together (CSS). Each script line keeps its own place
+// (data-k) for Follow my voice.
 const PARA = new Set(["say", "next", "now"]);
 
 /**
@@ -314,20 +314,22 @@ function render() {
       .filter((it) => it.type !== "ql");
     // Drawn in page order, so the spoken lines (data-k) and cues are numbered top to bottom.
     const unit = (it, cls) => `<span class="${cls}" data-k="${voiceLines.push(speechWords(it.text)) - 1}">${lineHtml(it, i)}</span>`;
-    const rows = (its) => {
-      const out = [[]];
-      its.forEach((it, n) => {
-        out.at(-1).push(unit(it, it.type));
-        if (n < its.length - 1 && ROW_END.test(it.text.trim())) out.push([]);
+    // The paragraph's last line leads into points under it (`lead`): only that line is bold.
+    const rows = (its, lead) => {
+      const joins = lineJoins(its.map((it) => it.text));
+      const html = its.map((it, n) => {
+        const j = joins[n];
+        const after = !j ? "" : j.row ? `</span>${j.space}<span class="row">` : j.space;
+        return unit(it, lead && n === its.length - 1 ? `${it.type} lead` : it.type) + after;
       });
-      return out.map((row) => `<span class="row">${row.join(" ")}</span>`).join(" ");
+      return `<span class="row">${html.join("")}</span>`;
     };
     const items = blocksOf(rest).map(({ kind, items: its, space, lead }) => {
       const it = its[0];
       if (kind === "mark") return mark(it.l, i, it.j, space);
       if (kind === "note") return it.cue ? cueHtml(it, space) : `<p class="note blk${space}">${esc(it.text)}</p>`;
       if (kind === "points") return `<div class="points blk${space}">${its.map((b) => `<p class="bullet">${unit(b, "point")}</p>`).join("")}</div>`;
-      return `<p class="para${lead ? " lead" : ""} blk${space}">${rows(its)}</p>`;
+      return `<p class="para blk${space}">${rows(its, lead)}</p>`;
     }).join("");
     return `<section class="section" data-i="${i}"><h2 class="title"><span>${esc(s.title)}</span><span class="time">${esc(s.time)}</span></h2>${links}${qls}${items}</section>`;
   }).join("");
@@ -695,7 +697,7 @@ const reading = readingLine({
   frame: requestAnimationFrame,
   onLook(at, { voice }) {
     updateActive(at);
-    if (voice && voiceOn && !voiceScrolling) voiceFromReadingLine(at.line);
+    if (voice && voiceOn && !voiceScrolling) voiceFromReadingLine(at);
   },
 });
 let lineDrag = null; // { id, offset, from, start, slop, moved } while a pointer drags the handle
@@ -784,7 +786,7 @@ handle.addEventListener("keydown", (e) => {
 function followLine() {
   const at = reading.look();
   updateActive(at); // the page may not have scrolled (at the top), so no scroll event will do it
-  if (voiceOn) voiceFromReadingLine(at.line);
+  if (voiceOn) voiceFromReadingLine(at);
 }
 
 function updateActive(look = reading.look()) {
@@ -1102,6 +1104,18 @@ function setWidth(name) {
   widthInputs.forEach((input) => { input.checked = input.value === w; });
 }
 
+// The rows an element of the script sits on, top to bottom. A line inside a paragraph is an inline
+// span: its boxes are as tall as the letters, while its row is as tall as the line height (the
+// letters centred in it); a block is its own row.
+function rowBoxes(el) {
+  const lh = getComputedStyle(el).display === "inline" ? parseFloat(getComputedStyle(el).lineHeight) : NaN;
+  return [...el.getClientRects()].map((f) => {
+    if (!(lh > 0)) return { top: f.top, height: f.height, letters: f.top, spill: 0 };
+    // Where the letters are taller than the row, they reach into the rows next to it.
+    return { top: f.top + (f.height - lh) / 2, height: lh, letters: f.top, spill: Math.max(0, (f.height - lh) / 2) };
+  });
+}
+
 // Line height, paragraph spacing and layout: the row at the reading line stays there.
 // Only while Follow my voice's own move is in progress (until its scrollend, the reader's wheel or touch, or 2 s if none comes)
 // does the line being read go to the reading line instead.
@@ -1110,28 +1124,18 @@ function keepPlace(change) {
   const y = reading.y;
   const cur = voiceOn && voiceScrolling ? main.querySelector(".cur") : null;
   const lines = [...main.querySelectorAll("[data-k], p:not(.para, .bullet), .mark, .links")];
-  // In the Paragraphs layout several lines can share the row at the reading line: with Follow my
-  // voice on, keep the one being read when it is on that row.
+  // Several lines can share the row at the reading line: with Follow my voice on, keep the one
+  // being read when it is on that row.
   const read = voiceOn ? main.querySelector(".cur") : null;
-  const onRow = read && [...read.getClientRects()].some((f) => f.top <= y && f.bottom > y) ? read : null;
+  const onRow = read && rowBoxes(read).some((r) => r.top <= y && r.top + r.height > y) ? read : null;
   // Below the last line (the page scrolls into the bottom padding): hold the last line's distance.
   const keep = cur || onRow || lines.find((el) => el.getBoundingClientRect().bottom > y) || lines.at(-1);
   if (!keep) { change(); followLine(); return; }
   // The row of that line at the reading line (a line in a paragraph may wrap, or share a row with
   // others): inside it, a share of its height (rows grow too); above it (a heading, a link row or the
   // room between paragraphs), the same distance in pixels to its letters.
-  // A line inside a paragraph is an inline span: its boxes are as tall as the letters, while its row
-  // is as tall as the line height (the letters centred in it).
   const top = () => keep.getBoundingClientRect().top;
-  const rowsOf = () => {
-    const inline = getComputedStyle(keep).display === "inline";
-    const lh = inline ? parseFloat(getComputedStyle(keep).lineHeight) : NaN;
-    return [...keep.getClientRects()].map((f) => {
-      if (!(lh > 0)) return { top: f.top, height: f.height, letters: f.top, spill: 0 };
-      // Where the letters are taller than the row, they reach into the rows next to it.
-      return { top: f.top + (f.height - lh) / 2, height: lh, letters: f.top, spill: Math.max(0, (f.height - lh) / 2) };
-    });
-  };
+  const rowsOf = () => rowBoxes(keep);
   const none = () => ({ top: top(), height: 0, letters: top(), spill: 0 });
   const before = rowsOf();
   const n = Math.max(0, before.findIndex((r) => r.top + r.height > y));
@@ -1196,11 +1200,11 @@ function goSection(delta) {
 // the audio to Google for that, unless it can do it on this device); the
 // script itself never leaves the page.
 // Scrolled by hand, a section jump or the line moved: follow on from the line
-// at the reading line (`k`, from the look), marked there without scrolling. Still on
-// the followed line, the place in it is kept.
-function voiceFromReadingLine(k) {
-  scripts.now.voice = voiceAt(scripts.now.voice, k);
-  markLine(k, false);
+// at the reading line (from the look `at`), marked there without scrolling. Still on
+// the followed line, or on another line of its row, the place in it is kept.
+function voiceFromReadingLine(at) {
+  scripts.now.voice = voiceAt(scripts.now.voice, at.line, at.lastLine);
+  markLine(at.line < 0 ? -1 : scripts.now.voice.follow.line, false); // above the first line: none marked yet
 }
 
 // The line being read is pure white (CSS); the lines after it stay white.

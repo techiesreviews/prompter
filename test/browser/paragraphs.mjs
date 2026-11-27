@@ -17,6 +17,7 @@ we finish it.
 A new paragraph after a camera cue.
 [Show on screen: the plugin list]
 
+One more thing before we move on.
 WP 2FA has a paid version with some nice additions:
 
 - Trusted devices
@@ -67,7 +68,10 @@ export async function run({ browser, base, out }) {
   const context = await browser.newContext({ viewport: { width: 1366, height: 900 } });
   try {
     const page = await context.newPage();
+    await page.goto(base);
+    await page.evaluate(() => localStorage.setItem("prompter-spacing", "roomy")); // the retired Line spacing
     await open(page);
+    assert.equal(await page.evaluate(() => localStorage.getItem("prompter-spacing")), null, "the retired Line spacing choice is cleared from the device");
     const size = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--size")));
     assert.equal(size, 52);
 
@@ -121,19 +125,20 @@ export async function run({ browser, base, out }) {
       const box = (el) => { const cs = getComputedStyle(el); return [cs.backgroundColor, cs.borderStyle, cs.boxShadow, cs.outlineStyle]; };
       const b = document.querySelector(".bullet");
       const dot = getComputedStyle(b, "::before");
-      const lead = document.querySelector(".points").previousElementSibling;
+      const lines = [...document.querySelector(".points").previousElementSibling.querySelectorAll("[data-k]")];
+      const weight = (el) => getComputedStyle(el).fontWeight;
       return {
         boxes: [box(document.querySelector(".points")), box(b)],
         dot: [dot.content, dot.position, dot.color],
         hangs: b.querySelector("[data-k]").getBoundingClientRect().left - document.querySelector(".para").getBoundingClientRect().left,
-        lead: [lead.matches(".para.lead"), getComputedStyle(lead).fontWeight, getComputedStyle(document.querySelector(".para")).fontWeight],
+        lead: lines.map((el) => [el.textContent.trim().slice(0, 14), el.matches(".lead"), weight(el)]),
       };
     });
     assert.deepEqual(points.boxes, [["rgba(0, 0, 0, 0)", "none", "none", "none"], ["rgba(0, 0, 0, 0)", "none", "none", "none"]], "no box, border, ring or shadow behind the points");
     assert.deepEqual(points.dot, ['"•"', "absolute", ACCENT]);
     assert.ok(points.hangs > size * 0.5 && points.hangs < size * 1.2, `the point's words hang right of the dot: ${points.hangs}`);
-    assert.deepEqual(points.lead, [true, "700", "600"]);
-    ok("points: no box, border or ring; an orange dot hangs left of each; the sentence leading into them is bolder (700)");
+    assert.deepEqual(points.lead, [["One more thing", false, "600"], ["WP 2FA has a p", true, "700"]], "only the last line of the paragraph above the points is bolder");
+    ok("points: no box, border or ring; an orange dot hangs left of each; only the line leading into them is bolder (700), the lines before it stay 600");
 
     // Colours: words white in every section (Next: lines too, plain); reminders, cues and links dimmed.
     const colours = await page.evaluate(() => {
@@ -191,6 +196,71 @@ export async function run({ browser, base, out }) {
     ok("phone: no sideways scroll; the points read under their dots");
   } finally {
     await phone.close();
+  }
+
+  // Follow my voice where script lines share a row (Paragraphs): the first line still on the row at
+  // the reading line is the one followed, also after a hand scroll and a line height change.
+  const voiced = await browser.newContext({ viewport: { width: 1366, height: 900 } });
+  try {
+    await voiced.addInitScript(() => {
+      localStorage.setItem("prompter-layout", "paragraphs");
+      localStorage.setItem("prompter-voice-ok", "yes");
+      const state = { instance: null, results: [] };
+      class FakeRecognition {
+        static async available() { return "unavailable"; }
+        start() { state.results = []; state.instance = this; }
+        stop() { this.onend?.(); }
+        abort() {}
+      }
+      FakeRecognition.prototype.processLocally = false;
+      state.say = (text) => {
+        const result = [{ transcript: text }];
+        result.isFinal = true;
+        state.results.push(result);
+        state.instance?.onresult?.({ results: state.results, resultIndex: state.results.length - 1 });
+      };
+      window.__speech = state;
+      window.SpeechRecognition = FakeRecognition;
+      delete window.webkitSpeechRecognition;
+    });
+    const page = await voiced.newPage();
+    await open(page);
+    // The first pair of spoken lines where the later one starts on the row the earlier one ends on.
+    const shared = await page.evaluate(() => {
+      const els = [...document.querySelectorAll(".para [data-k]")];
+      for (let i = 1; i < els.length; i++) {
+        const a = [...els[i - 1].getClientRects()].at(-1);
+        const b = els[i].getClientRects()[0];
+        if (a && b && Math.abs(a.top - b.top) < 2) {
+          const line = document.querySelector(".reading-line").getBoundingClientRect().top;
+          window.scrollBy(0, b.top + b.height / 2 - line);
+          return { first: els[i - 1].textContent, next: els[i].textContent };
+        }
+      }
+      return null;
+    });
+    assert.ok(shared, "two spoken lines share a row in Paragraphs");
+    await page.waitForTimeout(100);
+    const cur = () => page.evaluate(() => document.querySelector(".cur")?.textContent ?? null);
+    const openSettings = async () => { await page.mouse.move(683, 895); await settings(page); }; // the bar tucks away after scrolling down
+    await openSettings();
+    await page.locator("#settings .voice").click();
+    assert.equal(await page.locator("#settings .voice").getAttribute("aria-pressed"), "true");
+    await page.evaluate(() => document.querySelector("#settings").hidePopover());
+    await page.mouse.move(683, 600);
+    await page.mouse.wheel(0, 1);
+    await page.waitForTimeout(150);
+    assert.equal(await cur(), shared.first, "turned on, then a hand scroll within the row: the first line still on the row at the reading line");
+    await openSettings();
+    await page.locator(".line-height").fill("150");
+    await page.waitForTimeout(150);
+    assert.equal(await cur(), shared.first, "a line height change keeps the line being read");
+    await page.evaluate(() => document.querySelector("#settings").hidePopover());
+    await page.evaluate((words) => window.__speech.say(words), `${shared.first} ${shared.next.split(" ")[0]}`);
+    await page.waitForFunction((text) => document.querySelector(".cur")?.textContent === text, shared.next, { timeout: 3000 });
+    ok("Follow my voice, lines sharing a row: the first one on the row is followed (turned on, after a hand scroll and a line height change), then the next as it is read");
+  } finally {
+    await voiced.close();
   }
   return { checks, screenshots };
 }

@@ -3,10 +3,14 @@ import assert from "node:assert/strict";
 import { LINE_INSET, LINE_REACH, readingLine, reachedCount } from "../src/reading-line.mjs";
 
 // A stand-in for the script column: elements with a top (px from the window's top), the data the page
-// gives them, and a count of the positions read, so a test can say how much one look costs.
+// gives them, and a count of the positions read, so a test can say how much one look costs. A spoken
+// line is its top, or [top, bottom] when it reaches further down (lines sharing a row).
 function fakeScript(spec) {
   const reads = { n: 0 };
-  const el = (top, dataset = {}, kids = []) => ({ dataset, kids, getBoundingClientRect() { reads.n++; return { top }; } });
+  const el = (at, dataset = {}, kids = []) => {
+    const [top, bottom = top] = [at].flat();
+    return { dataset, kids, getBoundingClientRect() { reads.n++; return { top, bottom }; } };
+  };
   const sections = spec.map((s, i) => el(s.top, { i: String(i) }, s.links || []));
   for (const s of sections) s.querySelectorAll = (sel) => (sel === ".mark, .inlink" ? s.kids.map((l) => el(l.top, { l: String(l.l) })) : []);
   const cues = spec.flatMap((s) => s.cues || []).map((top, n) => el(top, { cue: String(n) }));
@@ -52,6 +56,20 @@ test("look: the section, its link, the cues and the spoken line at the reading l
   assert.equal(at.link, 1, "the last link of that section above the line");
   assert.deepEqual(at.cues, [0, 1], "every cue above the line, by number");
   assert.equal(at.line, 6, "the last spoken line whose top reached the line (104 is within reach)");
+});
+
+test("look: where spoken lines share a row, the first one still on the row at the line; lastLine the last one started", () => {
+  // Line 1 runs from row 0 into row 100 (its bottom 160), where lines 2 and 3 start too.
+  const shared = [{ top: -50, lines: [[0, 60], [0, 160], [100, 160], [104, 220], [200, 260]] }];
+  const line = readingLine({ script: fakeScript(shared), view: fakeView(), frame: fakeFrames(), onLook() {} });
+  line.place(130);
+  assert.deepEqual([line.look().line, line.look().lastLine], [1, 3]);
+  line.place(170);
+  assert.deepEqual([line.look().line, line.look().lastLine], [3, 3], "below line 1's bottom: the one still reaching the line");
+  line.place(30);
+  assert.deepEqual([line.look().line, line.look().lastLine], [0, 1]);
+  line.place(-100);
+  assert.deepEqual([line.look().line, line.look().lastLine], [-1, -1]);
 });
 
 test("look: above every section the first one counts; no lines or links reached give -1", () => {

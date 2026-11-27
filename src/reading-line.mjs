@@ -2,7 +2,7 @@
 // The page asks it "what is at the line" (the section, the link reached in it, the camera cues
 // above it, the spoken line) and "bring this to the line". However many scrolls and wheels ask
 // in one animation frame, it looks once in that frame; a move by the reader (the line dragged,
-// a section jump, line spacing) looks at once, so it follows without waiting. A look measures only the
+// a section jump, line height, paragraph spacing or layout) looks at once, so it follows without waiting. A look measures only the
 // answers read from it, each once, and finds each by halving: the script's elements of one
 // kind sit top to bottom in page order, so a look reads a handful of positions, not every line.
 // Inlined into the page by scripts/build.mjs (no imports; `export function`/`export const` only).
@@ -46,6 +46,15 @@ export function readingLine({ script, view, frame, onLook }) {
       const n = reachedCount(els, y);
       return n ? Number(els[n - 1].dataset[key]) : -1;
     };
+    // Stepping back from the last line reached while the one before still reaches below the line.
+    const rowLines = () => once("rowLines", () => {
+      const els = script.querySelectorAll("[data-k]");
+      let n = reachedCount(els, y);
+      if (!n) return { first: -1, last: -1 };
+      const last = Number(els[n - 1].dataset.k);
+      while (n > 1 && els[n - 2].getBoundingClientRect().bottom > y) n--;
+      return { first: Number(els[n - 1].dataset.k), last };
+    });
     return {
       /** The last section whose top reached the line; the first when none has. */
       get section() { return once("section", () => Math.max(0, reachedCount(sections(), y) - 1)); },
@@ -63,8 +72,13 @@ export function readingLine({ script, view, frame, onLook }) {
           return Array.from(els).slice(0, reachedCount(els, y)).map((el) => Number(el.dataset.cue));
         });
       },
-      /** The last spoken line (data-k) whose top reached the line, or -1. */
-      get line() { return once("line", () => lastOf(script.querySelectorAll("[data-k]"), "k")); },
+      /**
+       * The spoken line (data-k) at the line, or -1: the first one still on the row there (several
+       * lines can share a row), else the last whose top reached the line.
+       */
+      get line() { return rowLines().first; },
+      /** The last spoken line whose top reached the line (the last one starting on that row), or -1. */
+      get lastLine() { return rowLines().last; },
     };
   }
 
