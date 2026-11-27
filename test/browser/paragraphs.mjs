@@ -18,7 +18,8 @@ A new paragraph after a camera cue.
 [Show on screen: the plugin list]
 
 One more thing before we move on.
-WP 2FA has a paid version with some nice additions:
+WP 2FA has a paid version
+with some nice additions:
 
 - Trusted devices
 - Backup codes, printed once
@@ -137,8 +138,8 @@ export async function run({ browser, base, out }) {
     assert.deepEqual(points.boxes, [["rgba(0, 0, 0, 0)", "none", "none", "none"], ["rgba(0, 0, 0, 0)", "none", "none", "none"]], "no box, border, ring or shadow behind the points");
     assert.deepEqual(points.dot, ['"•"', "absolute", ACCENT]);
     assert.ok(points.hangs > size * 0.5 && points.hangs < size * 1.2, `the point's words hang right of the dot: ${points.hangs}`);
-    assert.deepEqual(points.lead, [["One more thing", false, "600"], ["WP 2FA has a p", true, "700"]], "only the last line of the paragraph above the points is bolder");
-    ok("points: no box, border or ring; an orange dot hangs left of each; only the line leading into them is bolder (700), the lines before it stay 600");
+    assert.deepEqual(points.lead, [["One more thing", false, "600"], ["WP 2FA has a p", true, "700"], ["with some nice", true, "700"]], "only the last row of the paragraph above the points is bolder, all of it");
+    ok("points: no box, border or ring; an orange dot hangs left of each; only the row leading into them is bolder (700), also when it is two script lines; the rows before it stay 600");
 
     // Colours: words white in every section (Next: lines too, plain); reminders, cues and links dimmed.
     const colours = await page.evaluate(() => {
@@ -234,7 +235,7 @@ export async function run({ browser, base, out }) {
         if (a && b && Math.abs(a.top - b.top) < 2) {
           const line = document.querySelector(".reading-line").getBoundingClientRect().top;
           window.scrollBy(0, b.top + b.height / 2 - line);
-          return { first: els[i - 1].textContent, next: els[i].textContent };
+          return { first: els[i - 1].textContent, next: els[i].textContent, k: els[i - 1].dataset.k };
         }
       }
       return null;
@@ -251,6 +252,19 @@ export async function run({ browser, base, out }) {
     await page.mouse.wheel(0, 1);
     await page.waitForTimeout(150);
     assert.equal(await cur(), shared.first, "turned on, then a hand scroll within the row: the first line still on the row at the reading line");
+    // In the room under the letters, 4 px above the row's bottom, the line is still on its row.
+    const band = await page.evaluate((k) => {
+      const el = document.querySelector(`[data-k="${k}"]`);
+      const f = [...el.getClientRects()].at(-1);
+      const lh = parseFloat(getComputedStyle(el).lineHeight);
+      const bottom = f.top + (f.height + lh) / 2;
+      window.scrollBy(0, bottom - 4 - document.querySelector(".reading-line").getBoundingClientRect().top);
+      return bottom - f.bottom;
+    }, shared.k);
+    assert.ok(band > 6, `room under the letters: ${band}px`);
+    await page.mouse.wheel(0, 1);
+    await page.waitForTimeout(150);
+    assert.equal(await cur(), shared.first, "a hand scroll into the room under the letters keeps the line being read");
     await openSettings();
     await page.locator(".line-height").fill("150");
     await page.waitForTimeout(150);

@@ -314,13 +314,14 @@ function render() {
       .filter((it) => it.type !== "ql");
     // Drawn in page order, so the spoken lines (data-k) and cues are numbered top to bottom.
     const unit = (it, cls) => `<span class="${cls}" data-k="${voiceLines.push(speechWords(it.text)) - 1}">${lineHtml(it, i)}</span>`;
-    // The paragraph's last line leads into points under it (`lead`): only that line is bold.
+    // The paragraph's last row leads into points under it (`lead`): only the lines on that row are bold.
     const rows = (its, lead) => {
       const joins = lineJoins(its.map((it) => it.text));
+      const lastRow = lead ? joins.findLastIndex((j) => j.row) + 1 : its.length; // its first line
       const html = its.map((it, n) => {
         const j = joins[n];
         const after = !j ? "" : j.row ? `</span>${j.space}<span class="row">` : j.space;
-        return unit(it, lead && n === its.length - 1 ? `${it.type} lead` : it.type) + after;
+        return unit(it, n >= lastRow ? `${it.type} lead` : it.type) + after;
       });
       return `<span class="row">${html.join("")}</span>`;
     };
@@ -698,6 +699,11 @@ const reading = readingLine({
   onLook(at, { voice }) {
     updateActive(at);
     if (voice && voiceOn && !voiceScrolling) voiceFromReadingLine(at);
+  },
+  // The row, not just the letters: lines sharing a row count as on it in the room under the letters too.
+  rowBottom(el) {
+    const last = rowBoxes(el).at(-1);
+    return last ? last.top + last.height : el.getBoundingClientRect().bottom;
   },
 });
 let lineDrag = null; // { id, offset, from, start, slop, moved } while a pointer drags the handle
