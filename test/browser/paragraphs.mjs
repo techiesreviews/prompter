@@ -272,6 +272,22 @@ export async function run({ browser, base, out }) {
     await page.evaluate(() => document.querySelector("#settings").hidePopover());
     await page.evaluate((words) => window.__speech.say(words), `${shared.first} ${shared.next.split(" ")[0]}`);
     await page.waitForFunction((text) => document.querySelector(".cur")?.textContent === text, shared.next, { timeout: 3000 });
+    // In Lines, the room above the letters of a paragraph's second row: that row has begun at the line.
+    await openSettings();
+    await page.locator('#settings .layout .seg label:has-text("Lines")').click();
+    await page.evaluate(() => document.querySelector("#settings").hidePopover());
+    const second = await page.evaluate(() => {
+      const el = document.querySelector(".para .row + .row [data-k]");
+      const f = el.getClientRects()[0];
+      const top = f.top + (f.height - parseFloat(getComputedStyle(el).lineHeight)) / 2;
+      window.scrollBy(0, top + 1 - document.querySelector(".reading-line").getBoundingClientRect().top);
+      return { text: el.textContent, band: f.top - top };
+    });
+    assert.ok(second.band > 5, `room above the letters: ${second.band}px`);
+    await page.mouse.move(683, 600);
+    await page.mouse.wheel(0, 1);
+    await page.waitForTimeout(150);
+    assert.equal(await cur(), second.text, "a hand scroll into the room above a row's letters follows that row's first line");
     ok("Follow my voice, lines sharing a row: the first one on the row is followed (turned on, after a hand scroll and a line height change), then the next as it is read");
   } finally {
     await voiced.close();

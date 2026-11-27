@@ -504,8 +504,9 @@ export function parse(md) {
 }
 
 // A row of the Lines layout ends after a comma, a full stop or the like, in any script (Latin,
-// Chinese and Japanese, Arabic, Hindi), with any closing quote or bracket after it (German closes with “ ‘).
-const ROW_END = /[,.;:!?…。、，；：！？،؛؟।]["'”’“‘»›」』)）\]]*$/;
+// Chinese and Japanese, Arabic, Hindi), with any closing quote or bracket after it. German closes
+// with “ ‘, which open a quote in English, so they count only straight after . ! ? or ….
+const ROW_END = /(?:[,.;:!?…。、，；：！？،؛؟।]|[.!?…][“‘])["'”’»›」』)）\]]*$/;
 // Chinese and Japanese put no space between words (the Katakana block holds the long-vowel mark ー too).
 const NO_SPACE_END = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}゠-ヿ　-〿＀-￯]$/u;
 

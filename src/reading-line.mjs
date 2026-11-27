@@ -28,11 +28,16 @@ export function reachedCount(els, y) {
 /**
  * The reading line over `script` (the script column). `view` scrolls (the window), `frame`
  * queues an animation frame, and `onLook(at, { voice })` gets the frame's one look after
- * `ask()`, with voice true when any ask that frame was for Follow my voice. `rowBottom(el)` is
- * how far down the row a spoken line ends on reaches (an in-line line's letters stop short of
- * its row's bottom); by default its box's bottom.
+ * `ask()`, with voice true when any ask that frame was for Follow my voice. `rowTop(el)` is where
+ * the row a spoken line starts on begins and `rowBottom(el)` how far down the row it ends on
+ * reaches (an in-line line's letters sit inside its row, short of both edges); by default its
+ * box's top and bottom.
  */
-export function readingLine({ script, view, frame, onLook, rowBottom = (el) => el.getBoundingClientRect().bottom }) {
+export function readingLine({
+  script, view, frame, onLook,
+  rowTop = (el) => el.getBoundingClientRect().top,
+  rowBottom = (el) => el.getBoundingClientRect().bottom,
+}) {
   let y = 0;
   let queued = false;
   let voice = false;
@@ -49,10 +54,12 @@ export function readingLine({ script, view, frame, onLook, rowBottom = (el) => e
       const n = reachedCount(els, y);
       return n ? Number(els[n - 1].dataset[key]) : -1;
     };
-    // Stepping back from the last line reached while the row the one before ends on still reaches below the line.
+    // The lines whose row has begun at the line (also in the room above their letters), then stepping
+    // back from the last of them while the row the one before ends on still reaches below the line.
     const rowLines = () => once("rowLines", () => {
       const els = script.querySelectorAll("[data-k]");
       let n = reachedCount(els, y);
+      while (n < els.length && rowTop(els[n]) <= y) n++;
       if (!n) return { first: -1, last: -1 };
       const last = Number(els[n - 1].dataset.k);
       while (n > 1 && rowBottom(els[n - 2]) > y) n--;
