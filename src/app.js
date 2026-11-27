@@ -814,18 +814,44 @@ function drawCamframe() {
 
 function connected() { return mainWin && !mainWin.closed; }
 
-// The main screen's button in Settings (orange while connected); the Settings button shows a dot then.
+// The main screen's button in Settings: orange while connected, an orange dashed screen after a page
+// cut its link ("cut"); the Settings button shows a dot then.
+const SCREEN_SAYS = { true: "Main screen connected, reconnect", false: "Connect main screen", cut: "Main screen: the page cut its link, reconnect" };
+const SCREEN_CUT_HELP = ". The page asked the browser to cut it off from the Prompter, so it stays in its own window: close that one when you are done. Reconnect opens a new main screen for the next pages.";
 function setConnected(on) {
   connectBtn.dataset.on = String(on);
-  const name = on ? "Main screen connected, reconnect" : "Connect main screen";
+  const name = SCREEN_SAYS[on];
   connectBtn.setAttribute("aria-label", name);
-  connectBtn.title = name;
+  connectBtn.title = on === "cut" ? name + SCREEN_CUT_HELP : name;
   updateSettingsBtn();
+}
+
+// A page can cut the main screen's link as it loads (Cross-Origin-Opener-Policy: same-origin, as the
+// Dutch Data Protection Authority's pages send): its window stays open and shows it, but the browser
+// no longer lets the Prompter reach that window, which looks closed from here, and no script can get
+// it back. Closed this soon after a page was sent counts as that. No new window opens by itself: it
+// could land on the Prompter's own screen, over the script.
+const CUT_MS = 10000;
+let cutUrl = ""; // the page that cut the main screen's link; it still shows in that window
+let cutWatch = 0;
+function watchCut(url) {
+  clearInterval(cutWatch);
+  const sent = Date.now();
+  const win = mainWin;
+  cutWatch = setInterval(() => {
+    if (win !== mainWin || Date.now() - sent > CUT_MS) { clearInterval(cutWatch); return; }
+    if (!win.closed) return;
+    clearInterval(cutWatch);
+    cutUrl = url;
+    mainWin = null;
+    setConnected("cut");
+    setStatus("The page on the main screen cut its link to the Prompter. Reconnect the main screen in Settings for the next pages.");
+  }, 250);
 }
 
 // A dot on the Settings button, and its name, while Follow my voice is on or a main screen is connected.
 function updateSettingsBtn() {
-  const on = [voiceOn && "Follow my voice on", connectBtn.dataset.on === "true" && "main screen connected", camframe.on && camframe.state === "on" && "CamFrame connected"].filter(Boolean);
+  const on = [voiceOn && "Follow my voice on", connectBtn.dataset.on === "true" && "main screen connected", connectBtn.dataset.on === "cut" && "main screen link cut", camframe.on && camframe.state === "on" && "CamFrame connected"].filter(Boolean);
   if (on.length) settingsBtn.dataset.dot = "on"; else delete settingsBtn.dataset.dot;
   const label = ["Settings", ...on].join(" · ");
   settingsBtn.setAttribute("aria-label", label);
@@ -846,7 +872,9 @@ function connect() {
   setStatus("");
   hideHint();
   const { anchor } = scripts.now;
-  scripts.now.shownUrl = "";
+  // The page that cut the last window's link still shows there; sent again it would cut this one too.
+  scripts.now.shownUrl = cutUrl;
+  cutUrl = "";
   if (anchor) showLink(anchor.s, anchor.l, false);
 }
 
@@ -873,20 +901,22 @@ function showLink(si, li, fromUser) {
   if (!s || !s.links[li]) return;
   const url = screenUrl(s.links[li].url);
   if (!connected()) {
-    const wasConnected = connectBtn.dataset.on === "true";
-    setConnected(false);
+    const was = connectBtn.dataset.on;
+    if (was === "true") setConnected(false);
     if (!fromUser) {
-      if (wasConnected) lost();
-      else showHint(s.links[li].label);
+      if (was === "true") lost();
+      else if (was === "false") showHint(s.links[li].label); // after a cut the button already says reconnect
       return;
     }
     mainWin = window.open(url, WINDOW_NAME, "popup=yes,width=1400,height=900");
     if (!mainWin) { blocked(); return; }
+    cutUrl = "";
     setConnected(true);
   }
   if (url !== script.shownUrl || fromUser) {
     try { mainWin.location.href = url; } catch { mainWin = window.open(url, WINDOW_NAME); }
     script.shownUrl = url;
+    watchCut(url);
   }
   main.querySelectorAll(".link, .mark, .inlink").forEach((b) => {
     b.dataset.shown = String(screenUrl(script.sections[b.dataset.s].links[b.dataset.l].url) === script.shownUrl);

@@ -2370,6 +2370,72 @@ export async function run({ browser, base, mode, dist, out }) {
   await hintConnect.close();
   ok("without a main screen nothing opens; a one-time hint above the control bar; its Connect button hides it, clears the highlight and shows the current link");
 
+  // ---- A page that cuts the main screen's link (TOOLS-492) ----
+  // The Dutch Data Protection Authority's page sends Cross-Origin-Opener-Policy: same-origin and
+  // X-Frame-Options: SAMEORIGIN. Shown in the main screen window, the browser cuts that window off
+  // from the Prompter for good (it still shows the page; the Prompter sees it as closed). A local
+  // stand-in on another address sends the same headers; no real network.
+  const standIn = createServer((req, res) => {
+    const headers = { "content-type": "text/html; charset=utf-8" };
+    if (req.url.startsWith("/cuts")) Object.assign(headers, { "cross-origin-opener-policy": "same-origin", "x-frame-options": "SAMEORIGIN", "content-security-policy": "frame-ancestors 'self'" });
+    res.writeHead(200, headers);
+    res.end(`<!doctype html><title>Stand-in ${req.url}</title><p>Stand-in page ${req.url}</p>`);
+  });
+  await new Promise((done) => standIn.listen(0, done));
+  standIn.unref(); // a failing check never keeps the run alive
+  const site = `http://localhost:${standIn.address().port}`; // the page is on 127.0.0.1: another site
+  const CUT_SCRIPT = `### **INTRO · 00:00**\n\n- Plain: ${site}/plain\n\nHello there.\nA plain page first.\n\n### **1 · DATA LEAKS · 02:00**\n\n- Leak rules: ${site}/cuts\n\nThe regulator says what to do.\nRead the page with me.\n\n### **2 · NEXT · 04:00**\n\n- After: ${site}/after\n\nAnd then the next page.\nIt opens here too.\n`;
+  const cutCtx = await browser.newContext(DESKTOP);
+  await cutCtx.addInitScript(NO_SPEECH);
+  const CW = await cutCtx.newPage();
+  watch(CW, "page cuts the link");
+  await CW.goto(await makeLink(CUT_SCRIPT, "lex", base));
+  await CW.locator(".section").first().waitFor();
+  const screenOf = (page) => page.evaluate(() => {
+    const b = document.querySelector("#settings .screen");
+    return [b.dataset.on, b.getAttribute("aria-label"), document.querySelector(".settings-btn").getAttribute("aria-label")];
+  });
+  const [firstWin] = await Promise.all([cutCtx.waitForEvent("page"), viaSettings(CW, ".screen")]);
+  await scrollToSection(CW, 0);
+  await firstWin.waitForURL(`${site}/plain`);
+  await scrollToSection(CW, 1);
+  await firstWin.waitForURL(`${site}/cuts`);
+  await CW.waitForFunction(() => document.querySelector("#settings .screen").dataset.on === "cut", null, { timeout: 3000 });
+  assert.deepEqual(await screenOf(CW), ["cut", "Main screen: the page cut its link, reconnect", "Settings · main screen link cut"], "the button says the page cut the link, on itself, with a dot on Settings");
+  assert.match(await CW.locator("#settings .screen").getAttribute("title"), /^Main screen: the page cut its link, reconnect\. .*own window/, "its title says the page stays in its own window");
+  assert.match(await CW.locator(".status").textContent(), /cut its link/, "read out once through the status line");
+  assert.equal(await CW.locator(".note-row.alert").isHidden(), true, "no \"window lost\" alert: the window is not lost, the page cut it off");
+  await (await dock(CW, ".settings-btn")).click();
+  await CW.locator("#settings:popover-open").waitFor();
+  await closeUp(CW, "#settings .big-toggles", "screen-cut-close-up");
+  assert.deepEqual(await CW.locator("#settings .screen").evaluate((el) => [getComputedStyle(el).color, getComputedStyle(el.querySelector("rect")).strokeDasharray, getComputedStyle(el).boxShadow, getComputedStyle(el).borderStyle]),
+    ["oklch(0.7 0.19 32.3)", "3px, 2.5px", "none", "none"], "an orange dashed screen outline: no fill, no ring or border");
+  await CW.evaluate(() => document.querySelector("#settings").hidePopover());
+  // The next section's page: nothing new opens by itself (it could land on the Prompter's own screen), no alert.
+  await scrollToSection(CW, 2);
+  await CW.waitForTimeout(1200);
+  assert.deepEqual([cutCtx.pages().length, firstWin.url(), await CW.locator(".note-row.alert").isHidden(), (await screenOf(CW))[0]], [2, `${site}/cuts`, true, "cut"], "the cut page stays in its window; no new window, no alert, the button still says reconnect");
+  // Reconnect: a new main screen window that takes the page at the reading line and the next ones.
+  const [secondWin] = await Promise.all([cutCtx.waitForEvent("page"), viaSettings(CW, ".screen")]);
+  await secondWin.waitForURL(`${site}/after`);
+  assert.deepEqual([(await screenOf(CW))[0], firstWin.url()], ["true", `${site}/cuts`], "connected again; the old window still shows the page that cut it");
+  await scrollToSection(CW, 0);
+  await secondWin.waitForURL(`${site}/plain`);
+  // Reconnecting while the page that cut the link is still the one at the reading line does not send it
+  // again (it would cut the new window too): the new window waits for the next page.
+  await scrollToSection(CW, 1);
+  await secondWin.waitForURL(`${site}/cuts`);
+  await CW.waitForFunction(() => document.querySelector("#settings .screen").dataset.on === "cut", null, { timeout: 3000 });
+  const [thirdWin] = await Promise.all([cutCtx.waitForEvent("page"), viaSettings(CW, ".screen")]);
+  await CW.waitForTimeout(1200);
+  assert.deepEqual([thirdWin.url(), (await screenOf(CW))[0]], ["about:blank", "true"], "the new window waits with its drag-me message");
+  assert.match(await thirdWin.locator("body").textContent(), /Drag this window to your main screen/);
+  await scrollToSection(CW, 2);
+  await thirdWin.waitForURL(`${site}/after`);
+  await cutCtx.close();
+  await new Promise((done) => standIn.close(done));
+  ok("a page that cuts the main screen's link (Cross-Origin-Opener-Policy, as the Dutch Data Protection Authority's page): the Prompter says so on the main screen's button (an orange dashed screen, its name and title, a dot on Settings, read out once), no \"window lost\" alert, no window opens by itself; Reconnect opens a new main screen that takes the next pages, and never sends the page that cut the link again");
+
   // ---- The reading line: dragged to camera height; read text fades above it ----
   const lineOf = (page) => page.evaluate(() => {
     const h = document.querySelector(".line-handle");
