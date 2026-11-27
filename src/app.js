@@ -814,8 +814,8 @@ function drawCamframe() {
 
 function connected() { return mainWin && !mainWin.closed; }
 
-// The main screen's button in Settings: orange while connected, an orange dashed screen after a page
-// cut its link ("cut"); the Settings button shows a dot then.
+// The main screen's button in Settings: orange while connected, an orange dashed screen once its
+// window is gone (closed, or cut off by its page: "cut"); the Settings button shows a dot then.
 const SCREEN_SAYS = { true: "Main screen connected, reconnect", false: "Connect main screen", cut: "Main screen cut off, reconnect" };
 const SCREEN_CUT_HELP = ". Its window was closed, or the page in it cut it off from the Prompter (some sites do, such as the Dutch Data Protection Authority). A window that was cut off still shows its page: close it when you are done. Reconnect opens a new main screen for the next pages.";
 function setConnected(on) {
@@ -861,6 +861,7 @@ function updateSettingsBtn() {
 }
 
 function connect() {
+  if (connectBtn.dataset.on === "true" && !connected()) screenGone(); // before the watch saw it
   mainWin = window.open("", WINDOW_NAME, "popup=yes,width=1400,height=900");
   if (!mainWin) { blocked(); return; }
   try {
@@ -868,7 +869,7 @@ function connect() {
       mainWin.document.title = "Main screen";
       mainWin.document.body.style.cssText = "margin:0;display:grid;place-items:center;height:100vh;background:#000;color:#f4f1ea;font:600 32px system-ui;text-align:center;padding:0 5vw";
       mainWin.document.body.textContent = "Drag this window to your main screen and make it full size. Pages will open here."
-        + (skipUrl ? " The last page was not sent again, as it may cut this window off too: its link button opens it anyway." : "");
+        + (skipUrl ? ` The last page (${hostOf(skipUrl)}) was not sent again, as it may cut this window off too: its link button opens it anyway.` : "");
     }
   } catch { /* already showing another site; fine */ }
   setConnected(true);
@@ -877,7 +878,8 @@ function connect() {
   sentAt = 0;
   watchScreen();
   const { anchor } = scripts.now;
-  scripts.now.shownUrl = skipUrl;
+  scripts.now.shownUrl = "";
+  markShown();
   if (anchor) showLink(anchor.s, anchor.l, false);
 }
 
@@ -914,15 +916,22 @@ function showLink(si, li, fromUser) {
     setConnected(true);
     watchScreen();
   }
+  if (!fromUser && url === skipUrl) return; // held back: it may cut this window off too; its link button still sends it
   if (url !== script.shownUrl || fromUser) {
     try { mainWin.location.href = url; } catch { mainWin = window.open(url, WINDOW_NAME); }
     script.shownUrl = url;
     [sentUrl, sentAt, skipUrl] = [url, Date.now(), ""];
   }
+  markShown();
+  setStatus(`On main screen: ${s.links[li].label}`);
+}
+
+// The link buttons for the page the main screen shows are marked.
+function markShown() {
+  const script = scripts.now;
   main.querySelectorAll(".link, .mark, .inlink").forEach((b) => {
     b.dataset.shown = String(screenUrl(script.sections[b.dataset.s].links[b.dataset.l].url) === script.shownUrl);
   });
-  setStatus(`On main screen: ${s.links[li].label}`);
 }
 
 // Status messages are for screen readers only (the line is visually hidden); errors use showAlert.

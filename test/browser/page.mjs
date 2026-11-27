@@ -2391,6 +2391,12 @@ export async function run({ browser, base, mode, dist, out }) {
   const CUT_SCRIPT = `### **INTRO · 00:00**\n\n- Plain: ${site}/plain\n\nHello there.\nA plain page first.\n\n### **1 · DATA LEAKS · 02:00**\n\n- Leak rules: ${site}/cuts\n\nThe regulator says what to do.\nRead the page with me.\n\n### **2 · NEXT · 04:00**\n\n- After: ${site}/after\n\nAnd then the next page.\nIt opens here too.\n\n### **3 · SLOW SITE · 06:00**\n\n- Slow rules: ${site}/slowcuts\n\nThis site takes its time.\nIt cuts the window off too.\n`;
   const cutCtx = await browser.newContext(DESKTOP);
   await cutCtx.addInitScript(NO_SPEECH);
+  // window.__holdWatch keeps the Prompter's own look at the main screen window (every 500 ms) from
+  // running, so a check can act before it.
+  await cutCtx.addInitScript(() => {
+    const real = window.setInterval;
+    window.setInterval = (fn, ms, ...rest) => real((...a) => { if (!(ms === 500 && window.__holdWatch)) fn(...a); }, ms, ...rest);
+  });
   const CW = await cutCtx.newPage();
   watch(CW, "page cuts the link");
   await CW.goto(await makeLink(CUT_SCRIPT, "lex", base));
@@ -2401,16 +2407,21 @@ export async function run({ browser, base, mode, dist, out }) {
   });
   const cutOff = () => CW.waitForFunction(() => document.querySelector("#settings .screen").dataset.on === "cut", null, { timeout: 3000 });
   const reconnect = async () => (await Promise.all([cutCtx.waitForEvent("page"), viaSettings(CW, ".screen")]))[0];
-  const later = (ms) => CW.evaluate((n) => { const real = Date.now.bind(Date); Date.now = () => real() + n; }, ms);
+  const later = (ms) => CW.evaluate((n) => { const real = Date.now.bind(Date); Date.now = () => real() + n; }, ms); // shifts add up
   const noAlert = () => CW.locator(".note-row.alert").isHidden();
+  const hold = (on) => CW.evaluate((v) => { window.__holdWatch = v; }, on);
   const firstWin = await reconnect();
   await scrollToSection(CW, 0);
   await firstWin.waitForURL(`${site}/plain`);
+  await hold(true);
   await scrollToSection(CW, 1);
   await firstWin.waitForURL(`${site}/cuts`);
-  // The next section at once, before the Prompter's own look at the window: still no alert.
+  await CW.waitForTimeout(700);
+  assert.equal((await screenOf(CW))[0], "true", "the Prompter has not looked yet");
+  // The next section before the Prompter's own look at the window: cut off, still no alert.
   await scrollToSection(CW, 2);
   await cutOff();
+  await hold(false);
   assert.deepEqual(await screenOf(CW), ["cut", "Main screen cut off, reconnect", "Settings · main screen cut off"], "the button says the main screen is cut off, on itself, with a dot on Settings");
   assert.match(await CW.locator("#settings .screen").getAttribute("title"), /^Main screen cut off, reconnect\. Its window was closed, or the page in it cut it off .*still shows its page/, "its title says either may have happened, and that a cut-off window still shows its page");
   assert.match(await CW.locator(".status").textContent(), /main screen was cut off/, "read out once through the status line");
@@ -2424,7 +2435,11 @@ export async function run({ browser, base, mode, dist, out }) {
   });
   const dashed = ["oklch(0.7 0.19 32.3)", "none", "3px, 2.5px", "butt", "none", "none"];
   assert.deepEqual(await cutLook(), dashed, "an orange dashed screen outline (square dash ends, so the gaps show): no fill, no ring or border");
+  const restBg = await CW.locator("#settings .screen").evaluate((el) => getComputedStyle(el).backgroundColor);
   await CW.locator("#settings .screen").hover();
+  await CW.waitForTimeout(250);
+  const hoverBg = await CW.locator("#settings .screen").evaluate((el) => getComputedStyle(el).backgroundColor);
+  assert.notEqual(hoverBg, restBg, "the hover look applies");
   assert.deepEqual((await cutLook())[0], dashed[0], "still orange under the pointer");
   await CW.evaluate(() => document.querySelector("#settings").hidePopover());
   await CW.waitForTimeout(1200);
@@ -2436,16 +2451,21 @@ export async function run({ browser, base, mode, dist, out }) {
   await scrollToSection(CW, 0);
   await secondWin.waitForURL(`${site}/plain`);
   // Reconnecting while the page that cut it off is still the one at the reading line does not send it
-  // again (it would cut the new window off too), also when Reconnect is pressed twice: the new window
-  // waits for the next page.
+  // again (it would cut the new window off too), also when Reconnect comes before the Prompter's own
+  // look and when it is pressed twice: the new window waits for the next page, and no link is marked
+  // as showing.
+  await hold(true);
   await scrollToSection(CW, 1);
   await secondWin.waitForURL(`${site}/cuts`);
-  await cutOff();
+  await CW.waitForTimeout(700);
+  assert.equal((await screenOf(CW))[0], "true", "the Prompter has not looked yet");
   const thirdWin = await reconnect();
+  await hold(false);
   await viaSettings(CW, ".screen");
   await CW.waitForTimeout(1200);
   assert.deepEqual([thirdWin.url(), (await screenOf(CW))[0], cutCtx.pages().length], ["about:blank", "true", 4], "the new window waits with its drag-me message, after a second Reconnect too");
-  assert.match(await thirdWin.locator("body").textContent(), /Drag this window to your main screen.*The last page was not sent again.*its link button opens it anyway/);
+  assert.match(await thirdWin.locator("body").textContent(), /Drag this window to your main screen.*The last page \(localhost\) was not sent again.*its link button opens it anyway/);
+  assert.deepEqual([await CW.locator('[data-shown="true"]').count(), await CW.locator(".status").textContent()], [0, ""], "no link marked as showing, nothing said about the main screen");
   await scrollToSection(CW, 2);
   await thirdWin.waitForURL(`${site}/after`);
   // Cut off, a link button opens a new main screen with its page; the page that cut it off may go there again.
@@ -2487,8 +2507,17 @@ export async function run({ browser, base, mode, dist, out }) {
   const eighthWin = await reconnect();
   await CW.waitForTimeout(1200);
   assert.equal(eighthWin.url(), "about:blank", "closed straight after its page was sent: not sent again");
-  await scrollToSection(CW, 2);
-  await eighthWin.waitForURL(`${site}/after`);
+  // Another script with that page at the reading line: still held back; its link button sends it.
+  await (await dock(CW, ".open-btn")).click();
+  await CW.locator('#open-menu [data-action="paste"]').click();
+  await CW.locator(".paste-dialog[open]").waitFor();
+  await CW.locator("#paste-text").fill(`### **OTHER · 00:00**\n\n- Plain again: ${site}/plain\n\nA second script.\nWith the same page.\n`);
+  await CW.locator('[data-action="open-paste"]').click();
+  await CW.locator(".paste-dialog:not([open])").waitFor({ state: "attached" });
+  await CW.waitForTimeout(1500);
+  assert.deepEqual([eighthWin.url(), await CW.locator('[data-shown="true"]').count()], ["about:blank", 0], "another script does not send the held-back page by itself");
+  await CW.locator(".links .link").first().click();
+  await eighthWin.waitForURL(`${site}/plain`);
   await cutCtx.close();
   await new Promise((done) => standIn.close(done));
   ok("a page that cuts the main screen off (Cross-Origin-Opener-Policy, as the Dutch Data Protection Authority's page), or a closed main screen window: the button says cut off (an orange dashed screen, its name and title, a dot on Settings, read out once), no alert, no window opens by itself, also when the next page comes before the Prompter looked and for a slow site; Reconnect or a link button opens a new main screen for the next pages, and Reconnect does not send again a page that may have cut it off");
