@@ -427,6 +427,7 @@
   .note-row.cut-note { background: var(--panel-2); box-shadow: var(--lift); font-weight: 600; overflow-wrap: anywhere; }
   .note-row .btn { font-size: 14px; padding: 8px 14px; }
   .note-row .btn.primary { font-size: 19px; padding: 8px 16px; }
+  @media (pointer: coarse) { .note-row .btn { min-block-size: 44px; } } /* 44px targets on phones */
 
   /* Popovers: Open and Settings, above their bar buttons (anchor positioning;
      app.js places them by hand where the browser has none). */

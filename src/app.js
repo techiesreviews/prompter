@@ -1005,6 +1005,8 @@ function drawCutNote() { cutEl.hidden = !cutSays || askShowing; }
 // window the person drags.
 let screenDetails = null;
 let screensAsk = null; // the one ask, also while it waits for its answer
+const SCREENS_WAIT_MS = 10000; // how long the first Connect waits for that answer before it sends the page
+let placing = false; // while that first Connect waits
 function askScreens() {
   if (!window.getScreenDetails) return Promise.resolve(null);
   if (!screensAsk) screensAsk = window.getScreenDetails().then((d) => (screenDetails = d), () => null);
@@ -1037,32 +1039,43 @@ function connect() {
         + (skip.url ? ` The last page (${skip.site}) was not sent again, as it may cut this window off too: its link button opens it anyway.` : "");
     }
   } catch { /* already showing another site; fine */ }
-  // Asked once per visit, from the first Connect click: allowed, this window moves to the main screen
-  // while it still waits, and every later main screen opens there.
-  if (!placed) askScreens().then(() => {
-    const area = screenArea();
-    if (!area || win !== mainWin) return;
-    try {
-      if (win.location.href !== "about:blank") return;
-      win.moveTo(area.left, area.top);
-      win.resizeTo(area.width, area.height);
-      win.document.body.textContent = win.document.body.textContent.replace(/^Drag this window to your main screen and make it full size\. /, "Main screen. ");
-    } catch { /* already showing another site: it stays where it is */ }
-  });
   setConnected(true);
   setStatus("");
   hideHint();
   hideCutNote();
   watchScreen();
-  const { anchor } = scripts.now;
   scripts.now.shownUrl = "";
   markShown();
-  // A site that cuts the main screen off opens in a window of its own (from its link, or as the reader
-  // reached it), so connecting does not open another one for it.
-  const link = anchor && scripts.now.sections[anchor.s]?.links[anchor.l];
-  if (link && !cutsLink(link)) showLink(anchor.s, anchor.l, false);
-  drawNext();
-  if (skip.url && !scripts.now.shownUrl) setStatus(`Main screen connected. The last page (${skip.site}) was not sent again: its link button opens it.`);
+  // The page at the reading line goes on the new main screen. A site that cuts the main screen off
+  // opens in a window of its own (from its link, or as the reader reached it), so connecting does not
+  // open another one for it.
+  const sendAnchor = () => {
+    if (win !== mainWin || !connected()) return;
+    const { anchor } = scripts.now;
+    const link = anchor && scripts.now.sections[anchor.s]?.links[anchor.l];
+    if (link && !cutsLink(link)) showLink(anchor.s, anchor.l, false);
+    drawNext();
+    if (skip.url && !scripts.now.shownUrl) setStatus(`Main screen connected. The last page (${skip.site}) was not sent again: its link button opens it.`);
+  };
+  if (placed || !window.getScreenDetails) { sendAnchor(); return; }
+  // Asked once per visit, from the first Connect click: allowed, this window moves to the main screen
+  // while it still waits, and every later main screen opens there. The page waits for that answer (a
+  // window showing another site can no longer be moved), or SCREENS_WAIT_MS when none comes.
+  placing = true;
+  Promise.race([askScreens(), new Promise((done) => setTimeout(done, SCREENS_WAIT_MS))]).then(() => {
+    placing = false;
+    const area = screenArea();
+    if (area && win === mainWin) {
+      try {
+        if (win.location.href === "about:blank") {
+          win.moveTo(area.left, area.top);
+          win.resizeTo(area.width, area.height);
+          win.document.body.textContent = win.document.body.textContent.replace(/^Drag this window to your main screen and make it full size\. /, "Main screen. ");
+        }
+      } catch { /* already showing another site: it stays where it is */ }
+    }
+    sendAnchor();
+  });
 }
 
 // YouTube watch pages cut the link between the prompter and its window (their
@@ -1099,7 +1112,8 @@ function showLink(si, li, fromUser) {
     // it again, and a site that cuts it off also drops its name, so another would pile up); its link
     // button opens it again. It stays in front until it is closed by hand: bringing the main screen
     // forward without a click would take the keys from the Prompter. Blocked (no click and pop-ups
-    // not allowed): it goes to the main screen as before.
+    // not allowed): never the main screen, which it would cut off; it waits for its link button (Text
+    // only says Missed, with Open).
     if (!fromUser && script.ownShown.has(url)) return;
     const own = openScreen(url, `${WINDOW_NAME}-own`);
     if (own) {
@@ -1114,7 +1128,13 @@ function showLink(si, li, fromUser) {
       setStatus(`In its own window: ${link.label}`);
       return;
     }
+    if (fromUser) blocked();
+    else { missed(); setStatus(`Not opened: ${link.label} needs a window of its own, which the browser blocked. Its link button opens it.`); }
+    return;
   }
+  // The first Connect is still waiting for the placement answer: it sends the page at the reading line
+  // itself once the window has moved (a scroll that settled meanwhile would send it too soon).
+  if (!fromUser && placing) return;
   const opened = !connected();
   if (opened) {
     // Cut off: the next page opens a new main screen by itself (Lex's pick); a link button does too.
