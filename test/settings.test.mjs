@@ -29,6 +29,7 @@ const LIVE_KEYS = {
   preset: "prompter-preset",
   camframe: "prompter-camframe",
   voiceOk: "prompter-voice-ok",
+  textOnly: "prompter-text-only",
 };
 
 test("each setting keeps the key the live site saves under", () => {
@@ -45,7 +46,7 @@ test("each setting keeps the key the live site saves under", () => {
 test("an empty store gives each setting its default", () => {
   const prefs = settingsStore(fakeStore());
   assert.deepEqual(Object.fromEntries(Object.keys(SETTINGS).map((name) => [name, prefs.read(name)])), {
-    speed: 40, size: 52, width: "medium", lineHeight: 165, paraSpace: 200, layout: "lines", line: 0.34, preset: "default", camframe: false, voiceOk: false,
+    speed: 40, size: 52, width: "medium", lineHeight: 165, paraSpace: 200, layout: "lines", line: 0.34, preset: "default", camframe: false, voiceOk: false, textOnly: false,
   });
   assert.equal(settingsStore(fakeStore({ "prompter-spacing": "spacious" })).read("lineHeight"), 165, "the old Line spacing is not read");
   assert.equal(settingsStore(fakeStore(), { phone: true }).read("size"), 32, "a phone starts with smaller text");
@@ -65,10 +66,10 @@ test("numbers are held to their limits", () => {
 });
 
 test("a damaged stored value falls back to the default", () => {
-  const bad = { speed: "fast", size: "", width: "huge", lineHeight: "tall", paraSpace: "", layout: "columns", line: "abc", preset: "constructor", camframe: "yes", voiceOk: "on" };
+  const bad = { speed: "fast", size: "", width: "huge", lineHeight: "tall", paraSpace: "", layout: "columns", line: "abc", preset: "constructor", camframe: "yes", voiceOk: "on", textOnly: "yes" };
   const prefs = settingsStore(fakeStore(Object.fromEntries(Object.entries(bad).map(([n, v]) => [SETTINGS[n].key, v]))));
   assert.deepEqual(Object.fromEntries(Object.keys(bad).map((name) => [name, prefs.read(name)])), {
-    speed: 40, size: 52, width: "medium", lineHeight: 165, paraSpace: 200, layout: "lines", line: 0.34, preset: "default", camframe: false, voiceOk: false,
+    speed: 40, size: 52, width: "medium", lineHeight: 165, paraSpace: 200, layout: "lines", line: 0.34, preset: "default", camframe: false, voiceOk: false, textOnly: false,
   });
   assert.equal(settingsStore(fakeStore({ "prompter-paragraph-spacing": "0" })).read("paraSpace"), 0, "a saved 0 loads as 0");
   // Names an object has of its own (toString, __proto__) are no preset.
@@ -86,7 +87,7 @@ test("settings saved by today's live site load back unchanged", () => {
   const store = fakeStore(live);
   const prefs = settingsStore(store, { phone: true });
   const read = Object.fromEntries(Object.keys(SETTINGS).map((name) => [name, prefs.read(name)]));
-  assert.deepEqual(read, { speed: 75, size: 150, width: "full", lineHeight: 130, paraSpace: 80, layout: "paragraphs", line: 0.4213, preset: "lex", camframe: true, voiceOk: true });
+  assert.deepEqual(read, { speed: 75, size: 150, width: "full", lineHeight: 130, paraSpace: 80, layout: "paragraphs", line: 0.4213, preset: "lex", camframe: true, voiceOk: true, textOnly: false });
   // Saving them again writes the very same strings.
   for (const [name, value] of Object.entries(read)) prefs.save(name, value);
   assert.deepEqual(Object.fromEntries(store.data), live);
@@ -125,6 +126,12 @@ test("saving stores what the page used to store", () => {
   assert.equal(store.get("prompter-camframe"), null);
   prefs.save("voiceOk", true);
   assert.equal(store.get("prompter-voice-ok"), "yes");
+  // Text only (TOOLS-491) is off by default, so nobody's prompter changes until they turn it on.
+  assert.equal(SETTINGS.textOnly.fallback, false);
+  assert.equal(prefs.save("textOnly", true), true);
+  assert.equal(store.get("prompter-text-only"), "on");
+  assert.equal(prefs.save("textOnly", false), false);
+  assert.equal(store.get("prompter-text-only"), null, "off stores nothing");
 });
 
 // ---------- Guard: keys and defaults live only in the table ----------

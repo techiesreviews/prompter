@@ -36,6 +36,9 @@ function dirty(s) {
   s.cues.push({ size: "small" });
   s.cueAbove = new Set([0]);
   s.pushOwed = true;
+  s.switches.push({ kind: "you", text: "Smile" });
+  s.passed = 1;
+  s.missedKey = "0:0";
 }
 
 function assertClean(s) {
@@ -49,6 +52,9 @@ function assertClean(s) {
   assert.deepEqual(s.cues, []);
   assert.equal(s.cueAbove, null, "the first look after opening sends no cue");
   assert.equal(s.pushOwed, false, "no history entry owed");
+  assert.deepEqual(s.switches, [], "no Text only switches");
+  assert.equal(s.passed, 0, "none of them reached the reading line");
+  assert.equal(s.missedKey, "", "no page missed the main screen");
 }
 
 test("a fresh state holds the script and nothing else", () => {

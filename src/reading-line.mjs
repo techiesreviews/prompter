@@ -1,6 +1,6 @@
 // The reading line: where it sits on screen, and what of the script has reached it.
 // The page asks it "what is at the line" (the section, the link reached in it, the camera cues
-// above it, the spoken line) and "bring this to the line". However many scrolls and wheels ask
+// above it, the spoken line, how many Text only switches passed it) and "bring this to the line". However many scrolls and wheels ask
 // in one animation frame, it looks once in that frame; a move by the reader (the line dragged,
 // a section jump, line height, paragraph spacing or layout) looks at once, so it follows without
 // waiting. A look measures only the answers read from it, each once, and finds each by halving:
@@ -12,6 +12,8 @@
 export const LINE_REACH = 4;
 /** An element brought to the line sits with the line this many px inside its top. */
 export const LINE_INSET = 2;
+/** A section's links: own-line links, in-text links, and (Text only) the hidden link lines' places. */
+export const LINKS_AT = ".mark, .inlink, .link-at";
 
 /** How many of `els` (page order, tops never going up) have reached the line at `y`. */
 export function reachedCount(els, y) {
@@ -72,7 +74,7 @@ export function readingLine({
       get link() {
         return once("link", () => {
           const el = sections()[this.section];
-          return el ? lastOf(el.querySelectorAll(".mark, .inlink"), "l") : -1;
+          return el ? lastOf(el.querySelectorAll(LINKS_AT), "l") : -1;
         });
       },
       /** The numbers (data-cue) of every camera cue above the line. */
@@ -89,6 +91,8 @@ export function readingLine({
       get line() { return rowLines().first; },
       /** The last spoken line whose top reached the line (the last one starting on that row), or -1. */
       get lastLine() { return rowLines().last; },
+      /** How many Text only switches (data-sw, in reading order) have reached the line. */
+      get passed() { return once("passed", () => reachedCount(script.querySelectorAll("[data-sw]"), y)); },
     };
   }
 
