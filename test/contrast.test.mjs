@@ -45,7 +45,9 @@ const inGamut = (t) => {
 const PAIRS = [
   ["text", "bg", "active spoken lines"],
   ["text-now", "bg", "the line Follow my voice is on"],
-  ["muted", "bg", "reminders, camera cues, the link row and link markers"],
+  ["muted", "bg", "reminders, camera cues, the link row and link markers, the Text only strip's rows"],
+  ["dim", "bg", "the Text only strip's label and kind words (Camera, Page, You)"],
+  ["accent", "bg", "Missed in the Text only strip"],
   ["accent", "bg", "the active section's dot, bullet dots (graphic)", 3],
   ["accent", "link-tint", "hovered links"],
   ["text", "panel", "start screen, control bar, popovers, notices, dialogs"],

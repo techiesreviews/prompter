@@ -180,6 +180,37 @@ ${CUE_FILL}
 [Face: Demo]
 ${CUE_FILL}
 `;
+// Text only (TOOLS-491): a top link, a cue with other words, a link on its own line, a reminder and a
+// cue on its own, each followed by a spoken line with words of its own (for the stubbed voice).
+const TEXT_ONLY_SCRIPT = `### **PREP**
+
+- Water within reach
+
+### **INTRO · 00:00**
+
+- Intro: https://example.com/intro
+
+QL: Why text only?
+
+Welcome to the quiet show.
+[Share screen. Face small.]
+Here comes the first screen.
+${CUE_FILL}
+- Patchstack: https://patchstack.com
+Patchstack finds the holes.
+${CUE_FILL}
+[Smile at the camera]
+Purple elephants dance quietly tonight.
+${CUE_FILL.split("\n").slice(0, 4).join("\n")}
+[Face full]
+Back to the full camera.
+${CUE_FILL}
+
+### **1 · DOCS · 01:00**
+
+The docs explain it all.
+${CUE_FILL}
+`;
 // Distinct words around one cue, so the stubbed voice follows line by line.
 const VOICE_CUE_SCRIPT = `### **PREP**
 
@@ -1135,12 +1166,12 @@ export async function run({ browser, base, mode, dist, out }) {
   await (await dock(page, ".settings-btn")).click();
   await popAbove(page, "#settings", ".settings-btn", "desktop Settings");
   assert.deepEqual(await page.locator("#settings").evaluate((el) => [...el.querySelectorAll(".setting")].map((row) => row.querySelector("legend, label").textContent.trim())),
-    ["Text size", "Scroll speed", "Line height", "Paragraph spacing", "Width", "Layout"]);
+    ["Text size", "Scroll speed", "Line height", "Paragraph spacing", "Width", "Layout", "Show"]);
   assert.equal(await page.locator("#settings .camframe").getAttribute("aria-pressed"), "false", "the CamFrame link is off by default");
   // Follow my voice, the main screen and the CamFrame link: big buttons side by side (icons only).
   const bigButtons = (p) => p.locator("#settings .big-toggle:not([hidden])").evaluateAll((els) => els.map((el) => [el.getAttribute("aria-label"), el.innerText.trim()]));
   assert.deepEqual(await bigButtons(page), [["Connect main screen", ""], ["CamFrame link: off", ""]], "icons only; no Follow my voice without the speech API; the main screen's and CamFrame's buttons");
-  assert.equal(await page.locator("#settings").locator("input, select, button, textarea").count(), 16, "four sliders with their value boxes, three width and two layout choices, the voice, main screen and CamFrame buttons, nothing else");
+  assert.equal(await page.locator("#settings").locator("input, select, button, textarea").count(), 18, "four sliders with their value boxes, three width, two layout and two show choices, the voice, main screen and CamFrame buttons, nothing else");
   assert.equal(await page.locator("#settings .camframe-status, #settings .check-row").count(), 0, "no CamFrame status text in Settings");
   const screenBox = await page.locator("#settings .screen").boundingBox();
   const rowBox = await page.locator("#settings .big-toggles").boundingBox();
@@ -3696,6 +3727,203 @@ export async function run({ browser, base, mode, dist, out }) {
   await layPhone.close();
   await cam.stop();
   ok("Camera layouts: an older CamFrame gets no save and the Camera cues list says nothing about layouts; a CamFrame with API 2 gets the two layout Scenes saved by themselves when it connects (Live small corner, following the small size, then Live right large at 1.5 times it, inside the right 30%), never with replace or apply, no cue and no small-size call, and not read out over \"connected\"; later checks save nothing more; there is no Camera layouts button or window; the one line under the Camera cues list says where the layouts stand: saved, a different Scene of Lex's own left alone, no room (how many Scenes to delete), saving would fill CamFrame (the Prompter waits), a refusal or a lost answer in plain words, a layout deleted later not saved until the next connect; a slow save from before the link was turned off and on never holds up the new session; the list fits a phone")
+
+  // ---- Text only: hidden cues and links still happen at the next spoken line (TOOLS-491) ----
+  {
+    const textOnlyLink = await makeLink(TEXT_ONLY_SCRIPT, "lex", base);
+    // Scrolls `page` so the element `sel` (the n-th match) sits just above the reading line (plus `dy`).
+    const passEl = (page, sel, dy = 0, n = 0) => page.evaluate(([q, d, i]) => {
+      const el = document.querySelectorAll(q)[i];
+      window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - document.querySelector(".reading-line").getBoundingClientRect().top - 2 + d);
+    }, [sel, dy, n]);
+    const lineOf = (page, words) => page.evaluate((w) => [...document.querySelectorAll("[data-k]")].find((el) => el.textContent === w).dataset.k, words);
+    const stripRows = (page) => page.locator(".next-up li").evaluateAll((els) => els.filter((el) => getComputedStyle(el).display !== "none")
+      .map((el) => [el.dataset.state, el.querySelector(".sw-kind").textContent, el.querySelector(".sw-what").textContent, el.querySelector(".redo") ? el.querySelector(".redo").textContent : ""].join(" | ")));
+    const hiddenLook = (page) => page.evaluate(() => ({
+      notes: document.querySelectorAll(".script .note").length,
+      marks: document.querySelectorAll(".script .mark").length,
+      links: document.querySelectorAll(".script .links").length,
+      cues: document.querySelectorAll(".script [data-cue]").length,
+      spoken: [...document.querySelectorAll("[data-k]")].map((el) => el.textContent),
+      cueBoxes: [...document.querySelectorAll(".script [data-cue]")].map((el) => { const r = el.getBoundingClientRect(); return [Math.round(r.width), el.textContent]; }),
+    }));
+    const toCtx = await browser.newContext(DESKTOP);
+    await toCtx.addInitScript(SCREEN_STUB);
+    await toCtx.addInitScript(SPEECH_STUB);
+    const T = await toCtx.newPage();
+    watch(T, "text only");
+    await T.goto(textOnlyLink);
+    await T.locator(".section").first().waitFor();
+    // Off by default: the page draws exactly what it drew before, and Settings offers the choice.
+    const offHtml = await T.locator(".script").innerHTML();
+    const offLook = await hiddenLook(T);
+    assert.deepEqual([offLook.notes, offLook.marks, offLook.links, offLook.cues], [3, 1, 1, 2], "off: reminders, cue lines, the link line and the top link row all show");
+    assert.equal(await T.locator(".next-up").isVisible(), false, "off: no strip");
+    assert.equal(await T.evaluate(() => localStorage.getItem("prompter-text-only")), null, "nothing stored");
+    await (await dock(T, ".settings-btn")).click();
+    await T.locator("#settings:popover-open").waitFor();
+    assert.deepEqual(await T.locator("#settings fieldset.show").evaluate((el) => [el.querySelector("legend").textContent, [...el.querySelectorAll("label")].map((l) => l.textContent), el.querySelector("input:checked").value]),
+      ["Show", ["Everything", "Text only"], "all"], "Settings: Show, Everything (chosen) or Text only");
+    await T.locator('#settings input[name="show"][value="text"]').click();
+    await T.evaluate(() => document.querySelector("#settings").hidePopover());
+    assert.equal(await T.evaluate(() => localStorage.getItem("prompter-text-only")), "on", "remembered on this device");
+    const onLook = await hiddenLook(T);
+    assert.deepEqual([onLook.notes, onLook.marks, onLook.links], [0, 0, 0], "on: no reminder, cue line, link line or top link row");
+    assert.deepEqual(onLook.spoken, offLook.spoken, "every spoken line is still there, numbered as before");
+    assert.deepEqual(onLook.cueBoxes, [[0, ""], [0, ""]], "the cues are still marked in place, with nothing to see");
+    assert.equal(await T.evaluate(() => document.querySelector(".script").textContent.includes("Share screen")), false);
+    // The strip: small, muted, beside the text (never over it), no border or ring.
+    await T.locator(".next-up").waitFor();
+    assert.deepEqual(await stripRows(T), ["next | Page | Intro | ", "next | Camera | face small | ", "next | You | Share screen. | "], "the next three switches, each with its kind word");
+    const stripLook = await T.evaluate(() => {
+      const strip = document.querySelector(".next-up");
+      const r = strip.getBoundingClientRect();
+      const right = Math.max(...[...document.querySelectorAll("[data-k]")].map((el) => el.getBoundingClientRect().right));
+      const cs = getComputedStyle(strip);
+      const row = getComputedStyle(strip.querySelector("li"));
+      return { clear: r.left >= right, inside: r.right <= innerWidth, border: cs.borderTopStyle, shadow: cs.boxShadow, color: row.color, size: parseFloat(row.fontSize) };
+    });
+    assert.deepEqual([stripLook.clear, stripLook.inside, stripLook.border, stripLook.shadow], [true, true, "none", "none"], "beside the text, inside the window, no border, ring or shadow");
+    assert.equal(stripLook.color, "oklch(0.763 0.027 282)", "muted");
+    assert.ok(stripLook.size <= 14, "small");
+    // Top link: the main screen opens it at the section start, as before.
+    await viaSettings(T, ".screen");
+    const tVisits = () => T.evaluate(() => window.__screen.visits.slice());
+    await scrollToSection(T, 1);
+    await T.waitForFunction(() => window.__screen.visits.at(-1) === "https://example.com/intro", null, { timeout: 2000 });
+    assert.deepEqual((await stripRows(T))[0], "done | Page | Intro | ", "the switch that just happened leads the strip");
+    // The hidden link line opens at the next spoken line, once that line reaches the reading line.
+    await passEl(T, ".link-at", -30);
+    await T.waitForTimeout(900);
+    assert.equal((await tVisits()).at(-1), "https://example.com/intro", "not before its spoken line");
+    const markAt = await T.evaluate(() => { const at = document.querySelector(".link-at"); return Math.abs(at.getBoundingClientRect().top - at.nextElementSibling.getBoundingClientRect().top) <= 2 && at.nextElementSibling.textContent; });
+    assert.equal(markAt, "Patchstack finds the holes.", "its place is the start of the next spoken line");
+    await passEl(T, ".link-at");
+    await T.waitForFunction(() => window.__screen.visits.at(-1) === "https://patchstack.com", null, { timeout: 2000 });
+    assert.deepEqual((await stripRows(T)).slice(0, 2), ["done | Page | Patchstack | ", "next | You | Smile at the camera | "], "done, then a reminder for Lex's own hands");
+    await shot(T, "text-only-desktop");
+    // Follow my voice and the Paragraphs layout work with Text only on (from two lines before the reminder).
+    const purple = await lineOf(T, "Purple elephants dance quietly tonight.");
+    await passEl(T, "[data-k]", 0, Number(purple) - 2);
+    await T.evaluate(() => localStorage.setItem("prompter-voice-ok", "yes"));
+    await viaSettings(T, ".voice");
+    await T.waitForFunction(() => window.__speech.started === 1);
+    // A line said in full: the line after it is the one being read.
+    const afterPurple = String(Number(purple) + 1);
+    await T.evaluate(() => window.__speech.say("purple elephants dance quietly tonight"));
+    await T.waitForFunction((k) => document.querySelector(".cur")?.dataset.k === k, afterPurple, { timeout: 2000 });
+    await spaceTo(T, "layout", "paragraphs");
+    assert.equal(await T.evaluate(() => document.querySelector(".cur")?.dataset.k), afterPurple, "Paragraphs: the line being read stays marked");
+    assert.deepEqual((await hiddenLook(T)).notes, 0, "Paragraphs: still text only");
+    await T.evaluate(() => window.__speech.say("back to the full camera"));
+    const back = String(Number(await lineOf(T, "Back to the full camera.")) + 1);
+    await T.waitForFunction((k) => document.querySelector(".cur")?.dataset.k === k, back, { timeout: 2000 });
+    // Turned off while the voice's move is still under way: the line being read stays marked and is
+    // at the reading line (as for any layout change during a voice move), and the strip goes.
+    await viaSettings(T, 'input[name="show"][value="all"]');
+    assert.equal(await T.evaluate(() => document.querySelector(".cur")?.dataset.k), back, "the line being read stays marked");
+    const curAtLine = await T.evaluate(() => {
+      const y = document.querySelector(".reading-line").getBoundingClientRect().top;
+      return [...document.querySelector(".cur").getClientRects()].some((r) => r.top <= y + 4 && r.bottom >= y - 4);
+    });
+    assert.equal(curAtLine, true, "and sits at the reading line");
+    assert.equal(await T.locator(".next-up").isVisible(), false);
+    assert.equal(await T.evaluate(() => localStorage.getItem("prompter-text-only")), null);
+    await viaSettings(T, ".voice");
+    await spaceTo(T, "layout", "lines");
+    await toCtx.close();
+    // Off again on a fresh page: exactly what the page drew before it was ever turned on.
+    const offAgain = await browser.newContext(DESKTOP);
+    await offAgain.addInitScript(() => { localStorage.setItem("prompter-text-only", "on"); });
+    const T2 = await offAgain.newPage();
+    watch(T2, "text only off again");
+    await T2.goto(textOnlyLink);
+    await T2.locator(".section").first().waitFor();
+    assert.equal((await hiddenLook(T2)).notes, 0, "read at start-up");
+    await viaSettings(T2, 'input[name="show"][value="all"]');
+    assert.equal(await T2.locator(".script").innerHTML(), offHtml, "Text only off draws the script exactly as before");
+    await offAgain.close();
+    ok("Text only (off by default, nothing stored): Settings' Show offers Everything or Text only, remembered on this device; on hides reminders, camera cue lines, link lines and the top link row and keeps every spoken line; a quiet strip beside the text shows the switch that just happened and the next three with a kind word; the hidden link opens on the main screen at the next spoken line; Follow my voice and Paragraphs keep working; turned off, the page is drawn exactly as before");
+
+    // Missed: no main screen, or one cut off: the strip says Missed, and its Open button opens the page by hand.
+    const missCtx = await browser.newContext(DESKTOP);
+    await missCtx.addInitScript(SCREEN_STUB);
+    await missCtx.addInitScript(() => { localStorage.setItem("prompter-text-only", "on"); });
+    const M = await missCtx.newPage();
+    watch(M, "text only missed");
+    await M.goto(textOnlyLink);
+    await M.locator(".section").first().waitFor();
+    await scrollToSection(M, 1);
+    await M.waitForFunction(() => document.querySelector(".next-up li")?.dataset.state === "missed", null, { timeout: 2000 });
+    assert.deepEqual((await stripRows(M))[0], "missed | Page | Intro | Open", "no main screen: Missed, with an Open button");
+    assert.equal(await M.locator(".next-up .redo").getAttribute("aria-label"), "Open Intro on the main screen");
+    assert.deepEqual(await M.evaluate(() => window.__screen.visits.slice()), [], "nothing opened by itself");
+    await shot(M, "text-only-missed-desktop");
+    await M.locator(".next-up .redo").click();
+    await M.waitForFunction(() => window.__screen.visits.at(-1) === "https://example.com/intro", null, { timeout: 2000 });
+    await M.waitForFunction(() => document.querySelector(".next-up li")?.dataset.state === "done");
+    assert.equal(await M.locator("#settings .screen").getAttribute("data-on"), "true", "opened by hand, so the main screen is connected");
+    // The main screen is cut off (TOOLS-492): the next page is missed too, and nothing opens by itself.
+    await M.evaluate(() => { window.open().closed = true; });
+    await M.waitForFunction(() => document.querySelector("#settings .screen").dataset.on === "cut", null, { timeout: 2000 });
+    await passEl(M, ".link-at");
+    await M.waitForFunction(() => document.querySelector(".next-up li")?.dataset.state === "missed" && document.querySelector(".next-up li .sw-what").textContent === "Patchstack", null, { timeout: 2000 });
+    assert.equal((await M.evaluate(() => window.__screen.visits.slice())).at(-1), "https://example.com/intro", "cut off: nothing opens by itself");
+    // A later camera cue happened: the missed page still comes first.
+    await passEl(M, "[data-cue]", 0, 1);
+    await M.waitForTimeout(100);
+    assert.deepEqual((await stripRows(M)).slice(0, 2), ["missed | Page | Patchstack | Open", "done | Camera | face full | "]);
+    await M.locator(".next-up .redo").click();
+    await M.waitForFunction(() => window.__screen.visits.at(-1) === "https://patchstack.com", null, { timeout: 2000 });
+    await M.waitForFunction(() => !document.querySelector('.next-up li[data-state="missed"]'));
+    await missCtx.close();
+    ok("Text only, missed: with no main screen, or one cut off, the page's row says Missed (also after a later cue) and nothing opens by itself; its Open button opens it by hand");
+
+    // A hidden camera cue reaches CamFrame at the next spoken line, once per pass, not before.
+    const toCam = fakeCamFrame();
+    await toCam.start();
+    const camOnly = await browser.newContext(DESKTOP);
+    await camOnly.addInitScript(() => { localStorage.setItem("prompter-text-only", "on"); localStorage.setItem("prompter-camframe", "on"); });
+    const TC = await camOnly.newPage();
+    TC.on("pageerror", (e) => errors.push(`text only camframe pageerror: ${e.message}`));
+    await TC.goto(textOnlyLink);
+    await TC.locator(".section").first().waitFor();
+    await TC.waitForFunction(() => document.querySelector(".camframe").dataset.state === "on");
+    const cueAt = await TC.evaluate(() => { const at = document.querySelector('[data-cue="0"]'); const next = at.nextElementSibling; return Math.abs(at.getBoundingClientRect().top - next.getBoundingClientRect().top) <= 2 && next.textContent; });
+    assert.equal(cueAt, "Here comes the first screen.", "the cue's place is the start of the next spoken line");
+    await passCueOn(TC, 0, -40);
+    await TC.mouse.wheel(0, 1);
+    await TC.waitForTimeout(400);
+    assert.deepEqual(toCam.cues(), [], "not before its spoken line");
+    await passCueOn(TC, 0);
+    await TC.waitForTimeout(400);
+    assert.deepEqual(toCam.cues(), [{ size: "small" }], "reached: sent once");
+    await passCueOn(TC, 0, 60);
+    await TC.waitForTimeout(300);
+    assert.deepEqual(toCam.cues(), [{ size: "small" }], "reading on sends nothing again");
+    await camOnly.close();
+    await toCam.stop();
+    ok("Text only: a hidden camera cue still reaches CamFrame when the next spoken line reaches the reading line, once per pass, not before");
+
+    // Phone: a compact card at the top, clear of the script's width, nothing scrolls sideways.
+    const toPhone = await browser.newContext(MOBILE);
+    await toPhone.addInitScript(() => { localStorage.setItem("prompter-text-only", "on"); });
+    const TP = await toPhone.newPage();
+    watch(TP, "text only phone");
+    await TP.goto(textOnlyLink);
+    await TP.locator(".section").first().waitFor();
+    await scrollToSection(TP, 1);
+    await TP.waitForTimeout(900);
+    const card = await TP.evaluate(() => {
+      const r = document.querySelector(".next-up").getBoundingClientRect();
+      return { fits: r.left >= 0 && r.right <= innerWidth && document.documentElement.scrollWidth <= innerWidth, top: r.top, aboveLine: r.bottom < document.querySelector(".reading-line").getBoundingClientRect().top };
+    });
+    assert.deepEqual([card.fits, card.top < 40, card.aboveLine], [true, true, true], "a card at the top, above the reading line, nothing scrolls sideways");
+    assert.equal((await stripRows(TP)).length, 2, "the switch that just happened and the next one");
+    await shot(TP, "text-only-mobile");
+    await toPhone.close();
+    ok("Text only on a phone: the strip is a compact card at the top with two rows, above the reading line; nothing scrolls sideways");
+  }
 
   // ---- Offline (file://) ----
   const offline = await browser.newContext(DESKTOP);

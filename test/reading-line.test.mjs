@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { LINE_INSET, LINE_REACH, readingLine, reachedCount } from "../src/reading-line.mjs";
+import { LINE_INSET, LINE_REACH, LINKS_AT, readingLine, reachedCount } from "../src/reading-line.mjs";
 
 // A stand-in for the script column: elements with a top (px from the window's top), the data the page
 // gives them, and a count of the positions read, so a test can say how much one look costs. A spoken
@@ -12,10 +12,11 @@ function fakeScript(spec) {
     return { dataset, kids, getBoundingClientRect() { reads.n++; return { top, bottom }; } };
   };
   const sections = spec.map((s, i) => el(s.top, { i: String(i) }, s.links || []));
-  for (const s of sections) s.querySelectorAll = (sel) => (sel === ".mark, .inlink" ? s.kids.map((l) => el(l.top, { l: String(l.l) })) : []);
+  for (const s of sections) s.querySelectorAll = (sel) => (sel === LINKS_AT ? s.kids.map((l) => el(l.top, { l: String(l.l) })) : []);
   const cues = spec.flatMap((s) => s.cues || []).map((top, n) => el(top, { cue: String(n) }));
   const lines = spec.flatMap((s) => s.lines || []).map((top, k) => el(top, { k: String(k) }));
-  const lists = { ".section": sections, "[data-cue]": cues, "[data-k]": lines };
+  const switches = spec.flatMap((s) => s.switches || []).map((top) => el(top));
+  const lists = { ".section": sections, "[data-cue]": cues, "[data-k]": lines, "[data-sw]": switches };
   return { reads, querySelectorAll: (sel) => lists[sel] || [] };
 }
 
@@ -34,7 +35,7 @@ function fakeFrames() {
 
 const SCRIPT = [
   { top: -400, lines: [-380, -300, -200], cues: [-250] },
-  { top: -100, links: [{ top: -60, l: 1 }, { top: 150, l: 2 }], lines: [-80, 0, 96, 104, 200], cues: [50, 500] },
+  { top: -100, links: [{ top: -60, l: 1 }, { top: 150, l: 2 }], lines: [-80, 0, 96, 104, 200], cues: [50, 500], switches: [-60, 50, 104, 150] },
   { top: 700, lines: [720, 800] },
 ];
 
@@ -56,6 +57,11 @@ test("look: the section, its link, the cues and the spoken line at the reading l
   assert.equal(at.link, 1, "the last link of that section above the line");
   assert.deepEqual(at.cues, [0, 1], "every cue above the line, by number");
   assert.equal(at.line, 6, "the last spoken line whose top reached the line (104 is within reach)");
+  assert.equal(at.passed, 3, "how many of the Text only switches reached the line");
+});
+
+test("look: a hidden link line's place (Text only) counts as its link", () => {
+  assert.equal(LINKS_AT, ".mark, .inlink, .link-at", "own-line links, in-text links and the hidden link lines' places");
 });
 
 test("look: where spoken lines share a row, the first one still on the row at the line; lastLine the last one started", () => {

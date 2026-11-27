@@ -20,7 +20,7 @@ export const FONTS = ["inter-latin.woff2", "roboto-mono-latin.woff2", "OFL.txt"]
  * Shared modules inlined into the page, in this order, without `export`. A module may import names from
  * one inlined before it (`import { … } from "./wire.mjs";`): they share the page's scope, so that line is dropped.
  */
-export const INLINED = ["src/core.mjs", "src/settings.mjs", "src/follow.mjs", "src/open-script.mjs", "src/speech.mjs", "src/agent.mjs", "src/wire.mjs", "src/relay-link.mjs", "src/suggestions.mjs", "src/camframe.mjs", "src/reading-line.mjs", "src/ui/range-field.mjs"];
+export const INLINED = ["src/core.mjs", "src/settings.mjs", "src/follow.mjs", "src/open-script.mjs", "src/speech.mjs", "src/agent.mjs", "src/wire.mjs", "src/relay-link.mjs", "src/suggestions.mjs", "src/camframe.mjs", "src/reading-line.mjs", "src/next-up.mjs", "src/ui/range-field.mjs"];
 
 /** Shared component styles inlined into the page's style at its marker. */
 export const UI_CSS = ["src/ui/range-field.css"];

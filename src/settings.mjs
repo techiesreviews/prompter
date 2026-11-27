@@ -23,6 +23,8 @@ export const SETTINGS = {
   preset: { key: "prompter-preset", fallback: "default", choices: PRESET_NAMES },
   camframe: { key: "prompter-camframe", fallback: false, on: "on" },
   voiceOk: { key: "prompter-voice-ok", fallback: false, on: "yes" }, // the speech notice was accepted
+  // Text only: reminders, camera cues and link lines are hidden and happen by themselves (TOOLS-491).
+  textOnly: { key: "prompter-text-only", fallback: false, on: "on" },
 };
 
 /** Other things kept on this device: the last script opened, the day it was saved, the agent's token. */

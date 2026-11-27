@@ -1,7 +1,7 @@
 // The open script's own state, in one object made fresh each time a script opens and dropped when another
 // opens (or the start screen shows), so nothing from the script before is still there: its sections, the
 // section and link at the reading line, the link waiting to go on the main screen, the voice's place and
-// the links it opened, the camera cues. The page reads and writes that object; it keeps no loose copy.
+// the links it opened, the camera cues, the Text only switches. The page reads and writes that object; it keeps no loose copy.
 // scripts/build.mjs inlines this file into the page after src/follow.mjs and drops the import line below,
 // so keep it free of any other import and use only `export function`/`export const` forms.
 import { voiceStart } from "./follow.mjs";
@@ -19,6 +19,9 @@ import { voiceStart } from "./follow.mjs";
  *   last opened by its label and the speech result it was heard in);
  * - `cues` (the camera cues by data-cue) and `cueAbove` (those above the reading line; null until the
  *   first look, which sends nothing);
+ * - `switches` (Text only: what the hidden lines do, in reading order, see switchesOf), `passed` (how many of
+ *   them reached the reading line) and `missedKey` (the page that belongs on the main screen now but could
+ *   not go there: no main screen, cut off, or held back; "" when none);
  * - `pushOwed`: opened from the start screen, its link is still owed a new history entry (so Back returns
  *   there); a script opened before that link lands takes the entry over.
  */
@@ -36,6 +39,9 @@ export function scriptState({ text = "", saved = null, sections = [] } = {}) {
     voice: voiceStart(-1),
     cues: [],
     cueAbove: null,
+    switches: [],
+    passed: 0,
+    missedKey: "",
     pushOwed: false,
   };
 }
