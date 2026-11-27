@@ -520,7 +520,7 @@ function placePill() {
   const room = document.documentElement.clientWidth - right;
   const above = parseFloat(getComputedStyle(root).getPropertyValue("--line")) - 10 - askPill.offsetHeight;
   askPill.dataset.place = isEmpty() ? "corner" : room >= askPill.offsetWidth + 16 + 12 ? "line" : above >= 8 ? "above" : "low";
-  placeNext(); // in the corner, the pill pushes Text only's card down
+  placeNext(); // the pill's new place can move Text only's card
 }
 new ResizeObserver(placePill).observe(main);
 window.addEventListener("resize", placePill); // the column keeps its width while the window narrows
@@ -1049,7 +1049,6 @@ const stripOn = () => textOnly() && !isEmpty() && scripts.now.switches.length > 
 function drawNext() {
   const script = scripts.now;
   const on = stripOn();
-  let moved = nextUp.hidden === on;
   nextUp.hidden = !on;
   root.toggleAttribute("data-next-up", on); // the column keeps room for it
   const missed = script.missedKey && script.missedKey === script.anchorKey ? script.missedKey : "";
@@ -1062,22 +1061,21 @@ function drawNext() {
   const lis = rows.map((html) => {
     const kept = old.get(html);
     if (kept) { old.delete(html); return kept; }
-    moved = true;
     const t = document.createElement("template");
     t.innerHTML = html;
     rowDrawn.set(t.content.firstChild, html);
     return t.content.firstChild;
   });
-  for (const li of old.values()) { li.remove(); moved = true; }
+  for (const li of old.values()) li.remove();
   lis.forEach((li, n) => { if (nextList.children[n] !== li) nextList.insertBefore(li, nextList.children[n] ?? null); });
   if (focused && !nextList.contains(document.activeElement)) nextList.focus({ preventScroll: true }); // Open's row went: the keyboard stays in the strip
-  if (moved) placeNext(); // only when the card can have changed size: never a layout on every scroll frame
 }
 // On a narrow screen the card sits at the top, over text already read, unless the reading line (or the
 // cue pill just above it) is dragged up into it: then it goes above the control bar and the notes over it
 // (their height is --dock-h), and above the cue pill when that went low too.
 const dockWrap = $(".dock-wrap");
 new ResizeObserver(() => root.style.setProperty("--dock-h", `${dockWrap.offsetHeight}px`)).observe(dockWrap);
+new ResizeObserver(() => placeNext()).observe(nextUp); // shown, or a row more or less: never a layout on every scroll frame
 function placeNext() {
   if (nextUp.hidden) return;
   const narrow = matchMedia("(width < 1240px)").matches;
