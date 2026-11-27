@@ -206,10 +206,12 @@ export function voiceSession(voice) {
 
 /**
  * Scrolled by hand, a section jump or the line moved: follow on from `line`, the line at the reading
- * line. Still on the followed line, the place in it is kept (the same state comes back).
+ * line. Still on the followed line, the place in it is kept (the same state comes back); so it is
+ * when the followed line shares the row there, `line` (the first on it) to `upTo` (the last).
  */
-export function voiceAt(voice, line) {
-  return Math.max(0, line) === voice.follow.line ? voice : { ...voice, follow: followStart(line) };
+export function voiceAt(voice, line, upTo = line) {
+  const at = voice.follow.line;
+  return at >= Math.max(0, line) && at <= Math.max(0, upTo) ? voice : { ...voice, follow: followStart(line) };
 }
 
 /**

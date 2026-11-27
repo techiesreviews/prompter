@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { check, classify, countWords, describeProblems, EXAMPLE_SCRIPT, formatGuide, linkAt, parse, PRESETS, textLinks, toSeconds, youtubeSeconds } from "../src/core.mjs";
+import { check, classify, countWords, describeProblems, EXAMPLE_SCRIPT, formatGuide, lineJoins, linkAt, parse, PRESETS, textLinks, toSeconds, youtubeSeconds } from "../src/core.mjs";
 
 // The parser from the original single-file prompter, kept to prove compatibility.
 function legacyParse(md) {
@@ -453,4 +453,19 @@ test("cueInsertion: a cue goes on its own line, never splits a line, never ahead
   assert.equal(put("### **NOTES**\nx\n<!--SCRIPT-START-->\n### **A**\nHello", 14), null, "before the start marker");
   assert.equal(put("### **A**\nHello\n<!--SCRIPT-END-->\nafter", 25), null, "after the end marker");
   assert.equal(put("### **A**\nHello\n\n---\n\n### **B**\nBye", 12), "### **A**\nHello\n[Face full]\n\n---\n\n### **B**\nBye", "a section's own text: after the line");
+});
+
+test("lineJoins: a new row only after a closing mark, in any script; no space after Chinese or Japanese", () => {
+  const rows = (texts) => lineJoins(texts).map((j) => j.row);
+  assert.deepEqual(lineJoins(["one"]), [], "one line: nothing to join");
+  assert.deepEqual(rows(["We are going through this route", "in four waypoints. In the last video,", "we set up the basics", "and finish."]), [false, true, false]);
+  assert.deepEqual(rows(["Wait…", "He said \"go.\"", "(really?)", "Quoi ?»", "end"]), [true, true, true, true]);
+  assert.deepEqual(rows(["今日は。", "次に、", "好吗？", "终", "end"]), [true, true, true, false]);
+  assert.deepEqual(rows(["مرحبا،", "كيف؟", "नमस्ते।", "end"]), [true, true, true]);
+  assert.deepEqual(rows(["「はい」", "『終わり。』", "end"]), [false, true]);
+  assert.deepEqual(rows(["Er sagte „gut.“", "und ‚so.‘", "end"]), [true, true], "German closing quotes");
+  assert.deepEqual(rows(["He said, “", "go on", "end"]), [false, false], "an English opening quote at the end leaves the row open");
+  assert.deepEqual(rows(["Read https://example.com/a", "the plugin page: https://wp.org/x.", "end"]), [false, true], "a line ending in a link's words joins the next unless a mark closes it");
+  assert.deepEqual(lineJoins(["今日は", "コーヒー", "Hello", "end"]).map((j) => j.space), ["", "", " "], "no space after a Chinese or Japanese line, a space after any other");
+  assert.deepEqual(lineJoins(["今日は。", "end"]), [{ row: true, space: "" }]);
 });

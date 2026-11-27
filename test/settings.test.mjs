@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { INLINED } from "../scripts/build.mjs";
 import { PRESETS } from "../src/core.mjs";
-import { SETTINGS, STORED, settingValue, settingsStore } from "../src/settings.mjs";
+import { RETIRED, SETTINGS, STORED, settingValue, settingsStore } from "../src/settings.mjs";
 
 // A stand-in for the page's store: strings in, strings out, like localStorage.
 function fakeStore(start = {}) {
@@ -22,7 +22,9 @@ const LIVE_KEYS = {
   speed: "prompter-speed",
   size: "prompter-size",
   width: "prompter-width",
-  spacing: "prompter-spacing",
+  lineHeight: "prompter-line-height",
+  paraSpace: "prompter-paragraph-spacing",
+  layout: "prompter-layout",
   line: "prompter-line",
   preset: "prompter-preset",
   camframe: "prompter-camframe",
@@ -34,13 +36,18 @@ test("each setting keeps the key the live site saves under", () => {
   assert.deepEqual(STORED, { lastScript: "prompter-last-script", lastSaved: "prompter-last-saved", agent: "prompter-agent" });
   const all = [...Object.values(SETTINGS).map((s) => s.key), ...Object.values(STORED)];
   assert.equal(new Set(all).size, all.length, "no two share a key");
+  // The old Line spacing (Normal, Roomy, Spacious) is no longer read: Lex's new defaults apply to everyone
+  // (TOOLS-486). Its key stays retired, so a later setting never reads an old word as its own value.
+  assert.deepEqual(RETIRED, ["prompter-spacing"]);
+  for (const key of RETIRED) assert.ok(!all.includes(key), `${key} is retired`);
 });
 
 test("an empty store gives each setting its default", () => {
   const prefs = settingsStore(fakeStore());
   assert.deepEqual(Object.fromEntries(Object.keys(SETTINGS).map((name) => [name, prefs.read(name)])), {
-    speed: 40, size: 52, width: "medium", spacing: "normal", line: 0.34, preset: "default", camframe: false, voiceOk: false,
+    speed: 40, size: 52, width: "medium", lineHeight: 165, paraSpace: 200, layout: "lines", line: 0.34, preset: "default", camframe: false, voiceOk: false,
   });
+  assert.equal(settingsStore(fakeStore({ "prompter-spacing": "spacious" })).read("lineHeight"), 165, "the old Line spacing is not read");
   assert.equal(settingsStore(fakeStore(), { phone: true }).read("size"), 32, "a phone starts with smaller text");
   assert.equal(settingsStore(fakeStore(), { phone: true }).read("speed"), 40, "only the text size has a phone default");
 });
@@ -50,14 +57,20 @@ test("numbers are held to their limits", () => {
   assert.deepEqual([settingValue("size", 4), settingValue("size", 301), settingValue("size", 150.4), settingValue("size", Infinity)], [10, 300, 150, 300]);
   assert.deepEqual([settingValue("line", 0.01), settingValue("line", 0.9), settingValue("line", 0.5)], [0.08, 0.75, 0.5]);
   assert.deepEqual([settingValue("line", 0.12345)], [0.12345], "the line is not rounded, only when saved");
+  // Line height and paragraph spacing, in percent of the text size.
+  assert.deepEqual([settingValue("lineHeight", 90), settingValue("lineHeight", 250), settingValue("lineHeight", 142.4)], [110, 200, 142]);
+  assert.deepEqual([settingValue("paraSpace", -5), settingValue("paraSpace", 400), settingValue("paraSpace", 37.6)], [0, 200, 38]);
+  assert.equal(settingValue("paraSpace", 0), 0, "no room between paragraphs is a choice, not a damaged value");
+  assert.equal(settingValue("paraSpace", "abc"), 200);
 });
 
 test("a damaged stored value falls back to the default", () => {
-  const bad = { speed: "fast", size: "", width: "huge", spacing: "tight", line: "abc", preset: "constructor", camframe: "yes", voiceOk: "on" };
+  const bad = { speed: "fast", size: "", width: "huge", lineHeight: "tall", paraSpace: "", layout: "columns", line: "abc", preset: "constructor", camframe: "yes", voiceOk: "on" };
   const prefs = settingsStore(fakeStore(Object.fromEntries(Object.entries(bad).map(([n, v]) => [SETTINGS[n].key, v]))));
   assert.deepEqual(Object.fromEntries(Object.keys(bad).map((name) => [name, prefs.read(name)])), {
-    speed: 40, size: 52, width: "medium", spacing: "normal", line: 0.34, preset: "default", camframe: false, voiceOk: false,
+    speed: 40, size: 52, width: "medium", lineHeight: 165, paraSpace: 200, layout: "lines", line: 0.34, preset: "default", camframe: false, voiceOk: false,
   });
+  assert.equal(settingsStore(fakeStore({ "prompter-paragraph-spacing": "0" })).read("paraSpace"), 0, "a saved 0 loads as 0");
   // Names an object has of its own (toString, __proto__) are no preset.
   for (const name of ["toString", "__proto__", "hasOwnProperty"]) assert.equal(settingValue("preset", name), "default", name);
   assert.equal(settingsStore(fakeStore({ "prompter-size": "0" }), { phone: true }).read("size"), 32, "nothing usable: the phone's default");
@@ -66,18 +79,19 @@ test("a damaged stored value falls back to the default", () => {
 test("settings saved by today's live site load back unchanged", () => {
   // Exactly what the live page wrote: numbers as plain strings, the line to four places.
   const live = {
-    "prompter-speed": "75", "prompter-size": "150", "prompter-width": "full", "prompter-spacing": "roomy",
+    "prompter-speed": "75", "prompter-size": "150", "prompter-width": "full", "prompter-line-height": "130",
+    "prompter-paragraph-spacing": "80", "prompter-layout": "paragraphs",
     "prompter-line": "0.4213", "prompter-preset": "lex", "prompter-camframe": "on", "prompter-voice-ok": "yes",
   };
   const store = fakeStore(live);
   const prefs = settingsStore(store, { phone: true });
   const read = Object.fromEntries(Object.keys(SETTINGS).map((name) => [name, prefs.read(name)]));
-  assert.deepEqual(read, { speed: 75, size: 150, width: "full", spacing: "roomy", line: 0.4213, preset: "lex", camframe: true, voiceOk: true });
+  assert.deepEqual(read, { speed: 75, size: 150, width: "full", lineHeight: 130, paraSpace: 80, layout: "paragraphs", line: 0.4213, preset: "lex", camframe: true, voiceOk: true });
   // Saving them again writes the very same strings.
   for (const [name, value] of Object.entries(read)) prefs.save(name, value);
   assert.deepEqual(Object.fromEntries(store.data), live);
   // Each choice the page offers loads as itself.
-  for (const name of ["width", "spacing", "preset"]) {
+  for (const name of ["width", "layout", "preset"]) {
     for (const choice of SETTINGS[name].choices) assert.equal(settingsStore(fakeStore({ [SETTINGS[name].key]: choice })).read(name), choice);
   }
   assert.deepEqual(SETTINGS.preset.choices, Object.keys(PRESETS));
@@ -94,12 +108,16 @@ test("saving stores what the page used to store", () => {
   assert.equal(store.get("prompter-width"), "medium");
   assert.equal(prefs.save("preset", null), "default", "a link without a preset was made for the default one");
   assert.equal(store.get("prompter-preset"), "default");
-  // Line spacing stores nothing until the default is left; after that it keeps whatever is chosen.
-  assert.equal(prefs.save("spacing", "normal"), "normal");
-  assert.equal(store.get("prompter-spacing"), null);
-  prefs.save("spacing", "spacious");
-  prefs.save("spacing", "normal");
-  assert.equal(store.get("prompter-spacing"), "normal");
+  // Line height, paragraph spacing and layout store nothing until the default is left (so a later
+  // default reaches everyone who never changed them); after that they keep whatever is chosen.
+  for (const [name, other] of [["lineHeight", 130], ["paraSpace", 0], ["layout", "paragraphs"]]) {
+    const { key, fallback } = SETTINGS[name];
+    assert.equal(prefs.save(name, fallback), fallback);
+    assert.equal(store.get(key), null, `${name} at its default stores nothing`);
+    assert.equal(prefs.save(name, other), other);
+    prefs.save(name, fallback);
+    assert.equal(store.get(key), String(fallback), `${name} back at its default is kept`);
+  }
   // On and off: on is a word, off removes the key.
   assert.equal(prefs.save("camframe", true), true);
   assert.equal(store.get("prompter-camframe"), "on");
@@ -153,11 +171,15 @@ test("the page's controls start at the table's defaults and limits", () => {
     const tag = html.match(new RegExp(`<input class="${cls}"[^>]*>`))?.[0] || "";
     return Object.fromEntries([...tag.matchAll(/(\w+)="([^"]*)"/g)].map(([, k, v]) => [k, v]));
   };
-  for (const [name, cls] of [["speed", "speed-val"], ["size", "size-val"]]) {
+  for (const [name, cls, slider] of [["speed", "speed-val", "speed"], ["size", "size-val", "size"], ["lineHeight", "line-height-val", "line-height"], ["paraSpace", "para-space-val", "para-space"]]) {
     const box = attrs(cls);
     const s = SETTINGS[name];
     assert.deepEqual([Number(box.min), Number(box.max), Number(box.value)], [s.min, s.max, s.fallback], `${cls} box`);
-    assert.equal(Number(attrs(name).value), s.fallback, `${name} slider`);
+    assert.equal(Number(attrs(slider).value), s.fallback, `${name} slider`);
+  }
+  // The new sliders reach the whole range (only the text size and speed let a typed value go past them).
+  for (const [name, slider] of [["lineHeight", "line-height"], ["paraSpace", "para-space"]]) {
+    assert.deepEqual([Number(attrs(slider).min), Number(attrs(slider).max)], [SETTINGS[name].min, SETTINGS[name].max], `${name} slider ends`);
   }
   const handle = html.match(/<div class="line-handle"[^>]*>/)?.[0] || "";
   const pct = (v) => String(Math.round(v * 100));
@@ -172,7 +194,9 @@ test("the page's controls start at the table's defaults and limits", () => {
   const rootStyle = html.match(/:root\s*\{[^}]*\}/)?.[0] || "";
   assert.match(rootStyle, new RegExp(`--size:\\s*${SETTINGS.size.fallback}px;`), "the text size before the script runs");
   assert.match(rootStyle, new RegExp(`--line:\\s*${pctNow}vh;`), "the reading line before the script runs");
-  for (const name of ["width", "spacing"]) {
+  assert.match(rootStyle, new RegExp(`--line-height:\\s*${SETTINGS.lineHeight.fallback / 100};`), "the line height before the script runs");
+  assert.match(rootStyle, new RegExp(`--para:\\s*${SETTINGS.paraSpace.fallback / 100};`), "the paragraph spacing before the script runs");
+  for (const name of ["width", "layout"]) {
     const values = [...html.matchAll(new RegExp(`<input type="radio" name="${name}" value="([^"]+)"`, "g"))].map((m) => m[1]);
     assert.deepEqual(values, SETTINGS[name].choices, `the ${name} choices`);
   }

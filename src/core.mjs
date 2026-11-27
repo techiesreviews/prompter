@@ -13,7 +13,7 @@ export const FORMAT = [
   { syntax: "- Label: https://full-url", meaning: "A link, on its own line. Right under the title (before or after the QL), the first link opens on the main screen when the section starts; the others are on number keys. Or put a link where you talk about it: it opens automatically when you reach that line, and the prompter shows a small marker there. Every link of a section is also listed, small, at the top of the section; number keys 1–9 open them any time." },
   { syntax: "[words](https://full-url)", meaning: "A link inside a spoken line, a bullet or a Next:/Now: line. The prompter shows only the words, like the rest of the line with a faint underline, and opens the link on the main screen when that line reaches the reading line. Only the words count towards the line's length. Not in QL lines, [reminders] or titles." },
   { syntax: "QL: question", meaning: "The one main question of the section. Read it silently and answer it in your own words; it is not read aloud. Shown at the top of the section." },
-  { syntax: "Plain line", meaning: "A spoken line." },
+  { syntax: "Plain line", meaning: "A spoken line. Spoken lines next to each other form one paragraph; a blank line starts the next. End a line with a comma or a full stop: the prompter starts a new row only there." },
   { syntax: "Next: … / Now: …", meaning: "A transition: where you are going, then what you do now." },
   { syntax: "[text]", meaning: "A private reminder, shown small." },
   { syntax: "[Face full] · [Face small, bottom right] · [Face: Scene name]", meaning: "A camera cue inside a reminder, as its own sentence starting with Face. With the CamFrame link on, the prompter tells CamFrame (the camera window on this computer) when the cue reaches the reading line: Face full fills the screen, Face small goes back to the small view (optionally at top left, top right, bottom left, bottom right, left, right or center), Face: Name applies that saved CamFrame Scene. It counts towards the line's words, so keep it short, like [Share screen. Face small.]." },
@@ -501,6 +501,25 @@ export function parse(md) {
     }
   });
   return out;
+}
+
+// A row of the Lines layout ends after a comma, a full stop or the like, in any script (Latin,
+// Chinese and Japanese, Arabic, Hindi), with any closing quote or bracket after it. German closes
+// with “ ‘, which open a quote in English, so they count only straight after . ! ? or ….
+const ROW_END = /(?:[,.;:!?…。、，；：！？،؛؟।]|[.!?…][“‘])["'”’»›」』)）\]]*$/;
+// Chinese and Japanese put no space between words (the Katakana block holds the long-vowel mark ー too).
+const NO_SPACE_END = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}゠-ヿ　-〿＀-￯]$/u;
+
+/**
+ * How each spoken line of a paragraph (their texts, in order) joins the next: `row` when a new
+ * row starts after it (it ends after a comma, a full stop or the like; never in the middle of a
+ * sentence), `space` "" after Chinese or Japanese, else " ". One entry fewer than `texts`.
+ */
+export function lineJoins(texts) {
+  return texts.slice(0, -1).map((text) => {
+    const t = text.trim();
+    return { row: ROW_END.test(t), space: NO_SPACE_END.test(t) ? "" : " " };
+  });
 }
 
 /**

@@ -28,9 +28,8 @@
     --chip-hover: oklch(37% 0.1 282);
     --text: oklch(97.5% 0.012 282);     /* night hue at 97.5%, c×0.25 (in sRGB) */
     --text-now: oklch(100% 0 none);     /* the line Follow my voice is on: pure white */
-    --upcoming: oklch(80% 0.03 282);    /* the lines after it: a little dimmer, still AA */
     --muted: oklch(76.3% 0.027 282);    /* 74% text mixed into the page */
-    --dim: oklch(64% 0.04 282);         /* lines of the other sections */
+    --dim: oklch(64% 0.04 282);         /* the titles of the other sections */
     --accent: oklch(65% 0.227 32.3);    /* the bright orange action colour */
     --accent-hover: oklch(60% 0.21 32.3);
     --accent-bright: oklch(70% 0.19 32.3); /* the icon of an on Settings toggle (Follow my voice, main screen) */
@@ -38,23 +37,21 @@
     --on-accent: oklch(100% 0 none);    /* white, 19px bold only */
     --ok: oklch(80% 0.15 155);
     --ql: oklch(88% 0.11 80);
-    --ql-dim: oklch(68% 0.09 80);
     --next: oklch(83% 0.085 282);
-    --next-dim: oklch(64% 0.07 282);
     --read-veil: oklch(16% 0.06 282 / 0.86); /* the page colour over read text: ~14% of it shows */
     --shadow: 0 1px 1px oklch(4% 0.06 282 / 0.5), 0 4px 8px oklch(4% 0.06 282 / 0.4), 0 16px 32px oklch(4% 0.06 282 / 0.3), inset 0 1px 0 oklch(97.5% 0.012 282 / 0.07);
     --radius: 10px;
     --font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
     --font-mono: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
     --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    /* Line height and paragraph spacing (Settings), as shares of the text size; app.js sets them. */
+    --line-height: 1.65;
+    --para: 2;
   }
   :root[data-width="narrow"] { --col: 600px; }
   :root[data-width="full"] { --col: none; }
-  /* Line spacing (Settings): taller lines (also inside a line that wraps) and
-     extra space between script lines, as a share of the text size. */
-  :root { --line-height: 1.3; --line-room: 0; --room: calc(var(--size) * var(--line-room)); }
-  :root[data-spacing="roomy"] { --line-height: 1.5; --line-room: 0.2; }
-  :root[data-spacing="spacious"] { --line-height: 1.7; --line-room: 0.45; }
+  /* Rows of one paragraph a quarter of the text size apart; paragraphs by the paragraph spacing. */
+  :root { --row-gap: calc(var(--size) * 0.25); --para-space: calc(var(--size) * var(--para)); }
 
   /* Global helpers */
   * { box-sizing: border-box; }
@@ -145,50 +142,56 @@
   }
 
   /* Script: a centred column with a maximum width; the text in it starts on
-     the left. Inactive sections use the dim colours (still AA on the page);
-     the active one the full ones. */
+     the left. Every word still to be read is white, in every section; only
+     the titles of the other sections are dim (still AA on the page). */
   .script {
     box-sizing: content-box; max-inline-size: var(--col); margin-inline: auto;
     padding: calc(var(--line) + 10px) 4vw max(70vh, calc(100vh - var(--line)));
     font: 600 var(--size)/var(--line-height) var(--font-body); letter-spacing: -0.01em; text-align: start;
     overflow-wrap: break-word;
   }
-  .section {
-    --c-say: var(--dim); --c-ql: var(--ql-dim); --c-next: var(--next-dim); --c-now: var(--dim); --c-link: var(--dim);
-    margin: 0 0 1.4em; padding: 0.5em 0 0.2em; color: var(--c-say);
-  }
-  .section.active { --c-say: var(--text); --c-ql: var(--ql); --c-next: var(--next); --c-now: var(--accent); --c-link: var(--muted); }
+  .section { margin: 0 0 1.4em; padding: 0.5em 0 0.2em; color: var(--text); }
   .section :is(p, .title) { transition: color 200ms ease-out, border-color 200ms ease-out; }
   .title {
     display: flex; flex-wrap: wrap; align-items: center; gap: 0.35em 0.8em;
-    margin: 0 0 0.6em; font: 500 max(13px, 0.3em)/1.3 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--c-say);
+    margin: 0 0 0.6em; font: 500 max(13px, 0.3em)/1.3 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim);
   }
-  .title::before { content: ""; flex: none; inline-size: 0.6em; block-size: 0.6em; border-radius: 50%; background: var(--c-now); }
+  .section.active .title { color: var(--text); }
+  .title::before { content: ""; flex: none; inline-size: 0.6em; block-size: 0.6em; border-radius: 50%; background: var(--dim); }
+  .section.active .title::before { background: var(--accent); }
   .title > span:first-child { flex: 1 1 0; min-inline-size: min(100% - 1.4em, 6em); }
   .time:empty { display: none; }
   .time { flex: none; max-inline-size: 100%; font-size: min(1em, 2rem); overflow-wrap: anywhere; margin-inline-start: auto; color: var(--muted); background: var(--chip); border-radius: 999px; padding: 0.2em 0.7em; font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
-  .script p { margin: 0 0 calc(0.25em + var(--room)); }
-  .bullet::before { content: "• "; color: var(--c-now); }
-  .next { color: var(--c-next); }
-  .now b { color: var(--c-now); }
-  .next b, .now b { font-weight: 800; }
+  :where(.script) p { margin: 0; }
   .ql {
-    color: var(--c-ql); margin: 0 0 0.5em; padding: 0.35em 0.6em 0.4em;
-    border: 2px solid var(--c-ql); border-radius: 0.3em; background: var(--panel);
+    color: var(--ql); margin: 0 0 0.5em; padding: 0.35em 0.6em 0.4em;
+    border: 2px solid var(--ql); border-radius: 0.3em; background: var(--panel);
   }
   .ql small { display: block; margin-block-end: 0.3em; font: 500 max(12px, 0.28em)/1.3 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
-  .note { color: var(--muted); font-size: 0.5em; font-weight: 500; margin: 0.15em 0 0.35em; }
-  /* A camera cue line reads as an instruction, link on or off: a camera mark
-     and "Camera: face small" in the line colour, then its other words muted. */
+  .note { color: var(--muted); font-size: 0.5em; font-weight: 500; }
+  /* A camera cue line reads as an instruction, link on or off, small and
+     dimmed: a camera mark and "Camera: face small" in bold, its other words plain. */
   .cue { font-size: 0.56em; }
-  .cue-icon { margin-inline-end: 0.35em; vertical-align: -0.12em; color: var(--c-now); }
-  .cue-what { color: var(--c-say); font-weight: 700; }
-  .gap { block-size: calc(0.6em + var(--room)); }
-  /* Follow my voice: the line being read is pure white, the lines after it in
-     its section a little dimmer (still AA); they fade between the two with
-     the section colours above. Next: and reminder lines keep their colours. */
-  .script p.cur { color: var(--text-now); }
-  :where(.section.active .cur ~ p) { color: var(--upcoming); }
+  .cue-icon { margin-inline-end: 0.35em; vertical-align: -0.12em; }
+  .cue-what { font-weight: 700; }
+  /* Paragraphs. In the Lines layout each row of a paragraph (it ends after a
+     comma or a full stop) has its own row, a quarter of the text size apart;
+     in the Paragraphs layout the rows flow together. Blocks in a section are
+     a quarter of the text size apart; a new paragraph (.brk) starts after the
+     paragraph spacing; points and the sentence leading into them (.half) sit
+     at half of it. A reminder, cue or link line heads what follows it. */
+  [data-layout="lines"] .row { display: block; }
+  [data-layout="lines"] .row + .row { margin-block-start: var(--row-gap); }
+  [data-layout="paragraphs"] .row { display: inline; }
+  .blk + .blk { margin-block-start: var(--row-gap); }
+  .blk.brk { margin-block-start: var(--para-space); }
+  .blk.half, .bullet + .bullet { margin-block-start: calc(var(--para-space) / 2); }
+  .lead { font-weight: 700; }
+  /* A point hangs right of an orange dot; no box, border or ring. */
+  .bullet { position: relative; padding-inline-start: 0.85em; }
+  .bullet::before { content: "•"; position: absolute; inset-inline-start: 0; color: var(--accent); }
+  /* Follow my voice: the line being read is pure white; the rest stays white too. */
+  .script .cur { color: var(--text-now); }
 
   /* Links stay quiet while reading. The top row (every link of the section,
      numbered for keys 1–9) and the marker of a link on its own line are small
@@ -199,19 +202,19 @@
      moves between these states. */
   .link, .mark, .inlink { border: 1px solid transparent; border-radius: 0.3em; cursor: pointer; }
   .links {
-    display: flex; flex-wrap: wrap; gap: 0 0.2em; margin: 0 calc(-0.45em - 1px) calc(0.5em + var(--room));
+    display: flex; flex-wrap: wrap; gap: 0 0.2em; margin: 0 calc(-0.45em - 1px) 0.5em;
     font: 500 max(13px, 0.3em)/1.3 var(--font-body); letter-spacing: 0;
   }
   .link, .mark {
     display: inline-flex; align-items: baseline; gap: 0.35em; padding: 0.3em 0.45em;
-    font: inherit; color: var(--c-link); background: transparent; text-align: start; overflow-wrap: anywhere;
+    font: inherit; color: var(--muted); background: transparent; text-align: start; overflow-wrap: anywhere;
   }
   .arrow { font-size: 0.85em; }
   .key { font: 500 0.85em/1 var(--font-mono); }
   /* A link on its own line mid-section: opens when it reaches the reading line. */
   .mark {
     display: flex; inline-size: fit-content; max-inline-size: calc(100% + 0.9em + 2px);
-    margin: 0 calc(-0.45em - 1px) calc(0.25em + var(--room)); font: 500 max(13px, 0.3em)/1.3 var(--font-body); letter-spacing: 0;
+    margin: 0 calc(-0.45em - 1px); font: 500 max(13px, 0.3em)/1.3 var(--font-body); letter-spacing: 0;
   }
   .inlink {
     color: inherit; font: inherit; padding: 0 0.1em; margin-inline: calc(-0.1em - 1px);
@@ -402,7 +405,7 @@
   .range-field + .range-field { margin-block-start: 8px; }
   .setting legend { padding: 0; margin: 0 0 6px; font-weight: 600; font-size: 14px; }
   fieldset.setting { margin-inline: 0; padding: 0; border: 0; }
-  .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; padding: 3px; background: var(--bg); border-radius: var(--radius); }
+  .seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; padding: 3px; background: var(--bg); border-radius: var(--radius); }
   .seg label { position: relative; display: grid; place-items: center; min-block-size: 36px; padding: 0 6px; border-radius: 8px; font-size: 14px; font-weight: 600; color: var(--muted); cursor: pointer; }
   @media (pointer: coarse) { .seg label { min-block-size: 44px; } }
   .seg input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
@@ -456,11 +459,13 @@
     display: grid; place-items: center; min-block-size: 64px; padding: 6px 8px;
     color: var(--muted); background: var(--chip); border: 0; border-radius: 14px; cursor: pointer;
   }
-  .big-toggle:is([aria-pressed="true"], [data-on="true"]) { color: var(--accent-bright); }
+  .big-toggle:is([aria-pressed="true"], [data-on="true"], [data-on="cut"]) { color: var(--accent-bright); }
   .big-toggle:is([aria-pressed="true"], [data-on="true"]) rect { fill: currentColor; }
+  /* The main screen cut off: an orange dashed screen, no fill (no ring or border). */
+  .screen[data-on="cut"] rect { stroke-dasharray: 3 2.5; stroke-linecap: butt; }
   @media (hover: hover) and (pointer: fine) {
     .big-toggle:hover { color: var(--text); background: var(--chip-hover); }
-    .big-toggle:is([aria-pressed="true"], [data-on="true"]):hover { color: var(--accent-bright); }
+    .big-toggle:is([aria-pressed="true"], [data-on="true"], [data-on="cut"]):hover { color: var(--accent-bright); }
   }
   /* CamFrame: looking or reconnecting blinks orange (an outline camera);
      connected is a filled orange camera with a calm, steady glow; not found
@@ -603,6 +608,16 @@
     <input class="speed" id="speed" type="range" min="10" max="300" step="10" value="40">
     <label class="range-value"><input class="speed-val" type="number" min="1" max="999" inputmode="numeric" value="40" aria-label="Scroll speed in pixels per second"></label>
   </div>
+  <div class="range-field setting line-height-field">
+    <label for="line-height">Line height</label>
+    <input class="line-height" id="line-height" type="range" min="110" max="200" step="5" value="165">
+    <label class="range-value"><input class="line-height-val" type="number" min="110" max="200" inputmode="numeric" value="165" aria-label="Line height in percent of the text size"><span aria-hidden="true">%</span></label>
+  </div>
+  <div class="range-field setting para-space-field">
+    <label for="para-space">Paragraph spacing</label>
+    <input class="para-space" id="para-space" type="range" min="0" max="200" step="5" value="200">
+    <label class="range-value"><input class="para-space-val" type="number" min="0" max="200" inputmode="numeric" value="200" aria-label="Paragraph spacing in percent of the text size"><span aria-hidden="true">%</span></label>
+  </div>
   <fieldset class="setting width">
     <legend>Width</legend>
     <div class="seg">
@@ -611,12 +626,11 @@
       <label><input type="radio" name="width" value="full">Full</label>
     </div>
   </fieldset>
-  <fieldset class="setting spacing">
-    <legend>Line spacing</legend>
+  <fieldset class="setting layout">
+    <legend>Layout</legend>
     <div class="seg">
-      <label><input type="radio" name="spacing" value="normal">Normal</label>
-      <label><input type="radio" name="spacing" value="roomy">Roomy</label>
-      <label><input type="radio" name="spacing" value="spacious">Spacious</label>
+      <label><input type="radio" name="layout" value="lines">Lines</label>
+      <label><input type="radio" name="layout" value="paragraphs">Paragraphs</label>
     </div>
   </fieldset>
   <div class="pop-sep" role="separator"></div>

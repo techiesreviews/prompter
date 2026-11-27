@@ -10,6 +10,7 @@ export const REACHES = {
   "range-field": either(/^(src\/ui\/(?!.*\.md$)|test\/browser\/range-field\.mjs$)/, RUNNER),
   page: either(/^(src\/(?!.*\.md$)|fonts\/|scripts\/build\.mjs$|wrangler\.jsonc$|test\/browser\/page\.mjs$)/, RUNNER),
   "reading-wrap": either(/^(src\/(page\.html|app\.js|core\.mjs|settings\.mjs)$|fonts\/|scripts\/build\.mjs$|test\/browser\/reading-wrap\.mjs$)/, RUNNER),
+  paragraphs: either(/^(src\/(page\.html|app\.js|core\.mjs|settings\.mjs|reading-line\.mjs)$|fonts\/|scripts\/build\.mjs$|test\/browser\/paragraphs\.mjs$)/, RUNNER),
   "*": either(/^(src\/(?!.*\.md$)|test\/browser\/)/, RUNNER),
 };
 

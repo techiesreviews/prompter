@@ -45,12 +45,8 @@ const inGamut = (t) => {
 const PAIRS = [
   ["text", "bg", "active spoken lines"],
   ["text-now", "bg", "the line Follow my voice is on"],
-  ["upcoming", "bg", "the lines after it while Follow my voice is on"],
-  ["dim", "bg", "lines and titles of the other sections, their Now: label and links"],
-  ["muted", "bg", "reminders, the active section's link row and link markers"],
-  ["next", "bg", "active Next: lines"],
-  ["next-dim", "bg", "other sections' Next: lines"],
-  ["accent", "bg", "active Now: label"],
+  ["muted", "bg", "reminders, camera cues, the link row and link markers"],
+  ["accent", "bg", "the active section's dot, bullet dots (graphic)", 3],
   ["accent", "link-tint", "hovered links"],
   ["text", "panel", "start screen, control bar, popovers, notices, dialogs"],
   ["muted", "panel", "start screen notes, setting values, status, idle clock, QL label"],
@@ -62,8 +58,7 @@ const PAIRS = [
   ["bg", "ok", "a talking point's cue pill"],
   ["bg", "next", "an audience question's cue pill"],
   ["bg", "accent", "a steer-back cue pill"],
-  ["ql", "panel", "active QL box"],
-  ["ql-dim", "panel", "other sections' QL box"],
+  ["ql", "panel", "the QL box"],
   ["text", "panel-2", "hovered menu items"],
   ["muted", "panel-2", "code on raised surfaces"],
   ["text", "chip", "buttons, chosen width, tooltips"],
@@ -93,21 +88,15 @@ test("page uses the indigo night colour and every text colour meets WCAG AA on i
   if (process.env.CONTRAST_REPORT) console.log(report.join("\n"));
 });
 
-// The active Now: label is orange; the other sections use --dim (a grey indigo),
-// so they differ by hue as well as by the rest of the line.
-test("the active section stays clearly brighter than the rest", () => {
-  for (const [on, off] of [["text", "dim"], ["ql", "ql-dim"], ["next", "next-dim"]]) {
-    assert.ok(luminance(tokens[on]) / luminance(tokens[off]) >= 1.4, `--${on} vs --${off}`);
-  }
-  assert.ok(luminance(tokens.text) / luminance(tokens.dim) >= 3, "spoken lines: active vs other sections");
-});
-
-// Follow my voice: the line being read stands out from the lines after it,
-// which stay brighter than the other sections.
-test("the line Follow my voice is on is the brightest; the lines after it dimmer, above the other sections", () => {
-  assert.equal(luminance(tokens["text-now"]), 1, "pure white");
-  assert.ok(luminance(tokens["text-now"]) / luminance(tokens.upcoming) >= 1.6, "the lines after it are clearly dimmer");
-  assert.ok(luminance(tokens.upcoming) / luminance(tokens.dim) >= 1.6, "and still brighter than other sections");
+// Lex, 2026-11-27 (TOOLS-486): everything still to be read is white, in every section
+// and after the line Follow my voice is on; only read text (above the reading line) fades.
+// So the dimmer colours for other sections and for the lines to come are gone.
+test("text still to be read is white everywhere: no dimmer colour for other sections or lines to come", () => {
+  for (const gone of ["upcoming", "next-dim", "ql-dim"]) assert.equal(tokens[gone], undefined, `--${gone} is back`);
+  assert.equal(luminance(tokens["text-now"]), 1, "the line Follow my voice is on: pure white");
+  assert.ok(luminance(tokens.text) >= 0.9, "the other lines: white too");
+  assert.doesNotMatch(css, /\.section\s*\{[^}]*--c-say:\s*var\(--dim\)/, "other sections are not dimmed");
+  assert.ok(luminance(tokens.text) / luminance(tokens.muted) >= 1.6, "reminders and cues stay clearly dimmer than the words");
 });
 
 // The one deliberate exception to AA (AGENTS.md): text above the reading line

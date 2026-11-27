@@ -53,7 +53,7 @@ const continueTitle = $(".continue-title");
 const continueSaved = $(".continue-saved");
 const saveNote = $(".save-note");
 const widthInputs = document.querySelectorAll('input[name="width"]');
-const spacingInputs = document.querySelectorAll('input[name="spacing"]');
+const layoutInputs = document.querySelectorAll('input[name="layout"]');
 const toastEl = $(".toast");
 const toastText = $(".toast-text");
 const camframeBtn = $(".big-toggle.camframe"); // in Settings
@@ -74,6 +74,7 @@ const store = {
 };
 // The settings (SETTINGS in src/settings.mjs): read and saved through their one table.
 const prefs = settingsStore(store, { phone: window.innerWidth < 640 });
+RETIRED.forEach((k) => store.del(k)); // a retired setting's old choice is not left behind on the device
 
 // The open script's own state (openScripts in src/open-script.mjs): its text and save date, sections, the
 // section and link at the reading line, the voice's place, the cues. Made fresh on each open, so nothing
@@ -234,24 +235,22 @@ async function route() {
 }
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const SPOKEN = new Set(["say", "bullet", "next", "now"]);
 const OPENS_AT_LINE = "opens on the main screen when it reaches the reading line";
 // Links stay quiet: a small row at the top of the section, a small marker for
 // a link on its own line mid-section, and words with a faint underline for a
 // link inside a line. The address is only in the tooltip.
 const ARROW = `<span class="arrow" aria-hidden="true">↗</span>`;
 const hostLabel = (l) => esc(hostOf(l.url) || l.url);
-const mark = (l, i, j) =>
-  `<button class="mark" type="button" data-s="${i}" data-l="${j}" title="${hostLabel(l)} · ${OPENS_AT_LINE}">${ARROW}<span>${esc(l.label)}</span></button>`;
+const mark = (l, i, j, space = "") =>
+  `<button class="mark blk${space}" type="button" data-s="${i}" data-l="${j}" title="${hostLabel(l)} · ${OPENS_AT_LINE}">${ARROW}<span>${esc(l.label)}</span></button>`;
 const textLink = (l, i, j) =>
   `<a class="inlink" href="${esc(l.url)}" rel="noopener noreferrer" data-s="${i}" data-l="${j}" title="${hostLabel(l)} · ${OPENS_AT_LINE}">${esc(l.label)}</a>`;
 
-/** A line's text: a Next:/Now: label in bold, links written inside it in place. */
+/** A line's text, plain (also a Next:/Now: line), with links written inside it in place. */
 function lineHtml(it, i) {
   const t = it.text;
-  const bold = it.type === "next" || it.type === "now" ? (t.match(/^[^:]{1,12}:/)?.[0].length ?? 0) : 0;
-  let html = bold ? `<b>${esc(t.slice(0, bold))}</b>` : "";
-  let at = bold;
+  let html = "";
+  let at = 0;
   for (const span of it.spans || []) {
     html += esc(t.slice(at, span.from)) + textLink(scripts.now.sections[i].links[span.l], i, span.l);
     at = span.to;
@@ -262,9 +261,39 @@ function lineHtml(it, i) {
 // A camera cue line, whether or not the CamFrame link is on: a camera mark and
 // what the camera will do, then the line's other words ("Share screen.").
 const CAMERA_ICON = `<svg class="cue-icon" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="6" width="13" height="12" rx="2"/><path d="m15.5 10.5 6-3.5v10l-6-3.5"/></svg>`;
-function cueHtml(it) {
+function cueHtml(it, space) {
   const rest = cueRest(it.text);
-  return `<p class="note cue" data-cue="${scripts.now.cues.push(it.cue) - 1}">${CAMERA_ICON}<span class="cue-what">Camera: ${esc(cueWords(it.cue))}</span>${rest ? `<span class="cue-rest"> · ${esc(rest)}</span>` : ""}</p>`;
+  return `<p class="note cue blk${space}" data-cue="${scripts.now.cues.push(it.cue) - 1}">${CAMERA_ICON}<span class="cue-what">Camera: ${esc(cueWords(it.cue))}</span>${rest ? `<span class="cue-rest"> · ${esc(rest)}</span>` : ""}</p>`;
+}
+
+// The script reads in paragraphs: lines that follow each other are one. In the Lines layout a
+// row ends after a comma, a full stop or the like, never in the middle of a sentence (lineJoins);
+// in the Paragraphs layout the rows flow together (CSS). Each script line keeps its own place
+// (data-k) for Follow my voice.
+const PARA = new Set(["say", "next", "now"]);
+
+/**
+ * A section's items as blocks: a paragraph (lines that follow each other), a run of points, a
+ * reminder or cue, a link line. `space` is the room before it: " brk" a new paragraph (after a
+ * blank line or points, or a reminder, cue or link line after spoken words), " half" points
+ * under the sentence leading into them (its `lead`), "" a quarter of the text size, as a
+ * reminder, cue or link line heads what follows it.
+ */
+function blocksOf(items) {
+  const blocks = [];
+  let gap = false;
+  for (const it of items) {
+    if (it.type === "gap") { gap = true; continue; }
+    const kind = PARA.has(it.type) ? "para" : it.type === "bullet" ? "points" : it.type === "mark" ? "mark" : "note";
+    const prev = blocks.at(-1);
+    if (prev?.kind === kind && !gap && (kind === "para" || kind === "points")) { prev.items.push(it); continue; }
+    let space = "";
+    if (prev && kind === "points" && prev.kind === "para") { space = " half"; prev.lead = true; }
+    else if (prev && (gap || prev.kind === "points" || (kind !== "para" && prev.kind === "para"))) space = " brk";
+    blocks.push({ kind, items: [it], space });
+    gap = false;
+  }
+  return blocks;
 }
 
 /** Draws the script just opened, once: its state (scripts.now) is fresh, and gets its spoken lines and cues here. */
@@ -283,14 +312,25 @@ function render() {
     const marksAt = (n) => s.links.flatMap((l, j) => (l.inline && !l.inText && l.at === n ? [{ type: "mark", l, j }] : []));
     const rest = s.items.flatMap((it, n) => [...marksAt(n), it]).concat(marksAt(s.items.length))
       .filter((it) => it.type !== "ql");
-    while (rest[0]?.type === "gap") rest.shift();
-    while (rest.at(-1)?.type === "gap") rest.pop();
-    const items = rest.map((it) => {
-      if (it.type === "gap") return `<div class="gap"></div>`;
-      if (it.type === "mark") return mark(it.l, i, it.j);
-      if (it.cue) return cueHtml(it);
-      const k = SPOKEN.has(it.type) ? ` data-k="${voiceLines.push(speechWords(it.text)) - 1}"` : "";
-      return `<p class="${it.type}"${k}>${SPOKEN.has(it.type) ? lineHtml(it, i) : esc(it.text)}</p>`;
+    // Drawn in page order, so the spoken lines (data-k) and cues are numbered top to bottom.
+    const unit = (it, cls) => `<span class="${cls}" data-k="${voiceLines.push(speechWords(it.text)) - 1}">${lineHtml(it, i)}</span>`;
+    // The paragraph's last row leads into points under it (`lead`): only the lines on that row are bold.
+    const rows = (its, lead) => {
+      const joins = lineJoins(its.map((it) => it.text));
+      const lastRow = lead ? joins.findLastIndex((j) => j.row) + 1 : its.length; // its first line
+      const html = its.map((it, n) => {
+        const j = joins[n];
+        const after = !j ? "" : j.row ? `</span>${j.space}<span class="row">` : j.space;
+        return unit(it, n >= lastRow ? `${it.type} lead` : it.type) + after;
+      });
+      return `<span class="row">${html.join("")}</span>`;
+    };
+    const items = blocksOf(rest).map(({ kind, items: its, space, lead }) => {
+      const it = its[0];
+      if (kind === "mark") return mark(it.l, i, it.j, space);
+      if (kind === "note") return it.cue ? cueHtml(it, space) : `<p class="note blk${space}">${esc(it.text)}</p>`;
+      if (kind === "points") return `<div class="points blk${space}">${its.map((b) => `<p class="bullet">${unit(b, "point")}</p>`).join("")}</div>`;
+      return `<p class="para blk${space}">${rows(its, lead)}</p>`;
     }).join("");
     return `<section class="section" data-i="${i}"><h2 class="title"><span>${esc(s.title)}</span><span class="time">${esc(s.time)}</span></h2>${links}${qls}${items}</section>`;
   }).join("");
@@ -658,7 +698,16 @@ const reading = readingLine({
   frame: requestAnimationFrame,
   onLook(at, { voice }) {
     updateActive(at);
-    if (voice && voiceOn && !voiceScrolling) voiceFromReadingLine(at.line);
+    if (voice && voiceOn && !voiceScrolling) voiceFromReadingLine(at);
+  },
+  // The row, not just the letters: lines sharing a row count as on it in the room above and under the letters too.
+  rowTop(el) {
+    const first = rowBoxes(el)[0];
+    return first ? first.top : el.getBoundingClientRect().top;
+  },
+  rowBottom(el) {
+    const last = rowBoxes(el).at(-1);
+    return last ? last.top + last.height : el.getBoundingClientRect().bottom;
   },
 });
 let lineDrag = null; // { id, offset, from, start, slop, moved } while a pointer drags the handle
@@ -743,11 +792,11 @@ handle.addEventListener("keydown", (e) => {
   moveLine(e.key === "Home" ? LINE.min : e.key === "End" ? LINE.max : (pct + LINE_STEPS[e.key]) / 100, true);
 });
 
-/** The place under the reading line moved (the line, a section jump, line spacing): all that follows it, from one look. */
+/** The place under the reading line moved (the line, a section jump, line height, paragraph spacing, layout): all that follows it, from one look. */
 function followLine() {
   const at = reading.look();
   updateActive(at); // the page may not have scrolled (at the top), so no scroll event will do it
-  if (voiceOn) voiceFromReadingLine(at.line);
+  if (voiceOn) voiceFromReadingLine(at);
 }
 
 function updateActive(look = reading.look()) {
@@ -814,18 +863,45 @@ function drawCamframe() {
 
 function connected() { return mainWin && !mainWin.closed; }
 
-// The main screen's button in Settings (orange while connected); the Settings button shows a dot then.
+// The main screen's button in Settings: orange while connected, an orange dashed screen once its
+// window is gone (closed, or cut off by its page: "cut"); the Settings button shows a dot then.
+const SCREEN_SAYS = { true: "Main screen connected, reconnect", false: "Connect main screen", cut: "Main screen cut off, reconnect" };
+const SCREEN_CUT_HELP = ". Its window was closed, or the page in it cut it off from the Prompter (some sites do, such as the Dutch Data Protection Authority). A window that was cut off still shows its page: close it when you are done. Reconnect opens a new main screen for the next pages.";
 function setConnected(on) {
   connectBtn.dataset.on = String(on);
-  const name = on ? "Main screen connected, reconnect" : "Connect main screen";
+  const name = SCREEN_SAYS[on];
   connectBtn.setAttribute("aria-label", name);
-  connectBtn.title = name;
+  connectBtn.title = on === "cut" ? name + SCREEN_CUT_HELP : name;
   updateSettingsBtn();
 }
 
-// A dot on the Settings button, and its name, while Follow my voice is on or a main screen is connected.
+// A page can cut the main screen off as it loads (Cross-Origin-Opener-Policy: same-origin, as the
+// Dutch Data Protection Authority's pages send): its window stays open and shows it, but the browser
+// no longer lets the Prompter reach that window, which looks closed from here, and no script can get
+// it back. From here that looks the same as a window someone closed, so both say "cut off" on the
+// button, with no alert and no window opening by itself (it could land on the Prompter's own screen,
+// over the script). Closed this soon after a page was sent, that page may be what cut it off:
+// nothing sends it again by itself until another page is sent; its link button still does.
+const CUT_MS = 30000;
+let sent = { url: "", site: "", at: 0 }; // the last page sent to the main screen: its address, the link's site, when
+let skip = { url: "", site: "" }; // a page held back
+let screenWatch = 0;
+function watchScreen() {
+  clearInterval(screenWatch);
+  screenWatch = setInterval(() => { if (!connected()) screenGone(); }, 500);
+}
+function screenGone() {
+  clearInterval(screenWatch);
+  mainWin = null;
+  if (Date.now() - sent.at < CUT_MS) skip = { url: sent.url, site: sent.site };
+  setConnected("cut");
+  setStatus("The main screen was cut off. Reconnect it in Settings.");
+}
+
+// A dot on the Settings button, and its name, while Follow my voice is on, a main screen is connected
+// or cut off, or CamFrame is connected.
 function updateSettingsBtn() {
-  const on = [voiceOn && "Follow my voice on", connectBtn.dataset.on === "true" && "main screen connected", camframe.on && camframe.state === "on" && "CamFrame connected"].filter(Boolean);
+  const on = [voiceOn && "Follow my voice on", connectBtn.dataset.on === "true" && "main screen connected", connectBtn.dataset.on === "cut" && "main screen cut off", camframe.on && camframe.state === "on" && "CamFrame connected"].filter(Boolean);
   if (on.length) settingsBtn.dataset.dot = "on"; else delete settingsBtn.dataset.dot;
   const label = ["Settings", ...on].join(" · ");
   settingsBtn.setAttribute("aria-label", label);
@@ -833,21 +909,26 @@ function updateSettingsBtn() {
 }
 
 function connect() {
+  if (connectBtn.dataset.on === "true" && !connected()) screenGone(); // before the watch saw it
   mainWin = window.open("", WINDOW_NAME, "popup=yes,width=1400,height=900");
   if (!mainWin) { blocked(); return; }
   try {
     if (mainWin.location.href === "about:blank") {
       mainWin.document.title = "Main screen";
-      mainWin.document.body.style.cssText = "margin:0;display:grid;place-items:center;height:100vh;background:#000;color:#f4f1ea;font:600 32px system-ui;text-align:center;padding:0 5vw";
-      mainWin.document.body.textContent = "Drag this window to your main screen and make it full size. Pages will open here.";
+      mainWin.document.body.style.cssText = "margin:0;box-sizing:border-box;display:grid;place-items:center;height:100vh;background:#000;color:#f4f1ea;font:600 32px system-ui;text-align:center;padding:0 5vw;overflow-wrap:anywhere";
+      mainWin.document.body.textContent = "Drag this window to your main screen and make it full size. Pages will open here."
+        + (skip.url ? ` The last page (${skip.site}) was not sent again, as it may cut this window off too: its link button opens it anyway.` : "");
     }
   } catch { /* already showing another site; fine */ }
   setConnected(true);
   setStatus("");
   hideHint();
+  watchScreen();
   const { anchor } = scripts.now;
   scripts.now.shownUrl = "";
+  markShown();
   if (anchor) showLink(anchor.s, anchor.l, false);
+  if (skip.url && !scripts.now.shownUrl) setStatus(`Main screen connected. The last page (${skip.site}) was not sent again: its link button opens it.`);
 }
 
 // YouTube watch pages cut the link between the prompter and its window (their
@@ -873,25 +954,33 @@ function showLink(si, li, fromUser) {
   if (!s || !s.links[li]) return;
   const url = screenUrl(s.links[li].url);
   if (!connected()) {
-    const wasConnected = connectBtn.dataset.on === "true";
-    setConnected(false);
+    if (connectBtn.dataset.on === "true") screenGone(); // before the watch saw it
     if (!fromUser) {
-      if (wasConnected) lost();
-      else showHint(s.links[li].label);
+      if (connectBtn.dataset.on === "false") showHint(s.links[li].label); // cut off: the button already says reconnect
       return;
     }
     mainWin = window.open(url, WINDOW_NAME, "popup=yes,width=1400,height=900");
     if (!mainWin) { blocked(); return; }
     setConnected(true);
+    watchScreen();
   }
+  if (!fromUser && url === skip.url) return; // held back: it may cut this window off too; its link button still sends it
   if (url !== script.shownUrl || fromUser) {
     try { mainWin.location.href = url; } catch { mainWin = window.open(url, WINDOW_NAME); }
     script.shownUrl = url;
+    sent = { url, site: hostOf(s.links[li].url), at: Date.now() };
+    skip = { url: "", site: "" };
   }
+  markShown();
+  setStatus(`On main screen: ${s.links[li].label}`);
+}
+
+// The link buttons for the page the main screen shows are marked.
+function markShown() {
+  const script = scripts.now;
   main.querySelectorAll(".link, .mark, .inlink").forEach((b) => {
     b.dataset.shown = String(screenUrl(script.sections[b.dataset.s].links[b.dataset.l].url) === script.shownUrl);
   });
-  setStatus(`On main screen: ${s.links[li].label}`);
 }
 
 // Status messages are for screen readers only (the line is visually hidden); errors use showAlert.
@@ -937,7 +1026,6 @@ function hideHint() {
   delete settingsBtn.dataset.hint;
 }
 
-function lost() { showAlert("Main screen window lost. Connect it again in Settings, or click a link button."); }
 function blocked() { showAlert("No window could open. Allow pop-ups for this page."); }
 
 const fmt = (sec) => `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`;
@@ -1026,30 +1114,88 @@ function setWidth(name) {
   widthInputs.forEach((input) => { input.checked = input.value === w; });
 }
 
-// Line spacing: more room between the lines; the row at the reading line stays there.
+// The rows an element of the script sits on, top to bottom. A line inside a paragraph is an inline
+// span: its boxes are as tall as the letters, while its row is as tall as the line height (the
+// letters centred in it); a block is its own row.
+function rowBoxes(el) {
+  const lh = getComputedStyle(el).display === "inline" ? parseFloat(getComputedStyle(el).lineHeight) : NaN;
+  return [...el.getClientRects()].map((f) => {
+    if (!(lh > 0)) return { top: f.top, height: f.height, letters: f.top, spill: 0 };
+    // Where the letters are taller than the row, they reach into the rows next to it.
+    return { top: f.top + (f.height - lh) / 2, height: lh, letters: f.top, spill: Math.max(0, (f.height - lh) / 2) };
+  });
+}
+
+// Line height, paragraph spacing and layout: the row at the reading line stays there.
 // Only while Follow my voice's own move is in progress (until its scrollend, the reader's wheel or touch, or 2 s if none comes)
 // does the line being read go to the reading line instead.
-function setSpacing(name) {
-  const v = settingValue("spacing", name);
+function keepPlace(change) {
   // With no voice move in progress, keep what is under the reading line, as with Follow my voice off.
   const y = reading.y;
-  const cur = voiceOn && voiceScrolling ? main.querySelector("p.cur") : null;
-  const lines = [...main.querySelectorAll("p, .mark, .links")];
+  const cur = voiceOn && voiceScrolling ? main.querySelector(".cur") : null;
+  const lines = [...main.querySelectorAll("[data-k], p:not(.para, .bullet), .mark, .links")];
+  // Several lines can share the row at the reading line: with Follow my voice on, keep the one
+  // being read when it is on that row.
+  const read = voiceOn ? main.querySelector(".cur") : null;
+  const onRow = read && rowBoxes(read).some((r) => r.top <= y && r.top + r.height > y) ? read : null;
   // Below the last line (the page scrolls into the bottom padding): hold the last line's distance.
-  const keep = cur || lines.find((p) => p.getBoundingClientRect().bottom > y) || lines.at(-1);
-  // Where the reading line falls on that line: inside it, a share of its height (its rows grow too);
-  // above it (a heading, a link row or a gap, which do not grow), the same distance in pixels.
-  const kr = keep?.getBoundingClientRect();
-  const dist = kr ? y - kr.top : 0;
-  const inside = kr && kr.height > 0 && dist >= 0 && dist <= kr.height;
-  const frac = inside ? dist / kr.height : 0;
-  root.dataset.spacing = v;
-  spacingInputs.forEach((input) => { input.checked = input.value === v; });
-  prefs.save("spacing", v); // nothing is stored until the default is left
+  const keep = cur || onRow || lines.find((el) => el.getBoundingClientRect().bottom > y) || lines.at(-1);
+  if (!keep) { change(); followLine(); return; }
+  // The row of that line at the reading line (a line in a paragraph may wrap, or share a row with
+  // others): inside it, a share of its height (rows grow too); above it (a heading, a link row or the
+  // room between paragraphs), the same distance in pixels to its letters.
+  const top = () => keep.getBoundingClientRect().top;
+  const rowsOf = () => rowBoxes(keep);
+  const none = () => ({ top: top(), height: 0, letters: top(), spill: 0 });
+  const before = rowsOf();
+  const n = Math.max(0, before.findIndex((r) => r.top + r.height > y));
+  const row = before[n] ?? none();
+  const inside = row.height > 0 && y >= row.top && y <= row.top + row.height;
+  const frac = inside ? (y - row.top) / row.height : 0;
+  const fromLetters = y - row.letters;
+  change();
   // (The voice path scrolls at once, not smoothly: this is a settings change, not a move on.)
   if (cur) reading.bring(cur);
-  else if (keep) reading.bring(keep, { at: inside ? frac * keep.getBoundingClientRect().height : dist });
+  else {
+    const after = rowsOf();
+    const r = after[Math.min(n, after.length - 1)] ?? none();
+    // Inside the row: the same share of it, kept clear of the letters of the rows next to it.
+    const at = inside
+      ? r.top + Math.min(Math.max(frac * r.height, r.spill + 1), r.height - r.spill - 1)
+      : r.letters + fromLetters;
+    reading.bring(keep, { at: at - top() });
+  }
   followLine();
+}
+
+const showLineHeight = rangeField($(".line-height-field"), (v) => setLineHeight(v));
+const showParaSpace = rangeField($(".para-space-field"), (v) => setParaSpace(v));
+
+function setLineHeight(v, keep = true) {
+  const set = () => {
+    v = prefs.save("lineHeight", v); // nothing is stored until the default is left
+    root.style.setProperty("--line-height", String(v / 100));
+    showLineHeight(v);
+  };
+  if (keep) keepPlace(set); else set();
+}
+
+function setParaSpace(v, keep = true) {
+  const set = () => {
+    v = prefs.save("paraSpace", v);
+    root.style.setProperty("--para", String(v / 100));
+    showParaSpace(v);
+  };
+  if (keep) keepPlace(set); else set();
+}
+
+function setLayout(name, keep = true) {
+  const set = () => {
+    const v = prefs.save("layout", name);
+    root.dataset.layout = v;
+    layoutInputs.forEach((input) => { input.checked = input.value === v; });
+  };
+  if (keep) keepPlace(set); else set();
 }
 
 function goSection(delta) {
@@ -1064,19 +1210,19 @@ function goSection(delta) {
 // the audio to Google for that, unless it can do it on this device); the
 // script itself never leaves the page.
 // Scrolled by hand, a section jump or the line moved: follow on from the line
-// at the reading line (`k`, from the look), marked there without scrolling. Still on
-// the followed line, the place in it is kept.
-function voiceFromReadingLine(k) {
-  scripts.now.voice = voiceAt(scripts.now.voice, k);
-  markLine(k, false);
+// at the reading line (from the look `at`), marked there without scrolling. Still on
+// the followed line, or on another line of its row, the place in it is kept.
+function voiceFromReadingLine(at) {
+  scripts.now.voice = voiceAt(scripts.now.voice, at.line, at.lastLine);
+  markLine(at.line < 0 ? -1 : scripts.now.voice.follow.line, false); // above the first line: none marked yet
 }
 
-// The line being read is bright; the lines after it a little dimmer (CSS).
+// The line being read is pure white (CSS); the lines after it stay white.
 // The prompter's own scroll is over at its "scrollend", the reader's wheel or touch, or after 2 s if none comes.
 let voiceScrolling = false;
 let voiceScrollTimer = 0;
 function markLine(k, scroll = true) {
-  main.querySelector("p.cur")?.classList.remove("cur");
+  main.querySelector(".cur")?.classList.remove("cur");
   const el = main.querySelector(`[data-k="${k}"]`);
   if (!el) return;
   el.classList.add("cur");
@@ -1148,7 +1294,7 @@ function stopVoice(message = "") {
   voiceKeeper?.stop();
   hideToast();
   setVoiceButton();
-  main.querySelector("p.cur")?.classList.remove("cur");
+  main.querySelector(".cur")?.classList.remove("cur");
   if (message) showAlert(message);
   if (resumeAuto) {
     resumeAuto = false;
@@ -1168,7 +1314,7 @@ function onVoiceResult(e) {
   const results = voiceUnheld(heard, voiceHold);
   const { voice, line, link } = voiceStep(script.voiceLines, script.voice, results, { links: voiceLinkCandidates(), shownUrl: script.shownUrl });
   script.voice = voice;
-  const cur = main.querySelector("p.cur");
+  const cur = main.querySelector(".cur");
   if (line >= 0 && (!cur || Number(cur.dataset.k) !== line)) markLine(line);
   if (!link) return;
   scripts.unsettle();
@@ -1407,7 +1553,7 @@ voiceBtn.addEventListener("click", toggleVoice);
 $(".prev").addEventListener("click", () => goSection(-1));
 $(".next").addEventListener("click", () => goSection(1));
 widthInputs.forEach((input) => input.addEventListener("change", () => setWidth(input.value)));
-spacingInputs.forEach((input) => input.addEventListener("change", () => setSpacing(input.value)));
+layoutInputs.forEach((input) => input.addEventListener("change", () => setLayout(input.value)));
 camframeBtn.addEventListener("click", () => setCamframeOn(!camframe.on));
 $("#settings").addEventListener("toggle", (e) => { if (e.newState === "open") camframe.check(); });
 main.addEventListener("click", (e) => {
@@ -1493,6 +1639,8 @@ setLine(prefs.read("line"));
 setSpeed(speed);
 setSize(prefs.read("size"));
 setWidth(prefs.read("width"));
-setSpacing(prefs.read("spacing"));
+setLineHeight(prefs.read("lineHeight"), false);
+setParaSpace(prefs.read("paraSpace"), false);
+setLayout(prefs.read("layout"), false);
 camframe.turn(prefs.read("camframe"));
 route();
