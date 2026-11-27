@@ -832,11 +832,10 @@ function setConnected(on) {
 // it back. From here that looks the same as a window someone closed, so both say "cut off" on the
 // button, with no alert and no window opening by itself (it could land on the Prompter's own screen,
 // over the script). Closed this soon after a page was sent, that page may be what cut it off:
-// Reconnect does not send it again until another page is sent.
+// nothing sends it again by itself until another page is sent; its link button still does.
 const CUT_MS = 30000;
-let sentUrl = "";
-let sentAt = 0;
-let skipUrl = "";
+let sent = { url: "", site: "", at: 0 }; // the last page sent to the main screen: its address, the link's site, when
+let skip = { url: "", site: "" }; // a page held back
 let screenWatch = 0;
 function watchScreen() {
   clearInterval(screenWatch);
@@ -845,7 +844,7 @@ function watchScreen() {
 function screenGone() {
   clearInterval(screenWatch);
   mainWin = null;
-  if (Date.now() - sentAt < CUT_MS) skipUrl = sentUrl;
+  if (Date.now() - sent.at < CUT_MS) skip = { url: sent.url, site: sent.site };
   setConnected("cut");
   setStatus("The main screen was cut off. Reconnect it in Settings.");
 }
@@ -867,20 +866,20 @@ function connect() {
   try {
     if (mainWin.location.href === "about:blank") {
       mainWin.document.title = "Main screen";
-      mainWin.document.body.style.cssText = "margin:0;display:grid;place-items:center;height:100vh;background:#000;color:#f4f1ea;font:600 32px system-ui;text-align:center;padding:0 5vw";
+      mainWin.document.body.style.cssText = "margin:0;box-sizing:border-box;display:grid;place-items:center;height:100vh;background:#000;color:#f4f1ea;font:600 32px system-ui;text-align:center;padding:0 5vw;overflow-wrap:anywhere";
       mainWin.document.body.textContent = "Drag this window to your main screen and make it full size. Pages will open here."
-        + (skipUrl ? ` The last page (${hostOf(skipUrl)}) was not sent again, as it may cut this window off too: its link button opens it anyway.` : "");
+        + (skip.url ? ` The last page (${skip.site}) was not sent again, as it may cut this window off too: its link button opens it anyway.` : "");
     }
   } catch { /* already showing another site; fine */ }
   setConnected(true);
   setStatus("");
   hideHint();
-  sentAt = 0;
   watchScreen();
   const { anchor } = scripts.now;
   scripts.now.shownUrl = "";
   markShown();
   if (anchor) showLink(anchor.s, anchor.l, false);
+  if (skip.url && !scripts.now.shownUrl) setStatus(`Main screen connected. The last page (${skip.site}) was not sent again: its link button opens it.`);
 }
 
 // YouTube watch pages cut the link between the prompter and its window (their
@@ -916,11 +915,12 @@ function showLink(si, li, fromUser) {
     setConnected(true);
     watchScreen();
   }
-  if (!fromUser && url === skipUrl) return; // held back: it may cut this window off too; its link button still sends it
+  if (!fromUser && url === skip.url) return; // held back: it may cut this window off too; its link button still sends it
   if (url !== script.shownUrl || fromUser) {
     try { mainWin.location.href = url; } catch { mainWin = window.open(url, WINDOW_NAME); }
     script.shownUrl = url;
-    [sentUrl, sentAt, skipUrl] = [url, Date.now(), ""];
+    sent = { url, site: hostOf(s.links[li].url), at: Date.now() };
+    skip = { url: "", site: "" };
   }
   markShown();
   setStatus(`On main screen: ${s.links[li].label}`);

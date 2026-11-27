@@ -2465,7 +2465,19 @@ export async function run({ browser, base, mode, dist, out }) {
   await CW.waitForTimeout(1200);
   assert.deepEqual([thirdWin.url(), (await screenOf(CW))[0], cutCtx.pages().length], ["about:blank", "true", 4], "the new window waits with its drag-me message, after a second Reconnect too");
   assert.match(await thirdWin.locator("body").textContent(), /Drag this window to your main screen.*The last page \(localhost\) was not sent again.*its link button opens it anyway/);
-  assert.deepEqual([await CW.locator('[data-shown="true"]').count(), await CW.locator(".status").textContent()], [0, ""], "no link marked as showing, nothing said about the main screen");
+  assert.equal(await CW.locator('[data-shown="true"]').count(), 0, "no link marked as showing");
+  assert.match(await CW.locator(".status").textContent(), /^Main screen connected\. The last page \(localhost\) was not sent again: its link button opens it\.$/, "read out once");
+  // A long site name in a narrow window (a phone, or 200% zoom) wraps: no sideways scrolling.
+  for (const width of [390, 195]) {
+    await thirdWin.setViewportSize({ width, height: 800 });
+    assert.equal(await thirdWin.evaluate(() => {
+      const before = document.body.textContent;
+      document.body.textContent = before.replace("localhost", "autoriteitpersoonsgegevens.nl");
+      const fits = document.documentElement.scrollWidth <= innerWidth;
+      document.body.textContent = before;
+      return fits;
+    }), true, `the waiting window's note fits ${width}px`);
+  }
   await scrollToSection(CW, 2);
   await thirdWin.waitForURL(`${site}/after`);
   // Cut off, a link button opens a new main screen with its page; the page that cut it off may go there again.
@@ -2518,6 +2530,23 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.deepEqual([eighthWin.url(), await CW.locator('[data-shown="true"]').count()], ["about:blank", 0], "another script does not send the held-back page by itself");
   await CW.locator(".links .link").first().click();
   await eighthWin.waitForURL(`${site}/plain`);
+  // Reconnect with a script without links in between does not forget when that page was sent.
+  const paste = async (text) => {
+    await (await dock(CW, ".open-btn")).click();
+    await CW.locator('#open-menu [data-action="paste"]').click();
+    await CW.locator(".paste-dialog[open]").waitFor();
+    await CW.locator("#paste-text").fill(text);
+    await CW.locator('[data-action="open-paste"]').click();
+    await CW.locator(".paste-dialog:not([open])").waitFor({ state: "attached" });
+  };
+  await paste("### **NO LINKS · 00:00**\n\nJust words here.\nNothing to show.\n");
+  await viaSettings(CW, ".screen");
+  await eighthWin.close();
+  await cutOff();
+  await paste(`### **OTHER · 00:00**\n\n- Plain again: ${site}/plain\n\nA third script.\nWith the same page.\n`);
+  const ninthWin = await reconnect();
+  await CW.waitForTimeout(1500);
+  assert.deepEqual([ninthWin.url(), await CW.locator('[data-shown="true"]').count()], ["about:blank", 0], "after a Reconnect that sent nothing, the page is still held back");
   await cutCtx.close();
   await new Promise((done) => standIn.close(done));
   ok("a page that cuts the main screen off (Cross-Origin-Opener-Policy, as the Dutch Data Protection Authority's page), or a closed main screen window: the button says cut off (an orange dashed screen, its name and title, a dot on Settings, read out once), no alert, no window opens by itself, also when the next page comes before the Prompter looked and for a slow site; Reconnect or a link button opens a new main screen for the next pages, and Reconnect does not send again a page that may have cut it off");
