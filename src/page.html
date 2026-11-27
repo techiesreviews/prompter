@@ -21,7 +21,7 @@
     --col: 960px;
     --line: 34vh; /* the reading line's distance from the top; app.js sets it in px */
     --col-room: 960px; /* the column's width as a length, for the room beside it */
-    --strip: clamp(200px, calc((100vw - var(--col-room)) / 2 - 32px), 300px); /* Text only's "what happens next" strip on a wide screen: the room beside the column, within limits */
+    --strip: clamp(200px, calc((100% - var(--col-room)) / 2 - 32px), 300px); /* Text only's "what happens next" strip on a wide screen: the room beside the column, within limits */
     --bg: oklch(16% 0.06 282);          /* --color-night, #0b0826 */
     --panel: oklch(24% 0.066 282);      /* raised: night l+0.08, c×1.1 */
     --panel-2: oklch(27% 0.069 282);    /* raised hover: night l+0.11, c×1.15 */
@@ -51,7 +51,7 @@
     --para: 2;
   }
   :root[data-width="narrow"] { --col: 600px; --col-room: 600px; }
-  :root[data-width="full"] { --col: none; --col-room: 100vw; }
+  :root[data-width="full"] { --col: none; --col-room: 100%; }
   /* Rows of one paragraph a quarter of the text size apart; paragraphs by the paragraph spacing. */
   :root { --row-gap: calc(var(--size) * 0.25); --para-space: calc(var(--size) * var(--para)); }
 
@@ -275,7 +275,6 @@
     .next-up-label { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); white-space: nowrap; }
     .next-up .next-list { gap: 2px; }
     .next-up li:nth-child(n+3) { display: none; }
-    :root:has(.ask-pill[data-place="corner"]:not([hidden])) .next-up:not([data-low]) { inset-block-start: calc(64px + env(safe-area-inset-top, 0px)); }
   }
 
   /* Reconnecting to speech: a short note at the right, just above the
@@ -583,7 +582,7 @@
     <div class="line-handle" role="slider" tabindex="0" aria-orientation="vertical" aria-label="Reading line" aria-valuemin="8" aria-valuemax="75" aria-valuenow="34" aria-valuetext="34% from the top"></div>
   </div>
   <main class="script" aria-label="Script"></main>
-  <aside class="next-up" aria-labelledby="next-up-label" hidden><h2 class="next-up-label" id="next-up-label">What happens next</h2><ol class="next-list" tabindex="-1"></ol></aside>
+  <aside class="next-up" aria-labelledby="next-up-label" hidden><h2 class="next-up-label" id="next-up-label">What happens next</h2><ol class="next-list" tabindex="-1" aria-labelledby="next-up-label"></ol></aside>
   <button class="ask-pill" type="button" data-kind="question" hidden><span class="ask-pill-mark" aria-hidden="true"></span><span class="ask-pill-name"></span><span class="ask-more"></span></button>
   <!-- Read out through the status line instead, once. -->
   <p class="toast" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg><span class="toast-text"></span></p>
