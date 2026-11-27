@@ -305,6 +305,10 @@ test("voice at the reading line: a new line starts there, the same line keeps th
   assert.deepEqual(voiceAt(v, 6), { ...v, follow: followStart(6) });
   assert.deepEqual(voiceAt(v, -1).follow, followStart(0), "before the first line counts as the first");
   assert.equal(voiceAt({ ...v, follow: followStart(0) }, -1).follow.line, 0);
+  // Several lines on the row at the reading line (TOOLS-486): the followed one among them stays.
+  assert.equal(voiceAt(v, 3, 5), v, "the followed line shares the row: unchanged");
+  assert.deepEqual(voiceAt(v, 5, 7).follow, followStart(5), "not on that row: the first line on it");
+  assert.deepEqual(voiceAt(v, 1, 3).follow, followStart(1));
 });
 
 test("app.js only feeds results in and draws: the follow decisions live here", () => {

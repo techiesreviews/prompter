@@ -503,6 +503,24 @@ export function parse(md) {
   return out;
 }
 
+// A row of the Lines layout ends after a comma, a full stop or the like, in any script (Latin,
+// Chinese and Japanese, Arabic, Hindi), with any closing quote or bracket after it.
+const ROW_END = /[,.;:!?…。、，；：！？،؛؟।]["'”’»›」』)）\]]*$/;
+// Chinese and Japanese put no space between words.
+const NO_SPACE_END = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}　-〿＀-￯]$/u;
+
+/**
+ * How each spoken line of a paragraph (their texts, in order) joins the next: `row` when a new
+ * row starts after it (it ends after a comma, a full stop or the like; never in the middle of a
+ * sentence), `space` "" after Chinese or Japanese, else " ". One entry fewer than `texts`.
+ */
+export function lineJoins(texts) {
+  return texts.slice(0, -1).map((text) => {
+    const t = text.trim();
+    return { row: ROW_END.test(t), space: NO_SPACE_END.test(t) ? "" : " " };
+  });
+}
+
 /**
  * The link that belongs on the main screen at a reading point: the most recent
  * one above the reading line. `si` is the section at the reading line and
