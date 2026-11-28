@@ -536,11 +536,18 @@ function drawAsk() {
 // dragged too high for that (over text still far off), so it never covers the line being read. On the start screen (a live show set aside) it waits in the top
 // corner, clear of the start card.
 function placePill() {
-  if (askPill.hidden) return placeNext(); // Text only's card may move back up
-  const right = main.getBoundingClientRect().right - parseFloat(getComputedStyle(main).paddingInlineEnd);
-  const room = document.documentElement.clientWidth - right;
-  const above = parseFloat(getComputedStyle(root).getPropertyValue("--line")) - 10 - askPill.offsetHeight;
-  askPill.dataset.place = isEmpty() ? "corner" : room >= askPill.offsetWidth + 16 + 12 ? "line" : above >= 8 ? "above" : "low";
+  const line = parseFloat(getComputedStyle(root).getPropertyValue("--line"));
+  const top = recWrap.hidden ? 8 : recWrap.getBoundingClientRect().bottom + 8; // above the line, never under the record light
+  if (!askPill.hidden) {
+    const right = main.getBoundingClientRect().right - parseFloat(getComputedStyle(main).paddingInlineEnd);
+    const room = document.documentElement.clientWidth - right;
+    const above = line - 10 - askPill.offsetHeight;
+    askPill.dataset.place = isEmpty() ? "corner" : room >= askPill.offsetWidth + 16 + 12 ? "line" : above >= top ? "above" : "low";
+  }
+  // The Reconnecting to speech note sits above the line (and above the pill there); with no room for it
+  // there, under the record light or off the top, it goes low on the right, above the control bar.
+  const lift = askPill.hidden ? 10 : askPill.dataset.place === "above" ? 60 : 34; // as the page's styles lift it
+  toastEl.toggleAttribute("data-low", line - lift - toastEl.offsetHeight < top);
   placeNext(); // the pill's new place can move Text only's card
 }
 new ResizeObserver(placePill).observe(main);
@@ -1054,7 +1061,7 @@ function drawRecord() {
   // The star: once the scene has a take and nothing records.
   const star = recording || taken || (state === "on" && obs.starting) || !scene ? "none" : view.star; // OBS's trouble never keeps the best take from being chosen
   recStar.hidden = star === "none";
-  recStar.setAttribute("aria-pressed", String(star === "on"));
+  recStar.toggleAttribute("data-best", star === "on"); // a plain button, named for what it does: a star is moved, never taken off
   recStar.firstElementChild.textContent = star === "on" ? "★" : "☆";
   if (scene) {
     const starName = star === "on" ? `Take ${view.take} is the best of ${sceneSay(scene)}` : `Make take ${view.take} the best of ${sceneSay(scene)}`;
@@ -1175,7 +1182,7 @@ function takeEnded(name, recorded = true) {
 // one OBS has not begun yet is called off, or stopped once OBS begins it).
 function stopTake() {
   if (obs.starting || (!obs.stopping && ((obs.recording && obs.take) || obs.pending || obs.maybe))) {
-    const mine = takeOf.get(obs.starting || obs.pending);
+    const mine = takeOf.get(obs.starting || obs.pending || obs.maybe);
     if (mine) mine.stop = true; // a take OBS never began is then read out as called off
     obs.stop();
   }
@@ -1582,7 +1589,7 @@ function drawNext() {
 // (their height is --dock-h), and above the cue pill when that went low too.
 new ResizeObserver(() => root.style.setProperty("--dock-h", `${dockWrap.offsetHeight}px`)).observe(dockWrap);
 new ResizeObserver(() => placeNext()).observe(nextUp); // shown, or a row more or less: never a layout on every scroll frame
-new ResizeObserver(() => placeNext()).observe(recWrap); // the record light shown or gone: the card at the top moves under it or back
+new ResizeObserver(placePill).observe(recWrap); // the record light shown, gone or wider: the pill, the speech note and the card at the top keep clear of it
 // On a wide screen the strip hangs under the reading line; when it would run under the control bar it
 // goes above the line if there is more room there, and on a window too short for it either way the rows
 // furthest ahead wait (never the one just done, where Missed and Open show) until there is room.
@@ -1658,6 +1665,7 @@ function showAlert(t) {
 const RECONNECTING = "Reconnecting to speech…";
 function showToast(text) {
   toastText.textContent = text;
+  placePill(); // the note's own height decides whether it fits above the line
   toastEl.dataset.show = "true";
   setStatus(text);
 }

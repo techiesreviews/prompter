@@ -273,6 +273,16 @@ export async function run({ browser, base, mode, out }) {
     await until(page, () => document.querySelector(".big-toggle.obs").dataset.state === "on");
     await tagIs(page, "S1 · T1");
     assert.equal(await page.evaluate(() => localStorage.getItem("prompter-obs-password")), MADE_UP, "kept on this device only");
+    // Typing an R in the password box is a letter of the password, never a take.
+    await settings(page);
+    const startsTyped = obs.requests("StartRecord").length;
+    await page.locator(".obs-password").focus();
+    await page.keyboard.type("r");
+    await page.waitForTimeout(300);
+    assert.equal(obs.requests("StartRecord").length, startsTyped, "an R typed in the password box starts no take");
+    assert.equal(await page.evaluate(() => document.querySelector(".rec-light").dataset.state), "idle");
+    await page.keyboard.press("Backspace");
+    await closeSettings(page);
     ok("OBS with a password: the light says \"OBS password needed\", a click opens Settings at the password box; a wrong one says \"OBS password wrong\" and scrolling goes on; the right one connects");
 
     // Dropped mid-take: the light reconnects by itself and finds OBS still recording.
@@ -848,6 +858,61 @@ export async function run({ browser, base, mode, out }) {
       }
     }
     ok("Text only's strip and the record light never overlap: on a phone (390×844) and a narrow laptop window (1024×768) the card starts below the light while it shows (idle, recording, OBS gone, and the link turned on with the card already showing) and goes back to the top when the link is off; on a wide screen (1366×900) the strip stays beside the text, clear of the light");
+  }
+
+  // A phone held upright with the reading line dragged to the very top (near the camera): the Producer's
+  // cue pill and the Reconnecting to speech note never sit under the record light, so a tap on the pill
+  // opens the cue and never starts or stops a take, and the two texts never run into each other.
+  if (mode === "wrangler") {
+    obs = await startObsStandin({ port: 4455 });
+    const c = await browser.newContext(MOBILE);
+    await c.addInitScript(() => { localStorage.setItem("prompter-obs", "on"); localStorage.setItem("prompter-line", "0.08"); });
+    const q = await c.newPage();
+    watch(q);
+    try {
+      await open(q);
+      const agent = await linkAgent(q);
+      await toSection(q, 1);
+      await tagIs(q, "S1 · T1");
+      // One take recorded, so the star shows beside the light and makes it wider.
+      let at = await q.locator(".rec-light").boundingBox();
+      await q.touchscreen.tap(at.x + at.width / 2, at.y + at.height / 2);
+      await until(q, () => document.querySelector(".rec-light").dataset.state === "recording");
+      at = await q.locator(".rec-light").boundingBox();
+      await q.touchscreen.tap(at.x + at.width / 2, at.y + at.height / 2);
+      await until(q, () => document.querySelector(".rec-light").dataset.state === "idle" && !document.querySelector(".rec-star").hidden);
+      await agent("tools/call", { name: "push_suggestions", arguments: { items: [{ kind: "point", text: "Say where the files end up." }, { kind: "steer", text: "Back to the costs." }] } });
+      await q.locator(".ask-pill").waitFor();
+      // The Reconnecting to speech note, as showToast puts it up, then placed again as on any resize.
+      await q.evaluate(() => {
+        document.querySelector(".toast-text").textContent = "Reconnecting to speech…";
+        document.querySelector(".toast").dataset.show = "true";
+        window.dispatchEvent(new Event("resize"));
+      });
+      await q.waitForTimeout(500); // the note's fade in
+      const meet = await q.evaluate(() => {
+        const box = (el) => { const r = el.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; };
+        const hits = (a, b) => a.top < b.bottom && a.bottom > b.top && a.left < b.right && a.right > b.left;
+        const rec = box(document.querySelector(".rec")), pill = box(document.querySelector(".ask-pill")), note = box(document.querySelector(".toast"));
+        const light = [...document.querySelectorAll(".rec > :not([hidden])")].map(box);
+        const edge = document.elementFromPoint(pill.left + 8, (pill.top + pill.bottom) / 2);
+        return {
+          rec, pill, note, place: document.querySelector(".ask-pill").dataset.place,
+          pillUnder: light.some((l) => hits(l, pill)), noteUnder: light.some((l) => hits(l, note)),
+          edge: edge && (edge.className || edge.tagName), onPill: !!edge?.closest(".ask-pill"),
+          inView: note.top >= 0 && note.bottom <= innerHeight && pill.top >= 0 && pill.bottom <= innerHeight,
+        };
+      });
+      assert.equal(meet.pillUnder, false, `the cue pill is clear of the record light: ${JSON.stringify(meet)}`);
+      assert.ok(meet.onPill, `a tap at the pill's left edge reaches the pill: ${JSON.stringify(meet)}`);
+      assert.equal(meet.noteUnder, false, `the Reconnecting to speech note is clear of the record light: ${JSON.stringify(meet)}`);
+      assert.ok(meet.inView, `both stay on the screen: ${JSON.stringify(meet)}`);
+      await shot(q, "record-light-pill-high-line-mobile");
+      ok("a phone with the reading line at the very top: the Producer's cue pill and the Reconnecting to speech note go low, clear of the record light, so a tap on the pill opens the cue");
+    } finally {
+      await c.close();
+      await obs.stop();
+    }
   }
 
   // The longest cue the Producer may send (300 characters), on a phone held sideways and on a laptop:

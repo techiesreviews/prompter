@@ -11,7 +11,9 @@ export const REACHES = {
   page: either(/^(src\/(?!.*\.md$)|fonts\/|scripts\/build\.mjs$|wrangler\.jsonc$|test\/browser\/page\.mjs$)/, RUNNER),
   "reading-wrap": either(/^(src\/(page\.html|app\.js|core\.mjs|settings\.mjs)$|fonts\/|scripts\/build\.mjs$|test\/browser\/reading-wrap\.mjs$)/, RUNNER),
   paragraphs: either(/^(src\/(page\.html|app\.js|core\.mjs|settings\.mjs|reading-line\.mjs)$|fonts\/|scripts\/build\.mjs$|test\/browser\/paragraphs\.mjs$)/, RUNNER),
-  "record-light": either(/^(src\/(page\.html|app\.js|core\.mjs|obs\.mjs|settings\.mjs)$|scripts\/build\.mjs$|test\/obs-standin\.mjs$|test\/browser\/record-light\.mjs$)/, RUNNER),
+  // The record light, plus what it checks beside the light: Text only's card, the Producer's cue through
+  // /mcp and the relay, the scene at the reading line, and geometry the fonts decide.
+  "record-light": either(/^(src\/(page\.html|app\.js|core\.mjs|obs\.mjs|settings\.mjs|reading-line\.mjs|next-up\.mjs|suggestions\.mjs|wire\.mjs|relay-link\.mjs|worker\.mjs|mcp\.mjs|relay\.mjs|token\.mjs|guard\.mjs|limiter\.mjs)$|fonts\/|scripts\/build\.mjs$|wrangler\.jsonc$|test\/obs-standin\.mjs$|test\/browser\/record-light\.mjs$)/, RUNNER),
   "*": either(/^(src\/(?!.*\.md$)|test\/browser\/)/, RUNNER),
 };
 
