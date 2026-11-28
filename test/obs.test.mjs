@@ -26,14 +26,15 @@ const sleep = (ms) => new Promise((done) => { setTimeout(done, ms); });
 
 function link(obs, { password = "", ...more } = {}) {
   const ended = [];
+  const recorded = []; // per take that ended: whether OBS ever recorded it
   const changes = [];
   const l = obsLink({
     WebSocket, subtle: webcrypto.subtle, url: `ws://127.0.0.1:${obs.port}`, delays: FAST,
-    changed: () => changes.push(l.state), ended: (name) => ended.push(name), ...more,
+    changed: () => changes.push(l.state), ended: (name, took) => { ended.push(name); recorded.push(took); }, ...more,
   });
   links.add(l);
   l.turn(true, password);
-  return { l, ended, changes };
+  return { l, ended, recorded, changes };
 }
 
 // ---------- names ----------
@@ -186,10 +187,11 @@ test("OBS without a password: a take sets the name, records, gives OBS its own n
   assert.equal(obs.record.path, "D:\\Stream\\scenes\\02-what-it-really-costs\\scene-02-what-it-really-costs-take-03.mkv", "OBS records under the scene and take name");
   await until(() => obs.record.format === "%CCYY-%MM-%DD %hh-%mm-%ss");
   assert.ok(l.since > 0, "the timer has a start");
-  // The order OBS was told: read its name, set the take's, record, put its own back.
+  // The order OBS was told: its name read once on connecting (none of ours left there), then read again,
+  // the take's set, record, its own put back.
   const sets = obs.requests("SetProfileParameter").map((d) => d.requestData.parameterValue);
   assert.deepEqual(sets, [name, "%CCYY-%MM-%DD %hh-%mm-%ss"]);
-  assert.deepEqual(obs.requests().map((d) => d.requestType).filter((x) => x !== "GetRecordStatus"), ["GetProfileParameter", "SetProfileParameter", "StartRecord", "SetProfileParameter"]);
+  assert.deepEqual(obs.requests().map((d) => d.requestType).filter((x) => x !== "GetRecordStatus"), ["GetProfileParameter", "GetProfileParameter", "SetProfileParameter", "StartRecord", "SetProfileParameter"]);
   assert.equal(obs.seen.find((m) => m.op === 1).d.eventSubscriptions & 64, 64, "it hears OBS's recording events");
   assert.equal(await l.start(name), false, "a second start while recording does nothing");
   obs.stopLag = 200;
@@ -353,10 +355,27 @@ test("an OBS name left from a take that never finished is not kept as OBS's own"
   l.turn(false);
 });
 
+test("a take's name left in OBS by a tab closed while the take waited goes back once the link connects with nothing of ours waiting", async (t) => {
+  const obs = await startObsStandin();
+  t.after(() => obs.stop());
+  obs.record.format = takeName(sceneOf("3 · Left behind"), 2); // the tab before was closed before OBS began that take
+  const { l } = link(obs);
+  await until(() => l.state === "on");
+  await until(() => obs.record.format === "%CCYY-%MM-%DD %hh-%mm-%ss");
+  // A person's own format is left alone.
+  obs.record.format = "my own %CCYY";
+  l.turn(false);
+  l.turn(true);
+  await until(() => l.state === "on");
+  await sleep(100);
+  assert.equal(obs.record.format, "my own %CCYY");
+  l.turn(false);
+});
+
 test("a start OBS never answers fails in time; the take's name stays while OBS may still begin, and a stop calls the take off", async (t) => {
   const obs = await startObsStandin();
   t.after(() => obs.stop());
-  const { l, ended } = link(obs);
+  const { l, ended, recorded } = link(obs);
   await until(() => l.state === "on");
   obs.answer = (type) => (type === "StartRecord" ? { silent: true } : null);
   const name = takeName(sceneOf("1 · Hook"), 1);
@@ -368,6 +387,7 @@ test("a start OBS never answers fails in time; the take's name stays while OBS m
   assert.equal(await l.stop(), true, "a stop calls the take off");
   await until(() => ended.length === 1 && obs.record.format === "%CCYY-%MM-%DD %hh-%mm-%ss");
   assert.deepEqual([ended, l.maybe, l.recording, l.stopping, l.problem], [[name], "", false, false, ""], "the take is over, and OBS's own name is back");
+  assert.deepEqual(recorded, [false], "OBS recorded nothing: the take is called off, never read out as stopped");
   l.turn(false);
 });
 
@@ -847,7 +867,7 @@ async function unansweredStart(t, title, take, recording) {
   const obs = await startObsStandin();
   t.after(() => obs.stop());
   const began = [];
-  const { l, ended } = link(obs, { delays: { ...FAST, retry: [300, 600] }, began: (name) => began.push(name) });
+  const { l, ended, recorded } = link(obs, { delays: { ...FAST, retry: [300, 600] }, began: (name) => began.push(name) });
   await until(() => l.state === "on");
   obs.answer = (type) => {
     if (type !== "StartRecord") return null;
@@ -859,17 +879,18 @@ async function unansweredStart(t, title, take, recording) {
   assert.equal(await l.start(name), false);
   obs.answer = null;
   assert.deepEqual([l.state, l.recording, l.maybe], ["reconnecting", false, name], "OBS may be recording it: the page is told which take");
-  return { obs, l, ended, began, name };
+  return { obs, l, ended, recorded, began, name };
 }
 
 test("a stop asked after an unanswered start dropped the connection is kept, and stops the take once OBS is back", async (t) => {
-  const { obs, l, ended, began, name } = await unansweredStart(t, "2 · Middle", 6, true);
+  const { obs, l, ended, recorded, began, name } = await unansweredStart(t, "2 · Middle", 6, true);
   assert.equal(await l.stop(), true, "the stop is kept while OBS is out of reach");
   assert.equal(l.stopping, true, "and Stopping shows meanwhile");
   assert.equal(await l.stop(), true, "a second stop sends nothing more");
   await until(() => obs.requests("StopRecord").length === 1);
   await until(() => !obs.record.active && ended.length === 1);
   assert.deepEqual([ended, began], [[name], [name]], "the take stopped once OBS was back, and counts once");
+  assert.deepEqual(recorded, [true], "OBS took the stop: it recorded the take");
   assert.deepEqual([l.recording, l.stopping, l.take, l.maybe], [false, false, null, ""]);
   await sleep(100);
   assert.equal(obs.requests("StopRecord").length, 1, "OBS is told once");
@@ -877,7 +898,7 @@ test("a stop asked after an unanswered start dropped the connection is kept, and
 });
 
 test("a stop kept for an unanswered start that OBS never recorded ends without a word to OBS", async (t) => {
-  const { obs, l, ended, name } = await unansweredStart(t, "2 · Middle", 7, false);
+  const { obs, l, ended, recorded, name } = await unansweredStart(t, "2 · Middle", 7, false);
   assert.equal(await l.stop(), true);
   assert.equal(l.stopping, true);
   await until(() => l.state === "on" && !l.stopping);
@@ -885,6 +906,7 @@ test("a stop kept for an unanswered start that OBS never recorded ends without a
   assert.equal(obs.requests("StopRecord").length, 0, "nothing to stop");
   assert.deepEqual([l.recording, l.take, l.maybe, l.problem], [false, null, "", ""]);
   assert.deepEqual(ended, [name], "the page hears that the take is over");
+  assert.deepEqual(recorded, [false], "and that OBS never recorded it");
   l.turn(false);
 });
 
@@ -1349,7 +1371,7 @@ test("OBS's started word is lost for a take not begun yet: asked after the usual
 test("OBS takes a start and gives the take up without recording (it cannot write the file): never recording, the take is over, and the link says OBS did not start", async (t) => {
   const obs = await startObsStandin();
   t.after(() => obs.stop());
-  const { l, ended } = link(obs);
+  const { l, ended, recorded } = link(obs);
   await until(() => l.state === "on");
   obs.startLag = null;
   const name = takeName(sceneOf("7 · Wait for OBS"), 6);
@@ -1362,6 +1384,7 @@ test("OBS takes a start and gives the take up without recording (it cannot write
   clearInterval(watch);
   assert.ok(!seen.includes(true), "never recording");
   assert.deepEqual([ended, l.recording, l.pending, l.take, l.stopping, l.problem], [[name], false, "", null, false, "start"]);
+  assert.deepEqual(recorded, [false]);
   assert.equal(obs.requests("StopRecord").length, 0);
   await until(() => obs.record.format === OWN_FORMAT);
   // The next take starts as usual.

@@ -318,7 +318,7 @@ export function obsLink({ WebSocket = globalThis.WebSocket, subtle = globalThis.
         identified = true;
         cancel(wait);
         set({ state: "on", misses: 0 });
-        afterConnect();
+        afterConnect().then(tidyName);
       } else if (msg.op === OP.response) {
         const p = waiting.get(d.requestId);
         if (!p) return;
@@ -472,8 +472,14 @@ export function obsLink({ WebSocket = globalThis.WebSocket, subtle = globalThis.
     stopping = null;
     // A stop held for a take OBS took and never began: that take no longer waits for OBS to begin.
     if (held?.early && naming === held.early) { naming = null; cancel(startedWait); }
-    // A stop held for a take whose start got no answer: that take is the one over now.
-    if (stopped && held?.maybe && !link.take && unsure === held.maybe) { link.take = unsure; unsure = null; link.maybe = ""; }
+    // A stop held for a take whose start got no answer: that take is the one over now. It was recorded only
+    // when OBS took the stop (it recorded then); when OBS said it does not record, it is called off.
+    if (stopped && held?.maybe && !link.take && unsure === held.maybe) {
+      if (held.taken) link.take = unsure;
+      else link.pending = unsure;
+      unsure = null;
+      link.maybe = "";
+    }
     if (stopped) finish();
     set(stopped ? { recording: false, pending: "", stopping: false } : { stopping: false });
     // OBS's own file name goes back now: a take called off before OBS began it still had its name there.
@@ -605,6 +611,19 @@ export function obsLink({ WebSocket = globalThis.WebSocket, subtle = globalThis.
       if (link.starting) watchUnsure(name); // the next take is on its way: it gives this one up, or fails
       else afterConnect(name);
     }, delays.wait);
+  }
+
+  // A tab closed while a take waited for OBS to begin it (or before OBS answered its start) left that
+  // take's name in OBS, and OBS's own recordings would land in that scene's folder. Once connected with
+  // nothing of ours waiting, OBS's default format goes back (its own one was only known to that tab).
+  const ours = () => restoreTo !== null || naming || unsure || setting || stopping || link.starting || link.pending || link.take;
+  async function tidyName() {
+    if (ours() || !sock || link.state !== "on") return;
+    let got;
+    try { got = await request("GetProfileParameter", FILENAME); } catch { return; }
+    if (ours() || !isTakeName(got.parameterValue)) return;
+    restoreTo = got.defaultParameterValue && !isTakeName(got.defaultParameterValue) ? got.defaultParameterValue : OBS_FORMAT;
+    putBack();
   }
 
   // OBS's own file name goes back once the take has started (OBS has read the take's name by then).

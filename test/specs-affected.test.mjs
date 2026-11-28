@@ -17,14 +17,17 @@ test("each change runs the browser suites it can reach, and docs run none", () =
   assert.deepEqual(reached("src/app.js"), ["page", "paragraphs", "reading-wrap", "record-light"]);
   assert.deepEqual(reached("src/core.mjs"), ["page", "paragraphs", "reading-wrap", "record-light"], "take names come from the section titles core reads");
   assert.deepEqual(reached("src/settings.mjs"), ["page", "paragraphs", "reading-wrap", "record-light"]);
-  assert.deepEqual(reached("src/reading-line.mjs"), ["page", "paragraphs"]);
+  assert.deepEqual(reached("src/reading-line.mjs"), ["page", "paragraphs", "record-light"], "the record light shows the scene at the reading line");
+  for (const file of ["src/next-up.mjs", "src/suggestions.mjs", "src/wire.mjs", "src/relay-link.mjs", "src/worker.mjs", "src/mcp.mjs", "src/relay.mjs"]) {
+    assert.ok(reached(file).includes("record-light"), `${file}: the record light suite checks Text only's card and the Producer's cue beside the light`);
+  }
   assert.deepEqual(reached("src/obs.mjs"), ["page", "record-light"]);
   assert.deepEqual(reached("test/obs-standin.mjs"), ["record-light"]);
   assert.deepEqual(reached("test/browser/record-light.mjs"), ["record-light"]);
   assert.deepEqual(reached("src/open-script.mjs"), ["page"]);
-  assert.deepEqual(reached("fonts/inter-latin.woff2"), ["page", "paragraphs", "reading-wrap"]);
+  assert.deepEqual(reached("fonts/inter-latin.woff2"), ["page", "paragraphs", "reading-wrap", "record-light"]);
   assert.deepEqual(reached("scripts/build.mjs"), ["page", "paragraphs", "reading-wrap", "record-light"]);
-  assert.deepEqual(reached("wrangler.jsonc"), ["page"]);
+  assert.deepEqual(reached("wrangler.jsonc"), ["page", "record-light"], "the record light suite runs the Worker for the cue box");
   assert.deepEqual(reached("test/browser/page.mjs"), ["page"]);
   assert.deepEqual(reached("test/browser/paragraphs.mjs"), ["paragraphs"]);
   assert.deepEqual(reached("test/browser/range-field.mjs"), ["range-field"]);

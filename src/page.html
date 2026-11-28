@@ -339,8 +339,12 @@
   /* A start card taller than a small phone starts below the corner pill. */
   :root:has(.ask-pill[data-place="corner"]:not([hidden])) .empty { padding-block-start: 72px; }
   /* The Reconnecting note goes above the pill rather than over it. */
-  :root:has(.ask-pill:not([hidden])) .toast { transform: translateY(calc(-100% - 34px)); }
-  :root:has(.ask-pill[data-place="above"]:not([hidden])) .toast { transform: translateY(calc(-100% - 60px)); }
+  :root:has(.ask-pill:not([hidden])) .toast:not([data-low]) { transform: translateY(calc(-100% - 34px)); }
+  :root:has(.ask-pill[data-place="above"]:not([hidden])) .toast:not([data-low]) { transform: translateY(calc(-100% - 60px)); }
+  /* No room above the line (dragged to the top, under the record light): low on the right, above the
+     control bar, as the pill goes, and above the pill when it is low too. */
+  .toast[data-low] { inset-block: auto calc(88px + env(safe-area-inset-bottom, 0px)); transform: none; }
+  :root:has(.ask-pill[data-place="low"]:not([hidden])) .toast[data-low] { inset-block-end: calc(140px + env(safe-area-inset-bottom, 0px)); }
   .ask-veil { position: fixed; inset: 0; z-index: 15; background: oklch(16% 0.06 282 / 0.82); }
   .ask-box {
     position: fixed; z-index: 16; inset: 0; margin: auto; block-size: fit-content;
@@ -353,7 +357,7 @@
     /* With the record light showing (the OBS link on, a script open), the box starts below it: a long
        cue never covers the light, so a take can still be stopped. */
     :root:not([data-view="empty"]):has(.rec:not([hidden])) .ask-box {
-      --under-light: calc(58px + env(safe-area-inset-top, 0px));
+      --under-light: calc(var(--rec-clear) + env(safe-area-inset-top, 0px));
       inset-block-start: var(--under-light); max-block-size: calc(100dvh - var(--under-light) - 84px);
     }
   }
@@ -545,7 +549,7 @@
   .rec-light[data-state="trouble"] { color: var(--muted); }
   .rec-light[data-state="trouble"] .rec-dot { background: var(--dim); }
   .rec-star { inline-size: 34px; block-size: 40px; padding: 0; color: var(--dim); background: transparent; border: 0; border-radius: 12px; font-size: 15px; line-height: 1; cursor: pointer; }
-  .rec-star[aria-pressed="true"] { color: var(--star); }
+  .rec-star[data-best] { color: var(--star); }
   @media (hover: hover) and (pointer: fine) {
     .rec-light:hover { color: var(--muted); background: var(--panel); }
     .rec-light:not([data-state="stopping"], [data-state="stopping-early"], [data-state="starting"]):hover .rec-dot { opacity: 0.85; } /* the stopping and the starting dot stay dim: red only once OBS records */
@@ -586,7 +590,7 @@
   .rail-take[aria-pressed="true"]::before { inline-size: 11px; block-size: 11px; }
   /* Focus shows as a fill, never a ring (no ring on the record pieces). */
   :is(.rec, .rec-rail) :focus-visible { outline: none; background: var(--rec-focus); }
-  :is(.rec-light, .rec-star[aria-pressed="false"], .rail-go):focus-visible { color: var(--text); }
+  :is(.rec-light, .rec-star:not([data-best]), .rail-go):focus-visible { color: var(--text); }
   .rail-take:focus-visible::before { scale: 1.3; }
   .rail-take:not([data-best="true"]):focus-visible::before { background: var(--text); }
   @media (pointer: coarse) { /* 44px targets on phones; the dots look the same */
@@ -705,9 +709,9 @@
   </div>
   <main class="script" aria-label="Script"></main>
   <aside class="next-up" aria-labelledby="next-up-label" hidden><h2 class="next-up-label" id="next-up-label">What happens next</h2><ol class="next-list" tabindex="-1" aria-labelledby="next-up-label"></ol></aside>
-  <div class="rec" role="group" aria-label="Recording" hidden>
+  <div class="rec" role="group" aria-label="Record light" hidden>
     <button class="rec-light" type="button" data-action="rec" aria-keyshortcuts="R"><span class="rec-dot" aria-hidden="true"></span><span class="rec-tag"></span><span class="rec-time">00:00</span></button>
-    <button class="rec-star" type="button" data-action="rec-star" aria-pressed="false" hidden><span aria-hidden="true">☆</span></button>
+    <button class="rec-star" type="button" data-action="rec-star" hidden><span aria-hidden="true">☆</span></button>
   </div>
   <nav class="rec-rail" aria-label="Scenes" tabindex="-1" hidden></nav>
   <button class="ask-pill" type="button" data-kind="question" hidden><span class="ask-pill-mark" aria-hidden="true"></span><span class="ask-pill-name"></span><span class="ask-more"></span></button>
