@@ -835,6 +835,11 @@ export async function run({ browser, base, mode, out }) {
       return { rail: rail.right, left: script.getBoundingClientRect().left + parseFloat(getComputedStyle(script).paddingLeft) };
     });
     assert.ok(clear.left >= clear.rail, `sideways, the script's words start right of the rail's strip: ${JSON.stringify(clear)}`);
+    // An up key on the handle while the light holds the line lower changes nothing: the line put at 8% stays
+    // put, and comes back there once OBS is off (checked below).
+    await s.locator(".line-handle").focus();
+    await s.keyboard.press("ArrowUp");
+    assert.equal((await where()).line, at.line, "an up key keeps the held line under the light");
     await s.locator(".settings-btn").click();
     await s.locator(".big-toggle.obs").click(); // OBS off
     await until(s, () => document.querySelector(".rec").hidden);

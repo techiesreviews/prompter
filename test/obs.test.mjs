@@ -1076,9 +1076,44 @@ test("without BroadcastChannel or Web Locks (a file:// copy) a take's name left 
   const obs = await startObsStandin();
   t.after(() => obs.stop());
   obs.record.format = takeName(sceneOf("3 · Left behind"), 2);
-  const { l } = link(obs, { Channel: undefined, locks: undefined });
+  const { l } = link(obs, { Channel: null, locks: null });
   await until(() => l.state === "on");
   await until(() => obs.record.format === OWN_FORMAT);
+  l.turn(false);
+});
+
+test("a browser that refuses Web Locks (site data blocked) still records takes", async (t) => {
+  const obs = await startObsStandin();
+  t.after(() => obs.stop());
+  const refused = { request: () => Promise.reject(Object.assign(new Error("Access to the Locks API is denied in this context."), { name: "SecurityError" })) };
+  const { l } = link(obs, { locks: refused });
+  await until(() => l.state === "on");
+  const one = takeName(sceneOf("1 · Blocked"), 1);
+  assert.equal(await l.start(one), true, "the take starts");
+  await until(() => obs.record.active);
+  assert.match(obs.record.path, /scene-01-blocked-take-01/);
+  l.turn(false);
+});
+
+test("R while another tab has its turn at OBS's name calls the take off at once, and its name never goes to OBS", async (t) => {
+  const obs = await startObsStandin();
+  t.after(() => obs.stop());
+  const { l } = link(obs);
+  await until(() => l.state === "on");
+  let free;
+  const held = new Promise((done) => { free = done; });
+  navigator.locks.request(`prompter-obs-name ws://127.0.0.1:${obs.port}`, () => held); // another tab's turn
+  await sleep(20);
+  const one = takeName(sceneOf("2 · Waiting turn"), 1);
+  const started = l.start(one);
+  await sleep(100);
+  const at = Date.now();
+  l.stop();
+  assert.equal(await started, false, "called off");
+  assert.ok(Date.now() - at < FAST.wait, "at once, not when the other tab's turn ends");
+  free();
+  await sleep(100);
+  assert.ok(!obs.requests("SetProfileParameter").some((d) => d.requestData.parameterValue === one), "the take's name never went to OBS");
   l.turn(false);
 });
 

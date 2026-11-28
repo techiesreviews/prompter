@@ -868,6 +868,7 @@ handle.addEventListener("keydown", (e) => {
   if (!LINE_KEYS.includes(e.key) || e.metaKey || e.ctrlKey || e.altKey) return;
   e.preventDefault();
   const pct = Number(handle.getAttribute("aria-valuenow")); // from where the line is drawn (the record light may hold it lower)
+  if (LINE_STEPS[e.key] < 0 && pct > Math.round(lineFrac * 100)) return; // held under the light: it cannot go higher, and the place it was put stays
   moveLine(e.key === "Home" ? LINE.min : e.key === "End" ? LINE.max : (pct + LINE_STEPS[e.key]) / 100, true);
 });
 

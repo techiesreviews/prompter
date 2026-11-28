@@ -260,19 +260,28 @@ export function obsLink({ WebSocket = globalThis.WebSocket, subtle = globalThis.
     };
   }
   // Setting a take's name and putting OBS's own name back take turns across the tabs of this browser
-  // (Web Locks: nothing stored), so a put-back read just before another tab's take name never lands on
-  // it. Each turn ends once OBS answers, or after the usual wait. Without Web Locks (a file:// copy), as before.
-  function named(work) {
-    if (!locks) return work();
+  // (Web Locks: nothing stored), so a put-back read just before another tab's take name does not land on
+  // it. A turn ends once its work is done: a put-back once OBS answers it or the connection goes, a take's
+  // name once OBS answers or its start gives up (after the usual wait). `signal` gives up waiting for the
+  // turn (R calls the take off). Without Web Locks, or when the browser refuses them (site data blocked,
+  // a file:// copy), the work runs as before, without a turn.
+  function named(work, signal) {
+    if (!locks) return Promise.resolve().then(work);
     return new Promise((done, fail) => {
-      locks.request(`prompter-obs-name ${url}`, () => {
+      let ran = false;
+      const turn = () => {
+        ran = true;
         const run = Promise.resolve().then(work);
         run.then(done, fail);
-        return new Promise((free) => {
-          const timer = later(free, delays.wait);
-          run.then(() => { cancel(timer); free(); }, () => { cancel(timer); free(); });
-        });
-      }).catch(fail);
+        return run.catch(() => {});
+      };
+      let asked;
+      try { asked = locks.request(`prompter-obs-name ${url}`, signal ? { signal } : {}, turn); } catch (error) { asked = Promise.reject(error); }
+      Promise.resolve(asked).catch(() => {
+        if (ran) return;
+        if (signal?.aborted) fail(new Error("Called off."));
+        else turn();
+      });
     });
   }
   function closePeers() {
@@ -758,7 +767,15 @@ export function obsLink({ WebSocket = globalThis.WebSocket, subtle = globalThis.
         restoreTo = own && !isTakeName(own) ? own : (got.defaultParameterValue && !isTakeName(got.defaultParameterValue) ? got.defaultParameterValue : OBS_FORMAT);
       }
       if (stopAsked) throw new Error("Called off.");
-      await named(() => rename(name)); // in its turn: never between another tab's look at the name and its put-back
+      // In its turn: never between another tab's look at the name and its put-back. R calls it off meanwhile.
+      const giveUp = new AbortController();
+      wake = () => giveUp.abort();
+      try {
+        await named(() => {
+          if (stopAsked) throw new Error("Called off.");
+          return rename(name);
+        }, giveUp.signal);
+      } finally { wake = null; }
       if (stopAsked) throw new Error("Called off.");
       naming = name;
       setting = false;
