@@ -4604,6 +4604,16 @@ export async function run({ browser, base, mode, dist, out }) {
       return { rows: rows.length, first: rows[0] === document.querySelector(".next-up li"), inView: card.top >= 0 && card.bottom <= innerHeight,
         clear: card.bottom < y || card.top >= y + row, low: document.querySelector(".next-up").hasAttribute("data-low") };
     }), { rows: 1, first: true, inView: true, clear: false, low: false }, "no place fits: only the first row, at the top where it overlaps least, on screen");
+    // The window grows again: both rows come back, on screen and clear of the line being read.
+    await TT.setViewportSize({ width: 390, height: 844 });
+    await TT.waitForTimeout(300);
+    assert.deepEqual(await TT.evaluate(() => {
+      const card = document.querySelector(".next-up").getBoundingClientRect();
+      const rows = [...document.querySelectorAll(".next-up li")].filter((el) => getComputedStyle(el).display !== "none");
+      const y = document.querySelector(".reading-line").getBoundingClientRect().top;
+      const row = parseFloat(getComputedStyle(document.querySelector(".script")).lineHeight);
+      return { rows: rows.length, inView: card.top >= 0 && card.bottom <= innerHeight, clear: card.bottom < y || card.top >= y + row };
+    }), { rows: 2, inView: true, clear: true }, "a bigger window: both rows back, on screen, clear of the line");
     await tinyPhone.close();
     // A phone with the line high and "Reconnecting to speech…" just above it: the card at the top would
     // run into the note, so it goes low, clear of the note and of the line being read.
