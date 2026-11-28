@@ -1189,6 +1189,28 @@ test("a tab putting OBS's own name back and another tab setting its take's name 
   second.turn(false);
 });
 
+test("a look at the name before OBS's own goes back, answered only after the usual wait, still puts OBS's own name back", async (t) => {
+  const obs = await startObsStandin();
+  t.after(() => obs.stop());
+  const { l } = link(obs);
+  await until(() => l.state === "on");
+  await sleep(100);
+  let slow = false;
+  obs.answer = (type) => (type === "GetProfileParameter" && slow ? { delay: 1.5 * FAST.wait } : null);
+  obs.startLag = 50;
+  const one = takeName(sceneOf("1 · Slow look"), 1);
+  const started = l.start(one);
+  await until(() => obs.record.format === one);
+  slow = true; // the look before the put-back
+  assert.equal(await started, true);
+  await until(() => obs.record.active);
+  await sleep(100);
+  assert.equal(await l.stop(), true);
+  await until(() => !obs.record.active);
+  await until(() => obs.record.format === OWN_FORMAT, 4000);
+  l.turn(false);
+});
+
 test("a take name OBS is slow to set never lands on the next take: that one waits for it", async (t) => {
   const obs = await startObsStandin();
   t.after(() => obs.stop());

@@ -1017,7 +1017,11 @@ function drawRecord() {
 
   if (recWrap.hidden === obs.on) { recWrap.hidden = !obs.on; setLine(lineFrac); updateActive(); } // the line makes room for the light, or takes its place back; the same row stays at it
   const scene = sceneHere();
-  recRail.hidden = !obs.on || !scene;
+  if (recRail.hidden !== (!obs.on || !scene)) {
+    // On a phone the rail's strip narrows the script and long lines wrap again: the line at the reading line stays put.
+    const set = () => { recRail.hidden = !obs.on || !scene; };
+    if (isEmpty()) set(); else { keepPlace(set); updateActive(); }
+  }
   if (!obs.on) { clearInterval(recTimer); recTimer = 0; return; }
   const video = scene && videoHere();
   const book = takesBook();

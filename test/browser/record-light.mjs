@@ -873,6 +873,42 @@ export async function run({ browser, base, mode, out }) {
   }
   ok("an upright phone with a notch (59px safe area) and the reading line dragged to the top: the line still sits just under the record light");
 
+  // On a phone the record light's strip narrows the script, and long lines wrap again: turning the OBS
+  // link on or off midway through keeps the same line, at the same height, at the reading line.
+  obs = await startObsStandin({ port: 4455 });
+  const wrap = await browser.newContext(MOBILE);
+  const w = await wrap.newPage();
+  watch(w);
+  try {
+    const LONG = Array.from({ length: 24 }, (_, i) => `Sentence ${i + 1} runs on and on about the camera and the lights and the sound so that it wraps over rows on a phone.`).join("\n");
+    await open(w, SCRIPT.replace(`### **1 · FIRST PART · 01:00**\n\n${FILL}`, `### **1 · FIRST PART · 01:00**\n\n${LONG}`));
+    await w.evaluate(() => {
+      const lines = [...document.querySelectorAll(".section")[1].querySelectorAll("[data-k]")];
+      const el = lines[18];
+      window.scrollTo(0, el.getBoundingClientRect().top + scrollY - parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--line")) + 4);
+    });
+    await w.waitForTimeout(300);
+    const here = () => w.evaluate(() => {
+      const y = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--line"));
+      const el = [...document.querySelectorAll(".script [data-k]")].find((e) => e.getBoundingClientRect().bottom > y);
+      return { k: el?.dataset.k, top: Math.round(el.getBoundingClientRect().top - y) };
+    });
+    const before = await here();
+    for (const turn of ["on", "off"]) {
+      await settings(w);
+      await w.locator(".big-toggle.obs").click();
+      await closeSettings(w);
+      await until(w, (on) => document.querySelector(".rec-rail").hidden === (on !== "on"), turn);
+      await w.waitForTimeout(300);
+      const after = await here();
+      assert.equal(after.k, before.k, `OBS ${turn}: the same line stays at the reading line: ${JSON.stringify({ before, after })}`);
+    }
+  } finally {
+    await wrap.close();
+    await obs.stop();
+  }
+  ok("a phone midway through a script with long lines: turning the OBS link on or off keeps the same line at the reading line, though the light's strip makes the lines wrap again");
+
   // Text only's "what happens next" strip (TOOLS-491) and the record light never overlap: under 1240px wide
   // the strip is a card at the top, where the light is, so the card starts below the light while the light
   // shows (and goes back to the top when the OBS link is off); on a wide screen the strip stays beside the

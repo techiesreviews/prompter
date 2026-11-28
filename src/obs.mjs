@@ -727,7 +727,7 @@ export function obsLink({ WebSocket = globalThis.WebSocket, subtle = globalThis.
       };
       try {
         await (inTurn ? send() : named(async () => {
-          const now = await request("GetProfileParameter", FILENAME);
+          const now = await request("GetProfileParameter", FILENAME, true); // held like the put-back itself
           if (isTakeName(now.parameterValue) && now.parameterValue !== sentName) { restoreTo = null; return; } // another tab's take
           await send();
         }));
