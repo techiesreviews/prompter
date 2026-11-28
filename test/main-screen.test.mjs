@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CUT_SITES_BUILT_IN, CUT_SITES_MAX, cutSite, cutsMainScreen, forgetCutSite, mainScreenArea, mainScreenFeatures, readCutSites, rememberCutSite } from "../src/main-screen.mjs";
+import { CUT_SITES_BUILT_IN, CUT_SITES_MAX, cutSite, cutsMainScreen, forgetCutSite, isFullScreen, mainScreenArea, mainScreenFeatures, readCutSites, rememberCutSite } from "../src/main-screen.mjs";
 
 test("the Data Protection Authority is known from the start, with or without www, and its subdomains", () => {
   assert.deepEqual(CUT_SITES_BUILT_IN, ["autoriteitpersoonsgegevens.nl"]);
@@ -65,7 +65,17 @@ test("a new main screen goes full size on another screen than the Prompter's, th
   assert.equal(mainScreenArea(null, null), null, "no screen details");
 });
 
-test("the window features: full size and full screen on that area, else a plain window", () => {
-  assert.equal(mainScreenFeatures({ left: 1440, top: -200, width: 2560, height: 1400 }), "popup=yes,left=1440,top=-200,width=2560,height=1400,fullscreen=yes");
+test("the window features: full size on that area, else a plain window; never the dropped fullscreen=yes", () => {
+  assert.equal(mainScreenFeatures({ left: 1440, top: -200, width: 2560, height: 1400 }), "popup=yes,left=1440,top=-200,width=2560,height=1400");
   assert.equal(mainScreenFeatures(null), "popup=yes,width=1400,height=900");
+});
+
+test("full screen: the browser says so, or the page fills the whole screen", () => {
+  const screen = { screenWidth: 1920, screenHeight: 1080 };
+  assert.equal(isFullScreen({ ...screen, innerWidth: 1920, innerHeight: 1080 }), true, "F11: the page fills the screen");
+  assert.equal(isFullScreen({ ...screen, innerWidth: 1920, innerHeight: 1009 }), false, "a full-size window with a title bar");
+  assert.equal(isFullScreen({ ...screen, innerWidth: 1400, innerHeight: 900 }), false, "a plain window");
+  assert.equal(isFullScreen({ ...screen, innerWidth: 1536, innerHeight: 864, displayFullscreen: true }), true, "F11 at 125% zoom: the browser's display mode says so");
+  assert.equal(isFullScreen({ ...screen, innerWidth: 1400, innerHeight: 900, fullscreenElement: true }), true, "a page's own full screen");
+  assert.equal(isFullScreen({ innerWidth: 0, innerHeight: 0, screenWidth: 0, screenHeight: 0 }), false, "no sizes known: not full screen");
 });

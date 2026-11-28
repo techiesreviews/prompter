@@ -69,10 +69,23 @@ export function mainScreenArea(screens, current) {
 
 /**
  * The window features for a new main screen (or a site's own window): full size on `area` when
- * there is one, asking the browser for full screen too (it opens a normal window where it does not
- * allow that), else a plain window the person drags.
+ * there is one, else a plain window the person drags. A page cannot open a window truly full screen
+ * (Chrome dropped `fullscreen=yes` in 2024), and a page's own full screen ends when the window loads
+ * another site; only the browser's own full screen (F11) stays across sites, so the main screen's own
+ * page asks for it (`isFullScreen`).
  */
 export function mainScreenFeatures(area) {
   if (!area) return "popup=yes,width=1400,height=900";
-  return `popup=yes,left=${area.left},top=${area.top},width=${area.width},height=${area.height},fullscreen=yes`;
+  return `popup=yes,left=${area.left},top=${area.top},width=${area.width},height=${area.height}`;
+}
+
+/**
+ * Whether a window is full screen, from what its page can see: the browser says so (the
+ * `display-mode: fullscreen` media query, which the browser's own F11 full screen matches in Chrome
+ * and Edge, also when the page is zoomed; or a page's own full screen element), or the page fills the
+ * whole screen, which a window with a title bar or tabs never does.
+ */
+export function isFullScreen({ displayFullscreen, fullscreenElement, innerWidth, innerHeight, screenWidth, screenHeight }) {
+  if (displayFullscreen || fullscreenElement) return true;
+  return screenWidth > 0 && screenHeight > 0 && innerWidth >= screenWidth && innerHeight >= screenHeight;
 }

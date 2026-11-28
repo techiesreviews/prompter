@@ -1308,8 +1308,7 @@ function drawCutNote() { cutEl.hidden = !cutSays || askShowing; }
 
 // Where a new main screen goes: with the browser's window placement permission (Chrome and Edge ask
 // once per visit, from the first Connect click; already allowed, it is read at start-up without
-// asking), full size on a screen the Prompter is not on, asking for full screen too; else a plain
-// window the person drags.
+// asking), full size on a screen the Prompter is not on; else a plain window the person drags.
 let screenDetails = null;
 let screensAsk = null; // the one ask, also while it waits for its answer
 let screensAnswered = false; // allowed (one screen or more) or refused: later Connects do not ask again
@@ -1323,13 +1322,44 @@ let placingHeld = null;
 let placingWin = null;
 const PLACING_NOTE = " Allow window placement in the Prompter to move this window to your main screen.";
 // A new main screen's own page while it has none: where to put it, what the last page held back was,
-// and, while the placement ask waits, where that ask is.
+// and, while the placement ask waits, where that ask is. Above it, while the window is not full
+// screen, one large line asks for the browser's own full screen (F11), the only one that stays while
+// the window loads other sites (TOOLS-492); it goes once the window is full screen and comes back
+// when it leaves.
+const FULL_SCREEN_LINE = "Press F11 for full screen";
+const fullWatched = new WeakSet();
 function drawWaiting(win, placed, asking) {
-  win.document.title = "Main screen";
-  win.document.body.style.cssText = "margin:0;box-sizing:border-box;display:grid;place-items:center;height:100vh;background:#000;color:#f4f1ea;font:600 32px system-ui;text-align:center;padding:0 5vw;overflow-wrap:anywhere";
-  win.document.body.textContent = (placed ? "Main screen. Pages will open here." : "Drag this window to your main screen and make it full size. Pages will open here.")
+  const doc = win.document;
+  doc.title = "Main screen";
+  doc.body.style.cssText = "margin:0;box-sizing:border-box;display:grid;place-content:center;gap:1em;height:100vh;background:#000;color:#f4f1ea;font:600 32px system-ui;text-align:center;padding:0 5vw;overflow-wrap:anywhere";
+  const full = doc.createElement("p");
+  full.dataset.full = "";
+  full.style.cssText = "margin:0;font-size:clamp(32px,8vw,72px);font-weight:700;color:#fff";
+  full.textContent = FULL_SCREEN_LINE;
+  const note = doc.createElement("p");
+  note.dataset.note = "";
+  note.style.margin = "0";
+  note.textContent = (placed ? "Main screen. Pages will open here." : "Drag this window to your main screen and make it full size. Pages will open here.")
     + (skip.url ? ` The last page (${skip.site}) was not sent again, as it may cut this window off too: its link button opens it anyway.` : "")
     + (asking ? PLACING_NOTE : "");
+  doc.body.replaceChildren(full, note);
+  drawFullLine(win);
+  if (fullWatched.has(win)) return;
+  fullWatched.add(win);
+  const redraw = () => { try { drawFullLine(win); } catch { /* showing another site now */ } };
+  win.addEventListener("resize", redraw);
+  doc.addEventListener("fullscreenchange", redraw);
+  win.matchMedia("(display-mode: fullscreen)").addEventListener?.("change", redraw);
+}
+function drawFullLine(win) {
+  const line = win.document.querySelector("[data-full]");
+  if (!line) return;
+  line.hidden = isFullScreen({
+    displayFullscreen: win.matchMedia("(display-mode: fullscreen)").matches,
+    fullscreenElement: Boolean(win.document.fullscreenElement),
+    innerWidth: win.innerWidth, innerHeight: win.innerHeight,
+    screenWidth: win.screen.width, screenHeight: win.screen.height,
+  });
 }
 function askScreens() {
   if (!window.getScreenDetails) return Promise.resolve(null);
@@ -1411,13 +1441,14 @@ function connect() {
     if (win === mainWin) {
       try {
         if (win.location.href === "about:blank") {
-          let text = win.document.body.textContent.replace(PLACING_NOTE, "");
+          const note = win.document.querySelector("[data-note]");
+          let text = note.textContent.replace(PLACING_NOTE, "");
           if (area) {
             win.moveTo(area.left, area.top);
             win.resizeTo(area.width, area.height);
             text = text.replace(/^Drag this window to your main screen and make it full size\. /, "Main screen. ");
           }
-          win.document.body.textContent = text;
+          note.textContent = text;
         }
       } catch { /* already showing another site: it stays where it is */ }
     }
