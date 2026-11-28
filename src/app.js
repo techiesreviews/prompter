@@ -1327,7 +1327,7 @@ const PLACING_NOTE = " Allow window placement in the Prompter to move this windo
 // the window loads other sites (TOOLS-492); it goes once the window is full screen and comes back
 // when it leaves.
 const FULL_SCREEN_LINE = "Press F11 for full screen";
-const fullWatched = new WeakSet();
+const fullWatched = new WeakSet(); // each window gets its listeners once; they go when it loads another site
 function drawWaiting(win, placed, asking) {
   const doc = win.document;
   doc.title = "Main screen";
@@ -1357,7 +1357,7 @@ function drawFullLine(win) {
   line.hidden = isFullScreen({
     displayFullscreen: win.matchMedia("(display-mode: fullscreen)").matches,
     fullscreenElement: Boolean(win.document.fullscreenElement),
-    innerWidth: win.innerWidth, innerHeight: win.innerHeight,
+    innerWidth: win.innerWidth, innerHeight: win.innerHeight, outerWidth: win.outerWidth, outerHeight: win.outerHeight,
     screenWidth: win.screen.width, screenHeight: win.screen.height,
   });
 }
