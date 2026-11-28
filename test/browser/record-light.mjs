@@ -517,8 +517,12 @@ export async function run({ browser, base, mode, out }) {
     await page.mouse.move(683, 450);
     await page.mouse.move(4, 450);
     await until(page, () => document.querySelector(".rec-rail").getBoundingClientRect().width > 60); // the mouse opens it again
+    // Opened by the mouse alone, with focus nowhere in it: Esc closes it too.
+    assert.equal(await page.evaluate(() => document.querySelector(".rec-rail").contains(document.activeElement)), false, "focus is not in the rail");
+    await page.keyboard.press("Escape");
+    await until(page, () => document.querySelector(".rec-rail").getBoundingClientRect().width === 10);
     await page.mouse.move(683, 450);
-    ok("Esc closes the scene rail a keyboard opened, also with the mouse resting over it, and focus goes to the record light");
+    ok("Esc closes the scene rail a keyboard or the mouse alone opened, also with the mouse resting over it; focus goes to the record light when it was in the rail");
 
     // The Producer's cue box open (pushed by the person's agent, as in the page suite): the box keeps the
     // page's other keys waiting, but R still starts and stops a take.
@@ -793,11 +797,46 @@ export async function run({ browser, base, mode, out }) {
     await until(p, () => document.querySelector(".rec-rail").getBoundingClientRect().width === 44);
     await p.waitForTimeout(350);
     assert.equal(await p.evaluate(() => document.querySelector(".rec-rail").getBoundingClientRect().width), 44, "the rail stays closed after a scene is picked");
+    // The closed 44px strip never lies over the script's words: they start to its right.
+    const clear = await p.evaluate(() => {
+      const rail = document.querySelector(".rec-rail").getBoundingClientRect();
+      const script = document.querySelector(".script");
+      const left = script.getBoundingClientRect().left + parseFloat(getComputedStyle(script).paddingLeft);
+      const words = [...script.querySelectorAll(".line, p, li")].filter((el) => el.getBoundingClientRect().height > 0).slice(0, 20);
+      const under = words.filter((el) => el.getBoundingClientRect().left < rail.right).length;
+      return { rail: rail.right, left, under };
+    });
+    assert.ok(clear.left >= clear.rail && clear.under === 0, `the script's words start right of the rail's strip: ${JSON.stringify(clear)}`);
   } finally {
     await phone.close();
     await obs.stop();
   }
-  ok("phone: the light fits at the top, nothing scrolls sideways; with a browser that will not keep the take book, two takes still get their own names (take-01, take-02); the light, star, rail scenes and dots are 44px targets; the rail opens by a tap, never by hover, and closes back to its strip once a scene is picked");
+  ok("phone: the light fits at the top, nothing scrolls sideways; with a browser that will not keep the take book, two takes still get their own names (take-01, take-02); the light, star, rail scenes and dots are 44px targets; the rail opens by a tap, never by hover, and closes back to its strip once a scene is picked; the strip never lies over the script's words");
+
+  // The reading line dragged to the very top (8%) on a phone held sideways: the record light never
+  // covers it; the line sits just under the light while OBS is on, and goes back up once it is off.
+  obs = await startObsStandin({ port: 4455 });
+  const low = await browser.newContext(SIDEWAYS);
+  await low.addInitScript(() => { localStorage.setItem("prompter-obs", "on"); localStorage.setItem("prompter-line", "0.08"); });
+  const s = await low.newPage();
+  watch(s);
+  try {
+    await open(s);
+    await toSection(s, 1);
+    await tagIs(s, "S1 · T1");
+    const where = () => s.evaluate(() => ({ line: parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--line")), light: document.querySelector(".rec-light").getBoundingClientRect().bottom, rec: !document.querySelector(".rec").hidden }));
+    let at = await where();
+    assert.ok(at.rec && at.line >= at.light + 8, `the reading line sits under the record light: ${JSON.stringify(at)}`);
+    await s.locator(".settings-btn").click();
+    await s.locator(".big-toggle.obs").click(); // OBS off
+    await until(s, () => document.querySelector(".rec").hidden);
+    at = await where();
+    assert.equal(at.line, Math.round(390 * 0.08), `with OBS off the line goes back to where it was put: ${JSON.stringify(at)}`);
+  } finally {
+    await low.close();
+    await obs.stop();
+  }
+  ok("a phone held sideways with the reading line dragged to the top: the record light never covers the line, which sits just under it while OBS is on and goes back up once OBS is off");
 
   // Text only's "what happens next" strip (TOOLS-491) and the record light never overlap: under 1240px wide
   // the strip is a card at the top, where the light is, so the card starts below the light while the light

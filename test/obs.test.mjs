@@ -11,7 +11,7 @@ import {
 } from "../src/obs.mjs";
 import { startObsStandin } from "./obs-standin.mjs";
 
-const FAST = { retry: [30, 60], again: 120, wait: 400, newer: 50 };
+const FAST = { retry: [30, 60], again: 120, wait: 400, newer: 50, peers: 50 };
 const until = async (what, ms = 3000) => {
   const end = Date.now() + ms;
   while (!what()) {
@@ -1015,6 +1015,42 @@ test("a start whose take name OBS answers only late ends in time, and OBS's own 
   assert.equal(obs.record.format, name, "the put-back waits for that answer");
   await until(() => obs.record.format === OWN_FORMAT, 4000); // then it landed
   l.turn(false);
+});
+
+test("a password typed again while OBS has not answered a start gives that take up: it never comes back after the reconnect", async (t) => {
+  const obs = await startObsStandin();
+  t.after(() => obs.stop());
+  const { l } = link(obs);
+  await until(() => l.state === "on");
+  obs.answer = (type) => (type === "StartRecord" ? { silent: true } : null);
+  const one = takeName(sceneOf("3 · Retyped"), 1);
+  const started = l.start(one);
+  await until(() => obs.requests("StartRecord").length === 1);
+  l.turn(true, ""); // the password changed in Settings: the link starts over
+  assert.equal(await started, false);
+  await until(() => l.state === "on");
+  await sleep(2 * FAST.wait);
+  assert.deepEqual([l.maybe, l.pending, l.problem, l.recording, l.take], ["", "", "", false, null], "the take is given up");
+  await until(() => obs.record.format === OWN_FORMAT, 4000); // and OBS's own name goes back
+  l.turn(false);
+});
+
+test("a second tab connecting never puts OBS's own name back over a take the first tab is still starting", async (t) => {
+  const obs = await startObsStandin();
+  t.after(() => obs.stop());
+  const first = link(obs).l;
+  await until(() => first.state === "on");
+  obs.answer = (type) => (type === "StartRecord" ? { silent: true } : null);
+  const one = takeName(sceneOf("4 · Two tabs"), 1);
+  assert.equal(await first.start(one), false, "no answer yet: OBS may begin it");
+  assert.equal(first.maybe, one);
+  const second = link(obs).l;
+  await until(() => second.state === "on");
+  await sleep(2 * FAST.wait);
+  assert.equal(obs.record.format, one, "the first tab's take keeps its name in OBS");
+  assert.ok(!obs.requests("SetProfileParameter").some((d) => d.requestData.parameterValue !== one), "nothing put back over it");
+  first.turn(false);
+  second.turn(false);
 });
 
 test("a take name OBS is slow to set never lands on the next take: that one waits for it", async (t) => {

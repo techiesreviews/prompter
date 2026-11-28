@@ -597,6 +597,7 @@
     .rec-light, .rec-star, .rail-go, .rail-take { min-inline-size: 44px; min-block-size: 44px; }
     .rec-rail { inline-size: 44px; } /* closed: a 44px strip to tap, still showing only the thin grip */
     .rec-rail:focus-within { inline-size: 160px; } /* opened by a tap */
+    :root:has(.rec-rail:not([hidden])) .script { padding-inline-start: max(5vw, 52px); } /* the words start clear of the 44px strip */
   }
   @media (prefers-reduced-motion: no-preference) {
     .rec-rail { transition: inline-size 200ms var(--ease-out), background-color 200ms var(--ease-out); }
