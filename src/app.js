@@ -804,11 +804,13 @@ const viewHeight = () => document.documentElement.clientHeight || window.innerHe
  */
 function setLine(frac, keepText = false) {
   lineFrac = settingValue("line", frac);
-  const y = Math.round(viewHeight() * lineFrac);
+  // Never under the record light: dragged above it (a phone held sideways), the line waits just below it.
+  // (--rec-room, the room the light takes at the top with a notch's safe area; read from the style, as the light is not laid out on the start screen)
+  const y = Math.max(Math.round(viewHeight() * lineFrac), recWrap.hidden ? 0 : Math.ceil(parseFloat(getComputedStyle(root).getPropertyValue("--rec-room")) || 0));
   const delta = reading.place(y);
   root.style.setProperty("--line", `${y}px`);
   placePill(); // dragged high, the pill goes low (and Text only's card on a phone goes above the control bar)
-  const pct = Math.round(lineFrac * 100);
+  const pct = Math.round((y / viewHeight()) * 100); // where the line is drawn, also when the record light holds it lower
   handle.setAttribute("aria-valuenow", String(pct));
   handle.setAttribute("aria-valuetext", `${pct}% from the top`);
   if (keepText && delta) {
@@ -865,7 +867,8 @@ handle.addEventListener("lostpointercapture", endLineDrag); // showStart lets go
 handle.addEventListener("keydown", (e) => {
   if (!LINE_KEYS.includes(e.key) || e.metaKey || e.ctrlKey || e.altKey) return;
   e.preventDefault();
-  const pct = Math.round(lineFrac * 100);
+  const pct = Number(handle.getAttribute("aria-valuenow")); // from where the line is drawn (the record light may hold it lower)
+  if (LINE_STEPS[e.key] < 0 && pct > Math.round(lineFrac * 100)) return; // held under the light: it cannot go higher, and the place it was put stays
   moveLine(e.key === "Home" ? LINE.min : e.key === "End" ? LINE.max : (pct + LINE_STEPS[e.key]) / 100, true);
 });
 
@@ -1012,9 +1015,13 @@ function drawRecord() {
   // Read out once: connected (not when it comes back from a missed try), not found and the password troubles.
   if (was !== state && ((state === "on" && was !== "reconnecting") || ["lost", "password", "wrong"].includes(state))) setStatus(`${name}.`);
 
-  recWrap.hidden = !obs.on;
+  if (recWrap.hidden === obs.on) { recWrap.hidden = !obs.on; setLine(lineFrac); updateActive(); } // the line makes room for the light, or takes its place back; the same row stays at it
   const scene = sceneHere();
-  recRail.hidden = !obs.on || !scene;
+  if (recRail.hidden !== (!obs.on || !scene)) {
+    // On a phone the rail's strip narrows the script and long lines wrap again: the line at the reading line stays put.
+    const set = () => { recRail.hidden = !obs.on || !scene; };
+    if (isEmpty()) set(); else { keepPlace(set); updateActive(); }
+  }
   if (!obs.on) { clearInterval(recTimer); recTimer = 0; return; }
   const video = scene && videoHere();
   const book = takesBook();
@@ -2355,6 +2362,8 @@ document.addEventListener("keydown", (e) => {
   if (isEmpty() || document.querySelector("dialog[open]") || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.target.closest("textarea, select, input:not([type=range])")) return;
   const k = e.key;
+  // Esc also closes the rail the mouse alone opened (focus elsewhere), until the mouse leaves and comes back.
+  if (k === "Escape" && !recRail.hidden && recRail.matches(":hover") && !recRail.hasAttribute("data-shut") && !document.querySelector(":popover-open")) { recRail.dataset.shut = ""; return; }
   // A focused slider keeps its arrow keys; every other shortcut still works.
   if (e.target.matches?.("input[type=range]") && k.startsWith("Arrow")) return;
   // The focused reading line keeps its keys (arrows, Page Up/Down, Home, End).

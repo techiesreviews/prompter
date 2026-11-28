@@ -11,7 +11,7 @@ import {
 } from "../src/obs.mjs";
 import { startObsStandin } from "./obs-standin.mjs";
 
-const FAST = { retry: [30, 60], again: 120, wait: 400, newer: 50 };
+const FAST = { retry: [30, 60], again: 120, wait: 400, newer: 50, peers: 50 };
 const until = async (what, ms = 3000) => {
   const end = Date.now() + ms;
   while (!what()) {
@@ -188,10 +188,10 @@ test("OBS without a password: a take sets the name, records, gives OBS its own n
   await until(() => obs.record.format === "%CCYY-%MM-%DD %hh-%mm-%ss");
   assert.ok(l.since > 0, "the timer has a start");
   // The order OBS was told: its name read once on connecting (none of ours left there), then read again,
-  // the take's set, record, its own put back.
+  // the take's set, record, a look that the name is still the take's (not another tab's), its own put back.
   const sets = obs.requests("SetProfileParameter").map((d) => d.requestData.parameterValue);
   assert.deepEqual(sets, [name, "%CCYY-%MM-%DD %hh-%mm-%ss"]);
-  assert.deepEqual(obs.requests().map((d) => d.requestType).filter((x) => x !== "GetRecordStatus"), ["GetProfileParameter", "GetProfileParameter", "SetProfileParameter", "StartRecord", "SetProfileParameter"]);
+  assert.deepEqual(obs.requests().map((d) => d.requestType).filter((x) => x !== "GetRecordStatus"), ["GetProfileParameter", "GetProfileParameter", "SetProfileParameter", "StartRecord", "GetProfileParameter", "SetProfileParameter"]);
   assert.equal(obs.seen.find((m) => m.op === 1).d.eventSubscriptions & 64, 64, "it hears OBS's recording events");
   assert.equal(await l.start(name), false, "a second start while recording does nothing");
   obs.stopLag = 200;
@@ -1014,6 +1014,200 @@ test("a start whose take name OBS answers only late ends in time, and OBS's own 
   await sleep(2 * FAST.wait);
   assert.equal(obs.record.format, name, "the put-back waits for that answer");
   await until(() => obs.record.format === OWN_FORMAT, 4000); // then it landed
+  l.turn(false);
+});
+
+test("a password typed again while OBS has not answered a start gives that take up: it never comes back after the reconnect", async (t) => {
+  const obs = await startObsStandin();
+  t.after(() => obs.stop());
+  const { l } = link(obs);
+  await until(() => l.state === "on");
+  obs.answer = (type) => (type === "StartRecord" ? { silent: true } : null);
+  const one = takeName(sceneOf("3 · Retyped"), 1);
+  const started = l.start(one);
+  await until(() => obs.requests("StartRecord").length === 1);
+  l.turn(true, ""); // the password changed in Settings: the link starts over
+  assert.equal(await started, false);
+  await until(() => l.state === "on");
+  await sleep(2 * FAST.wait);
+  assert.deepEqual([l.maybe, l.pending, l.problem, l.recording, l.take], ["", "", "", false, null], "the take is given up");
+  await until(() => obs.record.format === OWN_FORMAT, 4000); // and OBS's own name goes back
+  l.turn(false);
+});
+
+test("a second tab connecting never puts OBS's own name back over a take the first tab is still starting", async (t) => {
+  const obs = await startObsStandin();
+  t.after(() => obs.stop());
+  const first = link(obs).l;
+  await until(() => first.state === "on");
+  obs.answer = (type) => (type === "StartRecord" ? { silent: true } : null);
+  const one = takeName(sceneOf("4 · Two tabs"), 1);
+  assert.equal(await first.start(one), false, "no answer yet: OBS may begin it");
+  assert.equal(first.maybe, one);
+  const second = link(obs).l;
+  await until(() => second.state === "on");
+  await sleep(2 * FAST.wait);
+  assert.equal(obs.record.format, one, "the first tab's take keeps its name in OBS");
+  assert.ok(!obs.requests("SetProfileParameter").some((d) => d.requestData.parameterValue !== one), "nothing put back over it");
+  first.turn(false);
+  second.turn(false);
+});
+
+test("a tab that connects over a name left behind never puts OBS's own name back once another tab's take has set its own meanwhile", async (t) => {
+  const obs = await startObsStandin();
+  t.after(() => obs.stop());
+  const first = link(obs).l;
+  await until(() => first.state === "on");
+  await sleep(100);
+  obs.record.format = takeName(sceneOf("3 · Left behind"), 2); // a tab closed mid-take left it
+  obs.startLag = 800; // OBS reads the name as the recording begins
+  const second = link(obs, { delays: { ...FAST, peers: 600 } }).l; // asks the other tabs, then waits
+  await until(() => second.state === "on");
+  await sleep(100);
+  const two = takeName(sceneOf("4 · Meanwhile"), 1);
+  first.start(two); // the idle first tab starts a take while the second one waits
+  await until(() => obs.record.active, 4000);
+  assert.match(obs.record.path, /scene-04-meanwhile-take-01/, "the take records under its own name");
+  first.turn(false);
+  second.turn(false);
+});
+
+test("without BroadcastChannel or Web Locks (a file:// copy) a take's name left behind still goes back", async (t) => {
+  const obs = await startObsStandin();
+  t.after(() => obs.stop());
+  obs.record.format = takeName(sceneOf("3 · Left behind"), 2);
+  const { l } = link(obs, { Channel: null, locks: null });
+  await until(() => l.state === "on");
+  await until(() => obs.record.format === OWN_FORMAT);
+  l.turn(false);
+});
+
+test("a browser that refuses Web Locks (site data blocked) still records takes", async (t) => {
+  const obs = await startObsStandin();
+  t.after(() => obs.stop());
+  const refused = { request: () => Promise.reject(Object.assign(new Error("Access to the Locks API is denied in this context."), { name: "SecurityError" })) };
+  const { l } = link(obs, { locks: refused });
+  await until(() => l.state === "on");
+  const one = takeName(sceneOf("1 · Blocked"), 1);
+  assert.equal(await l.start(one), true, "the take starts");
+  await until(() => obs.record.active);
+  assert.match(obs.record.path, /scene-01-blocked-take-01/);
+  l.turn(false);
+});
+
+test("R while another tab has its turn at OBS's name calls the take off at once, and its name never goes to OBS", async (t) => {
+  const obs = await startObsStandin();
+  t.after(() => obs.stop());
+  const { l } = link(obs);
+  await until(() => l.state === "on");
+  let free;
+  const held = new Promise((done) => { free = done; });
+  navigator.locks.request(`prompter-obs-name ws://127.0.0.1:${obs.port}`, () => held); // another tab's turn
+  await sleep(20);
+  const one = takeName(sceneOf("2 · Waiting turn"), 1);
+  const started = l.start(one);
+  await sleep(100);
+  const at = Date.now();
+  l.stop();
+  assert.equal(await started, false, "called off");
+  assert.ok(Date.now() - at < FAST.wait, "at once, not when the other tab's turn ends");
+  free();
+  await sleep(100);
+  assert.ok(!obs.requests("SetProfileParameter").some((d) => d.requestData.parameterValue === one), "the take's name never went to OBS");
+  l.turn(false);
+});
+
+test("R on a take waiting for its turn while another tab's take name waits for OBS's answer never puts OBS's own name over that take", async (t) => {
+  const obs = await startObsStandin();
+  t.after(() => obs.stop());
+  const first = link(obs).l;
+  const second = link(obs).l;
+  await until(() => first.state === "on" && second.state === "on");
+  await sleep(150);
+  const one = takeName(sceneOf("1 · First tab"), 1);
+  obs.answer = (type, data) => (type === "SetProfileParameter" && data.parameterValue === one ? { late: 300 } : null);
+  const started = first.start(one); // its name is in OBS, OBS's answer comes later
+  await until(() => obs.record.format === one);
+  const before = obs.requests("SetProfileParameter").length;
+  const other = second.start(takeName(sceneOf("2 · Second tab"), 1)); // waits for its turn
+  await sleep(50);
+  second.stop();
+  assert.equal(await other, false, "called off");
+  assert.equal(await started, true);
+  await until(() => obs.record.active, 4000);
+  assert.match(obs.record.path, /scene-01-first-tab-take-01/, "the first tab's take records under its own name");
+  await until(() => obs.record.format === OWN_FORMAT, 4000);
+  await sleep(100);
+  assert.deepEqual(obs.requests("SetProfileParameter").slice(before).map((d) => d.requestData.parameterValue), [OWN_FORMAT], "only the first tab's own put-back once its take records: the called-off tab sent nothing");
+  first.turn(false);
+  second.turn(false);
+});
+
+test("a take name OBS sets only after the usual wait keeps its turn until then: another tab's take waits and records under its own name", async (t) => {
+  const obs = await startObsStandin();
+  t.after(() => obs.stop());
+  const first = link(obs).l;
+  const second = link(obs).l;
+  await until(() => first.state === "on" && second.state === "on");
+  await sleep(150);
+  const one = takeName(sceneOf("1 · Slow name"), 1);
+  obs.answer = (type, data) => (type === "SetProfileParameter" && data.parameterValue === one ? { delay: 1.5 * FAST.wait } : null);
+  obs.startLag = FAST.wait; // OBS reads the name as the recording begins
+  const failed = first.start(one);
+  await sleep(50);
+  const two = takeName(sceneOf("2 · Other tab"), 1);
+  assert.equal(await second.start(two), true);
+  assert.equal(await failed, false, "no answer in time");
+  await until(() => obs.record.active, 4000);
+  assert.match(obs.record.path, /scene-02-other-tab-take-01/, "the other tab's take records under its own name");
+  first.turn(false);
+  second.turn(false);
+});
+
+test("a tab putting OBS's own name back and another tab setting its take's name take turns: the put-back never lands on the take's name", async (t) => {
+  const obs = await startObsStandin();
+  t.after(() => obs.stop());
+  const first = link(obs).l;
+  await until(() => first.state === "on");
+  await sleep(100);
+  obs.record.format = takeName(sceneOf("3 · Left behind"), 2); // a tab closed mid-take left it
+  obs.startLag = 800; // OBS reads the name as the recording begins
+  const two = takeName(sceneOf("4 · Between"), 1);
+  let reads = 0;
+  // The second tab's second look at the name is answered as things are, but only after a while; the
+  // idle first tab starts its take the moment that look reaches OBS.
+  obs.answer = (type) => {
+    if (type !== "GetProfileParameter" || ++reads !== 2) return null;
+    setTimeout(() => { first.start(two); }, 0);
+    return { late: 300 };
+  };
+  const second = link(obs).l;
+  await until(() => second.state === "on");
+  await until(() => obs.record.active, 4000);
+  assert.match(obs.record.path, /scene-04-between-take-01/, "the take records under its own name");
+  first.turn(false);
+  second.turn(false);
+});
+
+test("a look at the name before OBS's own goes back, answered only after the usual wait, still puts OBS's own name back", async (t) => {
+  const obs = await startObsStandin();
+  t.after(() => obs.stop());
+  const { l } = link(obs);
+  await until(() => l.state === "on");
+  await sleep(100);
+  let slow = false;
+  obs.answer = (type) => (type === "GetProfileParameter" && slow ? { delay: 1.5 * FAST.wait } : null);
+  obs.startLag = 50;
+  const one = takeName(sceneOf("1 · Slow look"), 1);
+  const started = l.start(one);
+  await until(() => obs.record.format === one);
+  slow = true; // the look before the put-back
+  assert.equal(await started, true);
+  await until(() => obs.record.active);
+  await sleep(100);
+  assert.equal(await l.stop(), true);
+  await until(() => !obs.record.active);
+  await until(() => obs.record.format === OWN_FORMAT, 4000);
   l.turn(false);
 });
 

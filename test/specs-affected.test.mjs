@@ -28,7 +28,8 @@ test("each change runs the browser suites it can reach, and docs run none", () =
   assert.deepEqual(reached("fonts/inter-latin.woff2"), ["page", "paragraphs", "reading-wrap", "record-light"]);
   assert.deepEqual(reached("scripts/build.mjs"), ["page", "paragraphs", "reading-wrap", "record-light"]);
   assert.deepEqual(reached("wrangler.jsonc"), ["page", "record-light"], "the record light suite runs the Worker for the cue box");
-  assert.deepEqual(reached("test/browser/page.mjs"), ["page"]);
+  assert.deepEqual(reached("test/browser/page.mjs"), ["page", "record-light"], "the record light suite takes its speech stand-in from the page suite");
+  for (const file of ["src/speech.mjs", "src/follow.mjs"]) assert.ok(reached(file).includes("record-light"), `${file}: the record light suite checks R while Follow my voice is on`);
   assert.deepEqual(reached("test/browser/paragraphs.mjs"), ["paragraphs"]);
   assert.deepEqual(reached("test/browser/range-field.mjs"), ["range-field"]);
   assert.deepEqual(reached("test/browser/reading-wrap.mjs"), ["reading-wrap"]);
