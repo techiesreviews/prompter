@@ -790,10 +790,10 @@ export async function run({ browser, base, mode, out }) {
   // shows (and goes back to the top when the OBS link is off); on a wide screen the strip stays beside the
   // text, clear of the light at the top centre. Checked idle, recording, and with OBS gone (the light's
   // longest words), and the link turned on with the card already showing.
+  const STRIP_SCRIPT = SCRIPT
+    .replace("### **1 · FIRST PART · 01:00**\n\n", "### **1 · FIRST PART · 01:00**\n\n- Docs: https://example.com/docs\n\nThe docs open now.\n[Face small]\nThe camera goes small.\n")
+    .replace("### **2 · SECOND PART · 02:00**\n\n", "### **2 · SECOND PART · 02:00**\n\n[Face full]\nThe camera comes back.\n");
   {
-    const STRIP_SCRIPT = SCRIPT
-      .replace("### **1 · FIRST PART · 01:00**\n\n", "### **1 · FIRST PART · 01:00**\n\n- Docs: https://example.com/docs\n\nThe docs open now.\n[Face small]\nThe camera goes small.\n")
-      .replace("### **2 · SECOND PART · 02:00**\n\n", "### **2 · SECOND PART · 02:00**\n\n[Face full]\nThe camera comes back.\n");
     const apart = (page) => page.evaluate(() => {
       const box = (sel) => { const r = document.querySelector(sel).getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; };
       const shown = (sel) => { const el = document.querySelector(sel); return !el.closest("[hidden]") && getComputedStyle(el).display !== "none"; };
@@ -866,14 +866,15 @@ export async function run({ browser, base, mode, out }) {
   if (mode === "wrangler") {
     obs = await startObsStandin({ port: 4455 });
     const c = await browser.newContext(MOBILE);
-    await c.addInitScript(() => { localStorage.setItem("prompter-obs", "on"); localStorage.setItem("prompter-line", "0.08"); });
+    await c.addInitScript(() => { localStorage.setItem("prompter-obs", "on"); localStorage.setItem("prompter-line", "0.08"); localStorage.setItem("prompter-text-only", "on"); });
     const q = await c.newPage();
     watch(q);
     try {
-      await open(q);
+      await open(q, STRIP_SCRIPT);
       const agent = await linkAgent(q);
       await toSection(q, 1);
       await tagIs(q, "S1 · T1");
+      await q.locator(".next-up").waitFor();
       // One take recorded, so the star shows beside the light and makes it wider.
       let at = await q.locator(".rec-light").boundingBox();
       await q.touchscreen.tap(at.x + at.width / 2, at.y + at.height / 2);
@@ -890,6 +891,12 @@ export async function run({ browser, base, mode, out }) {
         window.dispatchEvent(new Event("resize"));
       });
       await q.waitForTimeout(500); // the note's fade in
+      const clear = () => q.evaluate(() => {
+        const box = (el) => { const r = el.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; };
+        const hits = (a, b) => a.top < b.bottom && a.bottom > b.top && a.left < b.right && a.right > b.left;
+        const next = document.querySelector(".next-up"), note = box(document.querySelector(".toast"));
+        return { next: next.hidden ? null : box(next), low: next.hasAttribute("data-low"), note, noteLow: document.querySelector(".toast").hasAttribute("data-low"), over: !next.hidden && hits(note, box(next)) };
+      });
       const meet = await q.evaluate(() => {
         const box = (el) => { const r = el.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; };
         const hits = (a, b) => a.top < b.bottom && a.bottom > b.top && a.left < b.right && a.right > b.left;
@@ -907,8 +914,20 @@ export async function run({ browser, base, mode, out }) {
       assert.ok(meet.onPill, `a tap at the pill's left edge reaches the pill: ${JSON.stringify(meet)}`);
       assert.equal(meet.noteUnder, false, `the Reconnecting to speech note is clear of the record light: ${JSON.stringify(meet)}`);
       assert.ok(meet.inView, `both stay on the screen: ${JSON.stringify(meet)}`);
+      // Text only's card goes low too: the note sits above it, never over what comes next.
+      let card = await clear();
+      assert.ok(card.next && card.low && card.noteLow, `Text only's card and the note both go low: ${JSON.stringify(card)}`);
+      assert.equal(card.over, false, `the note is clear of Text only's card with the cue pill low: ${JSON.stringify(card)}`);
       await shot(q, "record-light-pill-high-line-mobile");
-      ok("a phone with the reading line at the very top: the Producer's cue pill and the Reconnecting to speech note go low, clear of the record light, so a tap on the pill opens the cue");
+      await agent("tools/call", { name: "clear_suggestions", arguments: {} });
+      await q.locator(".ask-pill").waitFor({ state: "hidden" });
+      await q.evaluate(() => window.dispatchEvent(new Event("resize")));
+      await q.waitForTimeout(300);
+      card = await clear();
+      assert.ok(card.next && card.low && card.noteLow, `with no cue waiting, both still sit low: ${JSON.stringify(card)}`);
+      assert.equal(card.over, false, `the note is clear of Text only's card with no cue pill: ${JSON.stringify(card)}`);
+      await q.evaluate(() => { delete document.querySelector(".toast").dataset.show; window.dispatchEvent(new Event("resize")); });
+      ok("a phone with the reading line at the very top: the Producer's cue pill and the Reconnecting to speech note go low, clear of the record light, so a tap on the pill opens the cue; the note sits above Text only's card there, with or without a cue waiting");
     } finally {
       await c.close();
       await obs.stop();

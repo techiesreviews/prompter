@@ -279,7 +279,7 @@
     /* The record light (TOOLS-467) sits at the top centre too: while it shows, the card starts below it. */
     :root:has(.rec:not([hidden])) .next-up:not([data-low]) { inset-block-start: calc(var(--rec-clear) + env(safe-area-inset-top, 0px)); }
     .next-up[data-low] { inset-block: auto calc(var(--dock-h, 88px) + 8px); } /* above the control bar and any note over it */
-    :root:has(.ask-pill[data-place="low"]:not([hidden])) .next-up[data-low] { inset-block-end: max(calc(var(--dock-h, 88px) + 8px), calc(136px + env(safe-area-inset-bottom, 0px))); } /* and above the low cue pill */
+    :root:has(.ask-pill[data-place="low"]:not([hidden])) .next-up[data-low] { inset-block-end: max(calc(var(--dock-h, 88px) + 56px), calc(136px + env(safe-area-inset-bottom, 0px))); } /* and above the low cue pill (the speech note, when low too: placeNext) */
     .next-up-label { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); white-space: nowrap; }
     .next-up .next-list { gap: 2px; }
     .next-up li:nth-child(n+3) { display: none; }
@@ -334,7 +334,7 @@
      reading line, over text already read, so the line itself stays clear. */
   .ask-pill[data-place="above"] { translate: 0 calc(-100% - 10px); }
   /* The line dragged too near the top for that (a phone on its side): low on the right, above the control bar. */
-  .ask-pill[data-place="low"] { inset-block: auto calc(88px + env(safe-area-inset-bottom, 0px)); translate: none; }
+  .ask-pill[data-place="low"] { inset-block: auto max(calc(88px + env(safe-area-inset-bottom, 0px)), calc(var(--dock-h, 88px) + 8px)); translate: none; } /* above the control bar and any note on it */
   .ask-pill[data-place="corner"] { inset-block-start: calc(16px + env(safe-area-inset-top, 0px)); inset-inline-end: calc(16px + env(safe-area-inset-right, 0px)); translate: none; }
   /* A start card taller than a small phone starts below the corner pill. */
   :root:has(.ask-pill[data-place="corner"]:not([hidden])) .empty { padding-block-start: 72px; }
@@ -343,8 +343,8 @@
   :root:has(.ask-pill[data-place="above"]:not([hidden])) .toast:not([data-low]) { transform: translateY(calc(-100% - 60px)); }
   /* No room above the line (dragged to the top, under the record light): low on the right, above the
      control bar, as the pill goes, and above the pill when it is low too. */
-  .toast[data-low] { inset-block: auto calc(88px + env(safe-area-inset-bottom, 0px)); transform: none; }
-  :root:has(.ask-pill[data-place="low"]:not([hidden])) .toast[data-low] { inset-block-end: calc(140px + env(safe-area-inset-bottom, 0px)); }
+  .toast[data-low] { inset-block: auto max(calc(88px + env(safe-area-inset-bottom, 0px)), calc(var(--dock-h, 88px) + 8px)); transform: none; }
+  :root:has(.ask-pill[data-place="low"]:not([hidden])) .toast[data-low] { inset-block-end: max(calc(140px + env(safe-area-inset-bottom, 0px)), calc(var(--dock-h, 88px) + 60px)); }
   .ask-veil { position: fixed; inset: 0; z-index: 15; background: oklch(16% 0.06 282 / 0.82); }
   .ask-box {
     position: fixed; z-index: 16; inset: 0; margin: auto; block-size: fit-content;
