@@ -2828,7 +2828,84 @@ export async function run({ browser, base, mode, dist, out }) {
   await PK.waitForTimeout(800);
   assert.deepEqual(pickVisits, [`${base}/fonts/OFL.txt?other=1`], "the held page does not go over the link chosen during the wait");
   await pickCtx.close();
-  ok("with the window placement permission (asked from the Connect click), a new main screen opens full size on the other screen and asks for full screen; without it, a plain window to drag; the first Connect sends the page only once the permission is answered and the window has moved (the Prompter comes to the front for the ask; with no answer, after 10 s), and a page that came meanwhile goes instead, once");
+  // Connect pressed twice during the wait: still one wait, so a link chosen after the second press is
+  // not overwritten by the reading line's page when the answer comes.
+  const twiceCtx = await browser.newContext(DESKTOP);
+  await twiceCtx.addInitScript(NO_SPEECH);
+  await twiceCtx.addInitScript(() => { window.getScreenDetails = () => new Promise((done) => { window.__deny = () => done(null); }); });
+  const TW2 = await twiceCtx.newPage();
+  watch(TW2, "main screen placement, Connect twice during the wait");
+  await TW2.goto(await makeLink(`### **INTRO · 00:00**\n\n- Licence: ${base}/fonts/OFL.txt\n- Other: ${base}/fonts/OFL.txt?other=1\n\nA page at the reading line.\nWaiting for the answer.\n`, "lex", base));
+  await TW2.locator(".section").first().waitFor();
+  await scrollToSection(TW2, 0);
+  const [twiceWin] = await Promise.all([twiceCtx.waitForEvent("page"), viaSettings(TW2, ".screen")]);
+  const twiceVisits = [];
+  twiceWin.on("framenavigated", (frame) => { if (frame === twiceWin.mainFrame() && frame.url() !== "about:blank") twiceVisits.push(frame.url()); });
+  await viaSettings(TW2, ".screen");
+  await TW2.waitForTimeout(300);
+  assert.equal(twiceCtx.pages().length, 2, "the second press opens no other window");
+  await TW2.locator('.section[data-i="0"] .links .link').nth(1).dispatchEvent("click");
+  await twiceWin.waitForURL(`${base}/fonts/OFL.txt?other=1`);
+  await TW2.evaluate(() => window.__deny());
+  await TW2.waitForTimeout(800);
+  assert.deepEqual(twiceVisits, [`${base}/fonts/OFL.txt?other=1`], "the reading line's page does not go over the link chosen after a second Connect");
+  await twiceCtx.close();
+  // Answered once with no second screen: later Connects do not ask again, so the Prompter does not
+  // jump to the front and the new window shows no waiting line.
+  const oneCtx = await browser.newContext(DESKTOP);
+  await oneCtx.addInitScript(NO_SPEECH);
+  await oneCtx.addInitScript(() => {
+    const screens = [{ isPrimary: true, availLeft: 0, availTop: 0, availWidth: 1366, availHeight: 860 }];
+    window.getScreenDetails = () => Promise.resolve({ screens, currentScreen: screens[0] });
+    const realFocus = window.focus;
+    window.__focus = 0;
+    window.focus = function (...a) { window.__focus += 1; return realFocus.apply(this, a); };
+    const real = window.open;
+    window.__texts = [];
+    window.open = function (...args) {
+      const win = real.apply(this, args);
+      // Every text the waiting window is given, also one replaced straight after.
+      try { new win.MutationObserver(() => window.__texts.push(win.document.body.textContent)).observe(win.document.body, { childList: true, characterData: true, subtree: true }); } catch { /* another site */ }
+      return win;
+    };
+  });
+  const OS = await oneCtx.newPage();
+  watch(OS, "main screen placement, one screen");
+  await OS.goto(await makeLink("### **WORDS · 00:00**\n\nJust words here.\nNothing to show.\n", "lex", base));
+  await OS.locator(".section").first().waitFor();
+  const [oneWin] = await Promise.all([oneCtx.waitForEvent("page"), viaSettings(OS, ".screen")]);
+  await OS.waitForTimeout(300);
+  assert.equal(await OS.evaluate(() => window.__focus), 1, "the first Connect asks, and brings the Prompter to the front for it");
+  await oneWin.close();
+  await OS.waitForFunction(() => document.querySelector("#settings .screen").dataset.on === "cut");
+  await OS.evaluate(() => { window.__texts = []; });
+  const [oneAgain] = await Promise.all([oneCtx.waitForEvent("page"), OS.locator('.cut-note [data-action="connect"]').click()]);
+  await OS.waitForTimeout(300);
+  assert.equal(await OS.evaluate(() => window.__focus), 1, "answered already: the next Connect does not pull the Prompter to the front");
+  assert.ok((await OS.evaluate(() => window.__texts)).every((t) => !t.includes("Allow window placement")), "and its window never shows the waiting line");
+  assert.equal(await oneAgain.evaluate(() => document.body.textContent), "Drag this window to your main screen and make it full size. Pages will open here.", "a plain window to drag");
+  await oneCtx.close();
+  ok("with the window placement permission (asked from the Connect click), a new main screen opens full size on the other screen and asks for full screen; without it, a plain window to drag; the first Connect sends the page only once the permission is answered and the window has moved (the Prompter comes to the front for the ask; with no answer, after 10 s), and a page that came meanwhile goes instead, once; Connect pressed twice keeps one wait; once answered, later Connects do not ask again");
+
+  // A page in a window of its own, with no main screen connected yet, stays marked as showing after
+  // Text only is turned on and off.
+  const ownBase = base.replace("://127.0.0.1", "://localhost"); // the same server under another site's name
+  assert.notEqual(ownBase, base, "the own window's site differs from the Prompter's");
+  const ownCtx = await browser.newContext(DESKTOP);
+  await ownCtx.addInitScript(NO_SPEECH);
+  await ownCtx.addInitScript(() => { localStorage.setItem("prompter-cut-sites", JSON.stringify(["localhost"])); });
+  const OW = await ownCtx.newPage();
+  watch(OW, "own window mark and Text only");
+  await OW.goto(await makeLink(`### **RULES · 00:00**\n\n- Leak rules: ${ownBase}/fonts/OFL.txt\n\nA site that cuts.\nIt opens in its own window.\n`, "lex", base));
+  await OW.locator(".section").first().waitFor();
+  const [markWin] = await Promise.all([ownCtx.waitForEvent("page"), OW.locator(".links .link").first().click()]);
+  await markWin.waitForURL(`${ownBase}/fonts/OFL.txt`);
+  assert.equal(await OW.locator(".links .link").first().getAttribute("data-shown"), "true", "the own window's link is marked as showing");
+  await viaSettings(OW, 'input[name="show"][value="text"]');
+  await viaSettings(OW, 'input[name="show"][value="all"]');
+  assert.equal(await OW.locator(".links .link").first().getAttribute("data-shown"), "true", "still marked after Text only on and off");
+  await ownCtx.close();
+  ok("a page in a window of its own stays marked as showing after Text only is turned on and off, also with no main screen connected");
 
   // ---- The reading line: dragged to camera height; read text fades above it ----
   const lineOf = (page) => page.evaluate(() => {
