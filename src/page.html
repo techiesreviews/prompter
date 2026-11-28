@@ -276,6 +276,8 @@
       padding: 8px 12px; font-size: 12px; background: var(--panel); border-radius: 14px;
       box-shadow: 0 1px 1px oklch(4% 0.06 282 / 0.5), 0 4px 8px oklch(4% 0.06 282 / 0.4), 0 16px 32px oklch(4% 0.06 282 / 0.3); /* no 1px top highlight: no edge line */
     }
+    /* The record light (TOOLS-467) sits at the top centre too: while it shows, the card starts below it. */
+    :root:has(.rec:not([hidden])) .next-up:not([data-low]) { inset-block-start: calc(var(--rec-clear) + env(safe-area-inset-top, 0px)); }
     .next-up[data-low] { inset-block: auto calc(var(--dock-h, 88px) + 8px); } /* above the control bar and any note over it */
     :root:has(.ask-pill[data-place="low"]:not([hidden])) .next-up[data-low] { inset-block-end: max(calc(var(--dock-h, 88px) + 8px), calc(136px + env(safe-area-inset-bottom, 0px))); } /* and above the low cue pill */
     .next-up-label { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); white-space: nowrap; }
@@ -522,6 +524,8 @@
      veil (z-index 15), as the control bar does, so a take can be stopped while a cue shows; the
      cue's box never reaches it: on a tall screen the box keeps 104px clear at the top, on a short
      one (a phone on its side) it starts below the light (see .ask-box). */
+  :root { --rec-clear: 58px; } /* room the light takes at the top: 10px above it, 40px for it, 8px under it */
+  @media (pointer: coarse) { :root { --rec-clear: 62px; } } /* its 44px phone target */
   .rec {
     position: fixed; inset-block-start: calc(10px + env(safe-area-inset-top, 0px)); inset-inline: 0; z-index: 16;
     display: flex; justify-content: center; gap: 2px; pointer-events: none;

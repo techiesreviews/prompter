@@ -1582,6 +1582,7 @@ function drawNext() {
 // (their height is --dock-h), and above the cue pill when that went low too.
 new ResizeObserver(() => root.style.setProperty("--dock-h", `${dockWrap.offsetHeight}px`)).observe(dockWrap);
 new ResizeObserver(() => placeNext()).observe(nextUp); // shown, or a row more or less: never a layout on every scroll frame
+new ResizeObserver(() => placeNext()).observe(recWrap); // the record light shown or gone: the card at the top moves under it or back
 // On a wide screen the strip hangs under the reading line; when it would run under the control bar it
 // goes above the line if there is more room there, and on a window too short for it either way the rows
 // furthest ahead wait (never the one just done, where Missed and Open show) until there is room.
