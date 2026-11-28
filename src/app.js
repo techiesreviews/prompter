@@ -1008,9 +1008,22 @@ let screensAsk = null; // the one ask, also while it waits for its answer
 let screensAnswered = false; // allowed (one screen or more) or refused: later Connects do not ask again
 const SCREENS_WAIT_MS = 10000; // how long the first Connect waits for that answer before it sends the page
 let placing = false; // while that first Connect waits
-let placingHeld = null; // the last page that came meanwhile ({ script, s, l }), sent when the wait ends
-let placingWin = null; // the window that wait sends to: the newest Connect's
+// The last page that came meanwhile ({ script, s, l }), sent when the wait ends; { script, done: true }
+// when a newer choice was already handled (a link button, a page's own window), so nothing is sent.
+let placingHeld = null;
+// The window that wait sends to: the newest Connect's, or the new main screen a page opened after the
+// waiting window was closed.
+let placingWin = null;
 const PLACING_NOTE = " Allow window placement in the Prompter to move this window to your main screen.";
+// A new main screen's own page while it has none: where to put it, what the last page held back was,
+// and, while the placement ask waits, where that ask is.
+function drawWaiting(win, placed, asking) {
+  win.document.title = "Main screen";
+  win.document.body.style.cssText = "margin:0;box-sizing:border-box;display:grid;place-items:center;height:100vh;background:#000;color:#f4f1ea;font:600 32px system-ui;text-align:center;padding:0 5vw;overflow-wrap:anywhere";
+  win.document.body.textContent = (placed ? "Main screen. Pages will open here." : "Drag this window to your main screen and make it full size. Pages will open here.")
+    + (skip.url ? ` The last page (${skip.site}) was not sent again, as it may cut this window off too: its link button opens it anyway.` : "")
+    + (asking ? PLACING_NOTE : "");
+}
 function askScreens() {
   if (!window.getScreenDetails) return Promise.resolve(null);
   if (!screensAsk) screensAsk = window.getScreenDetails().then((d) => (screenDetails = d), () => null).finally(() => { screensAnswered = true; });
@@ -1043,15 +1056,9 @@ function connect() {
   if (!mainWin) { blocked(); return; }
   // Pressed again during the placement wait and the same window came back (the browser gives the same
   // window for the same name; one opened after a close is another): it still shows what it showed.
-  const again = placing && win === placingWin;
+  const sameWindow = placing && win === placingWin;
   try {
-    if (mainWin.location.href === "about:blank") {
-      mainWin.document.title = "Main screen";
-      mainWin.document.body.style.cssText = "margin:0;box-sizing:border-box;display:grid;place-items:center;height:100vh;background:#000;color:#f4f1ea;font:600 32px system-ui;text-align:center;padding:0 5vw;overflow-wrap:anywhere";
-      mainWin.document.body.textContent = (placed ? "Main screen. Pages will open here." : "Drag this window to your main screen and make it full size. Pages will open here.")
-        + (skip.url ? ` The last page (${skip.site}) was not sent again, as it may cut this window off too: its link button opens it anyway.` : "")
-        + (asking ? PLACING_NOTE : "");
-    }
+    if (mainWin.location.href === "about:blank") drawWaiting(mainWin, placed, asking);
   } catch { /* already showing another site; fine */ }
   // The browser asks for window placement in the Prompter's window: it comes back to the front so the
   // ask is not hidden behind the new window.
@@ -1062,7 +1069,7 @@ function connect() {
   hideCutNote();
   watchScreen();
   // So a link chosen meanwhile, also one still loading, stays marked as showing.
-  if (!again) scripts.now.shownUrl = "";
+  if (!sameWindow) scripts.now.shownUrl = "";
   markShown();
   // The page at the reading line goes on the new main screen. A site that cuts the main screen off
   // opens in a window of its own (from its link, or as the reader reached it), so connecting does not
@@ -1171,13 +1178,16 @@ function showLink(si, li, fromUser) {
   }
   // The first Connect is still waiting for the placement answer: it sends the page at the reading line
   // once the window has moved; a page that comes meanwhile (a settled scroll, Follow my voice) is held
-  // and sent then instead. A window closed during the wait holds nothing back: the page opens a new
-  // main screen below, which the wait then serves.
+  // and sent then instead. A window closed during the wait: the page opens a new main screen below.
   if (!fromUser && placing && connected()) { placingHeld = { script, s: si, l: li }; return; }
   const opened = !connected();
   if (opened) {
+    // During the placement wait a page that opens a new main screen by itself holds back too: the
+    // window opens on its waiting page, the wait moves over to it (so it can still move to the main
+    // screen once allowed), and the page goes when the wait ends, unless a newer one came meanwhile.
+    const hold = !fromUser && placing;
     // Cut off: the next page opens a new main screen by itself (Lex's pick); a link button does too.
-    mainWin = openScreen(url, WINDOW_NAME);
+    mainWin = openScreen(hold ? "" : url, WINDOW_NAME);
     if (!mainWin) {
       if (fromUser) blocked();
       else {
@@ -1189,10 +1199,21 @@ function showLink(si, li, fromUser) {
     setConnected(true);
     watchScreen();
     hideCutNote();
-    // During the placement wait, the wait moves to this window: a page that comes after this one is
-    // held and goes here when the wait ends, and nothing held before it goes over it.
-    if (placing) { placingWin = mainWin; placingHeld = { script, done: true }; }
     if (!fromUser) window.focus(); // the Prompter keeps the keys (clicker, Space) where the browser allows it
+    if (placing) {
+      // Nothing held before this page goes over it. A link button's page shows at once, where the
+      // window opened.
+      placingWin = mainWin;
+      placingHeld = hold ? { script, s: si, l: li } : { script, done: true };
+      if (hold) {
+        try { drawWaiting(mainWin, false, true); } catch { /* not ours to write; it still waits */ }
+        script.shownUrl = "";
+        script.missedKey = "";
+        markShown();
+        drawNext();
+        return;
+      }
+    }
   }
   if (opened || url !== script.shownUrl || fromUser) {
     if (!opened) try { mainWin.location.href = url; } catch { mainWin = window.open(url, WINDOW_NAME); }
