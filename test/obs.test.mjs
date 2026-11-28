@@ -998,20 +998,100 @@ test("R calls off a take waiting for OBS's own name to go back, however slow OBS
   l.turn(false);
 });
 
-test("a start whose take name OBS never answers ends in time, even while OBS's own name is slow to go back", async (t) => {
+test("a start whose take name OBS answers only late ends in time, and OBS's own name goes back after that answer", async (t) => {
   const obs = await startObsStandin();
   t.after(() => obs.stop());
   const { l } = link(obs);
   await until(() => l.state === "on");
   const name = takeName(sceneOf("7 · Stuck"), 1);
-  obs.answer = (type, data) => (type === "SetProfileParameter" ? (data.parameterValue === name ? { late: 10 * FAST.wait } : { delay: 2 * FAST.wait }) : null);
+  obs.answer = (type, data) => (type === "SetProfileParameter" ? (data.parameterValue === name ? { late: 4 * FAST.wait } : { delay: 2 * FAST.wait }) : null);
   const began = Date.now();
   const started = l.start(name);
   await until(() => l.starting === "", 4 * FAST.wait);
   assert.ok(Date.now() - began < FAST.wait + 300, `Starting ends soon after the usual wait (${Date.now() - began} ms)`);
   assert.equal(await started, false);
-  assert.equal(obs.record.format, name, "OBS did set the take's name, only never answered");
-  await until(() => obs.record.format === OWN_FORMAT, 4000); // the put-back landed
+  assert.equal(obs.record.format, name, "OBS did set the take's name, only had not answered");
+  await sleep(2 * FAST.wait);
+  assert.equal(obs.record.format, name, "the put-back waits for that answer");
+  await until(() => obs.record.format === OWN_FORMAT, 4000); // then it landed
+  l.turn(false);
+});
+
+test("a take name OBS is slow to set never lands on the next take: that one waits for it", async (t) => {
+  const obs = await startObsStandin();
+  t.after(() => obs.stop());
+  const { l } = link(obs);
+  await until(() => l.state === "on");
+  const one = takeName(sceneOf("1 · Slow name"), 1);
+  obs.answer = (type, data) => (type === "SetProfileParameter" && data.parameterValue === one ? { delay: 1.5 * FAST.wait } : null);
+  assert.equal(await l.start(one), false, "no answer in time");
+  obs.startLag = FAST.wait;
+  const two = takeName(sceneOf("2 · Next scene"), 1);
+  assert.equal(await l.start(two), true);
+  await until(() => obs.record.active, 4000);
+  assert.match(obs.record.path, /scene-02-next-scene-take-01\.mkv$/, "take 2 records under its own name");
+  await until(() => obs.record.format === OWN_FORMAT, 4000);
+  l.turn(false);
+});
+
+test("a take OBS began and stopped before its start went unanswered is over: OBS's own next recording is not taken for it", async (t) => {
+  const obs = await startObsStandin();
+  t.after(() => obs.stop());
+  const { l, ended, recorded } = link(obs);
+  await until(() => l.state === "on");
+  obs.answer = (type) => (type === "StartRecord" ? { late: 3 * FAST.wait } : null);
+  const one = takeName(sceneOf("5 · Brief"), 1);
+  const started = l.start(one);
+  await until(() => obs.record.active);
+  obs.press(false); // stopped in OBS itself; OBS's answer to the start comes only after the usual wait
+  await until(() => ended.length === 1);
+  assert.equal(await started, true, "OBS recorded it");
+  assert.deepEqual([ended, recorded, l.maybe, l.problem], [[one], [true], "", ""], "over, not waiting on OBS");
+  obs.press(true); // the person records in OBS itself
+  await until(() => l.recording);
+  assert.equal(l.take, null, "OBS's own recording is not the take");
+  assert.deepEqual(ended, [one]);
+  l.turn(false);
+});
+
+test("a take OBS gives up before it answers the start ends at once, and the next take starts", async (t) => {
+  const obs = await startObsStandin();
+  t.after(() => obs.stop());
+  const { l, ended, recorded } = link(obs);
+  await until(() => l.state === "on");
+  obs.startLag = null;
+  obs.answer = (type) => (type === "StartRecord" ? { late: 200 } : null);
+  const one = takeName(sceneOf("8 · Gave up"), 1);
+  const started = l.start(one);
+  await until(() => obs.requests("StartRecord").length === 1);
+  obs.giveUp(); // starting, then stopped, before OBS's answer to the start arrives
+  await started;
+  assert.deepEqual([ended, recorded, l.pending, l.problem], [[one], [false], "", "start"]);
+  await until(() => obs.record.format === OWN_FORMAT);
+  obs.startLag = 20;
+  obs.answer = null;
+  const two = takeName(sceneOf("8 · Gave up"), 2);
+  assert.equal(await l.start(two), true, "the next take starts at once");
+  await until(() => l.recording);
+  assert.deepEqual([l.take, l.problem], [two, ""]);
+  l.turn(false);
+});
+
+test("R while a take is starting says so at once: the link shows the take is called off", async (t) => {
+  const obs = await startObsStandin();
+  t.after(() => obs.stop());
+  const { l } = link(obs);
+  await until(() => l.state === "on");
+  obs.answer = (type) => (type === "StartRecord" ? { delay: 300 } : null);
+  const one = takeName(sceneOf("9 · Off"), 1);
+  const started = l.start(one);
+  await until(() => obs.requests("StartRecord").length === 1);
+  assert.equal(l.calledOff, false);
+  assert.equal(await l.stop(), true);
+  assert.equal(l.calledOff, true, "shown before OBS answers");
+  assert.equal(await started, true);
+  assert.equal(l.calledOff, false);
+  await until(() => !obs.record.active && !l.recording && !l.pending && !l.stopping, 4000);
   l.turn(false);
 });
 
