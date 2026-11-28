@@ -277,7 +277,7 @@
       box-shadow: 0 1px 1px oklch(4% 0.06 282 / 0.5), 0 4px 8px oklch(4% 0.06 282 / 0.4), 0 16px 32px oklch(4% 0.06 282 / 0.3); /* no 1px top highlight: no edge line */
     }
     /* The record light (TOOLS-467) sits at the top centre too: while it shows, the card starts below it. */
-    :root:has(.rec:not([hidden])) .next-up:not([data-low]) { inset-block-start: calc(var(--rec-clear) + env(safe-area-inset-top, 0px)); }
+    :root:has(.rec:not([hidden])) .next-up:not([data-low]) { inset-block-start: var(--rec-room); }
     .next-up[data-low] { inset-block: auto calc(var(--dock-h, 88px) + 8px); } /* above the control bar and any note over it */
     :root:has(.ask-pill[data-place="low"]:not([hidden])) .next-up[data-low] { inset-block-end: max(calc(var(--dock-h, 88px) + 56px), calc(136px + env(safe-area-inset-bottom, 0px))); } /* and above the low cue pill (the speech note, when low too: placeNext) */
     .next-up-label { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); white-space: nowrap; }
@@ -357,8 +357,7 @@
     /* With the record light showing (the OBS link on, a script open), the box starts below it: a long
        cue never covers the light, so a take can still be stopped. */
     :root:not([data-view="empty"]):has(.rec:not([hidden])) .ask-box {
-      --under-light: calc(var(--rec-clear) + env(safe-area-inset-top, 0px));
-      inset-block-start: var(--under-light); max-block-size: calc(100dvh - var(--under-light) - 84px);
+      inset-block-start: var(--rec-room); max-block-size: calc(100dvh - var(--rec-room) - 84px);
     }
   }
   .ask-box:focus { outline: none; } /* no ring or edge on the box (Lex, 2026-11-25); its buttons keep theirs */
@@ -600,7 +599,6 @@
     .rec-light, .rec-star, .rail-go, .rail-take { min-inline-size: 44px; min-block-size: 44px; }
     .rec-rail { inline-size: 44px; } /* closed: a 44px strip to tap, still showing only the thin grip */
     .rec-rail:focus-within { inline-size: 160px; } /* opened by a tap */
-    :root:has(.rec-rail:not([hidden])) .script { padding-inline-start: max(5vw, 52px); } /* the words start clear of the 44px strip */
   }
   @media (prefers-reduced-motion: no-preference) {
     .rec-rail { transition: inline-size 200ms var(--ease-out), background-color 200ms var(--ease-out); }
@@ -671,6 +669,11 @@
 
   @media (max-width: 760px) {
     .script { padding-inline: 5vw; }
+  }
+  @media (pointer: coarse) { /* after the narrow-screen padding: on phones the words start clear of the rail's 44px strip */
+    :where(:root:has(.rec-rail:not([hidden]))) .script { padding-inline-start: max(5vw, 52px); }
+  }
+  @media (max-width: 760px) {
     .dock-wrap { padding-inline: 8px; }
     .dock { gap: 0; padding: 4px; }
     .dock-sep { display: none; }

@@ -246,7 +246,7 @@ export function obsLink({ WebSocket = globalThis.WebSocket, subtle = globalThis.
   let news = 0; // counts what OBS said or took about the recording since the page loaded (see recordStatus)
   let beginning = null; // the take OBS last said it was beginning (its "starting" word), by name
   let turns = 0; // counts turn(): a start begun before the link started over leaves nothing behind
-  // Another Prompter tab on this device may be starting a take, its name in OBS for now: before putting
+  // Another Prompter tab in this browser (the same profile) may be starting a take, its name in OBS for now: before putting
   // OBS's own name back over a take name it did not set, a tab asks the others (BroadcastChannel; nothing
   // is stored) and leaves the name alone when one answers that a take of its own is under way.
   let peers = null;

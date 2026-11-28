@@ -810,7 +810,7 @@ function setLine(frac, keepText = false) {
   const delta = reading.place(y);
   root.style.setProperty("--line", `${y}px`);
   placePill(); // dragged high, the pill goes low (and Text only's card on a phone goes above the control bar)
-  const pct = Math.round(lineFrac * 100);
+  const pct = Math.round((y / viewHeight()) * 100); // where the line is drawn, also when the record light holds it lower
   handle.setAttribute("aria-valuenow", String(pct));
   handle.setAttribute("aria-valuetext", `${pct}% from the top`);
   if (keepText && delta) {
