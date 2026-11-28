@@ -504,7 +504,19 @@ export async function run({ browser, base, mode, out }) {
     await until(page, () => document.querySelector(".rec-rail").getBoundingClientRect().width === 10);
     assert.equal(await page.evaluate(() => document.activeElement?.className), "rec-light", "focus goes to the record light");
     await page.evaluate(() => document.activeElement.blur());
-    ok("Esc closes the scene rail a keyboard opened, and focus goes to the record light");
+    // With the mouse resting over the open rail too: Esc closes it, until the mouse leaves and comes back.
+    await page.mouse.move(4, 450);
+    await until(page, () => document.querySelector(".rec-rail").getBoundingClientRect().width > 60);
+    await page.locator(".rail-go").first().focus();
+    await page.keyboard.press("Escape");
+    await until(page, () => document.querySelector(".rec-rail").getBoundingClientRect().width === 10);
+    assert.equal(await page.evaluate(() => document.activeElement?.className), "rec-light", "focus goes to the record light with the mouse over the rail");
+    await page.evaluate(() => document.activeElement.blur());
+    await page.mouse.move(683, 450);
+    await page.mouse.move(4, 450);
+    await until(page, () => document.querySelector(".rec-rail").getBoundingClientRect().width > 60); // the mouse opens it again
+    await page.mouse.move(683, 450);
+    ok("Esc closes the scene rail a keyboard opened, also with the mouse resting over it, and focus goes to the record light");
 
     // The Producer's cue box open (pushed by the person's agent, as in the page suite): the box keeps the
     // page's other keys waiting, but R still starts and stops a take.
