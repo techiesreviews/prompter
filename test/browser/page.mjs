@@ -2622,17 +2622,19 @@ export async function run({ browser, base, mode, dist, out }) {
   await viaSettings(CW, ".screen");
   await CW.waitForTimeout(1200);
   assert.deepEqual([fourthWin.url(), (await screenOf(CW))[0], cutCtx.pages().length, await noteOf()], ["about:blank", "true", 6, ""], "the new window waits with its message, after a second Reconnect too");
-  assert.match(await fourthWin.locator("body").textContent(), /Drag this window to your main screen.*The last page \(cut3\.localhost\) was not sent again.*its link button opens it anyway/);
+  assert.match(await fourthWin.locator("[data-note]").textContent(), /Drag this window to your main screen.*The last page \(cut3\.localhost\) was not sent again.*its link button opens it anyway/);
   assert.equal(await CW.locator('[data-shown="true"]').count(), 0, "no link marked as showing");
   assert.match(await CW.locator(".status").textContent(), /^Main screen connected\. The last page \(cut3\.localhost\) was not sent again: its link button opens it\.$/, "read out once");
   // A long site name in a narrow window (a phone, or 200% zoom) wraps: no sideways scrolling.
   for (const width of [390, 195]) {
     await fourthWin.setViewportSize({ width, height: 800 });
     assert.equal(await fourthWin.evaluate(() => {
-      const before = document.body.textContent;
-      document.body.textContent = before.replace("cut3.localhost", "autoriteitpersoonsgegevens.nl");
+      const note = document.querySelector("[data-note]");
+      const before = note.textContent;
+      note.textContent = before.replace("cut3.localhost", "autoriteitpersoonsgegevens.nl");
+      document.querySelector("[data-full]").hidden = false;
       const fits = document.documentElement.scrollWidth <= innerWidth;
-      document.body.textContent = before;
+      note.textContent = before;
       return fits;
     }), true, `the waiting window's note fits ${width}px`);
   }
@@ -2718,10 +2720,16 @@ export async function run({ browser, base, mode, dist, out }) {
   ok("a page that cuts the main screen off (Cross-Origin-Opener-Policy, as the Dutch Data Protection Authority's page), or a closed main screen window: the button says cut off (an orange dashed screen, its name and title, a dot on Settings), one plain note above the control bar names the site (no border, ring or highlight; read out once) with one button, Open a new main screen, and no alert; the next page opens a new main screen by itself (blocked: the note says so, once); the site is remembered on this device and opens in a window of its own from then on (once per page by itself, the keys back to the Prompter), so the main screen stays connected, and comes off the list when that window stays connected; the longest note fits 195px; also when the next page comes before the Prompter looked and for a slow site; Reconnect does not send again a page that may have cut it off");
 
   // With the window placement permission, a new main screen opens full size on the screen the Prompter
-  // is not on, asking for full screen too; until it is allowed (asked from the Connect click), a plain
-  // window that moves there once it is.
+  // is not on; until it is allowed (asked from the Connect click), a plain window that moves there once
+  // it is. Every main screen's own page says "Press F11 for full screen" while it is not full screen
+  // (TOOLS-492: a page cannot make it full screen across sites, the browser's own F11 can).
   const placeCtx = await browser.newContext(DESKTOP);
   await placeCtx.addInitScript(NO_SPEECH);
+  // A 1920 × 1080 screen (headless pop-ups otherwise report a screen as big as their page).
+  await placeCtx.addInitScript(() => {
+    Object.defineProperty(Screen.prototype, "width", { get: () => 1920, configurable: true });
+    Object.defineProperty(Screen.prototype, "height", { get: () => 1080, configurable: true });
+  });
   await placeCtx.addInitScript(() => {
     const screens = [{ isPrimary: false, availLeft: 0, availTop: 0, availWidth: 1366, availHeight: 860 }, { isPrimary: true, availLeft: 1366, availTop: 0, availWidth: 1920, availHeight: 1040 }];
     window.getScreenDetails = () => Promise.resolve({ screens, currentScreen: screens[0] });
@@ -2734,13 +2742,27 @@ export async function run({ browser, base, mode, dist, out }) {
   await PL.goto(await makeLink("### **WORDS · 00:00**\n\nJust words here.\nNothing to show.\n", "lex", base));
   await PL.locator(".section").first().waitFor();
   const [placedWin] = await Promise.all([placeCtx.waitForEvent("page"), viaSettings(PL, ".screen")]);
-  await placedWin.waitForFunction(() => document.body.textContent === "Main screen. Pages will open here.");
+  await placedWin.waitForFunction(() => document.querySelector("[data-note]")?.textContent === "Main screen. Pages will open here.");
   assert.deepEqual(await PL.evaluate(() => window.__features), ["popup=yes,width=1400,height=900"], "the first one opens plain and asks for the permission");
+  const fullLine = (win) => win.evaluate(() => {
+    const line = document.querySelector("[data-full]");
+    return line && { text: line.textContent, shown: !line.hidden && line.offsetHeight > 0, size: parseFloat(getComputedStyle(line).fontSize) };
+  });
+  const line = await fullLine(placedWin);
+  assert.deepEqual([line.text, line.shown], ["Press F11 for full screen", true], "not full screen: one plain line says how");
+  assert.ok(line.size >= 48, `the line is large (${line.size}px)`);
+  await placedWin.setViewportSize({ width: 1920, height: 1080 });
+  await placedWin.waitForFunction(() => document.querySelector("[data-full]").hidden, null, { timeout: 3000 });
+  assert.equal((await fullLine(placedWin)).shown, false, "full screen (the page fills the screen): the line goes");
+  await placedWin.setViewportSize({ width: 1366, height: 900 });
+  await placedWin.waitForFunction(() => !document.querySelector("[data-full]").hidden, null, { timeout: 3000 });
+  assert.equal((await fullLine(placedWin)).shown, true, "out of full screen again: the line comes back");
   await placedWin.close();
   await PL.waitForFunction(() => document.querySelector("#settings .screen").dataset.on === "cut");
   const [nextWin] = await Promise.all([placeCtx.waitForEvent("page"), PL.locator('.cut-note [data-action="connect"]').click()]);
-  assert.equal(await PL.evaluate(() => window.__features.at(-1)), "popup=yes,left=1366,top=0,width=1920,height=1040,fullscreen=yes", "the next one opens full size on the other screen, asking for full screen");
-  assert.equal(await nextWin.evaluate(() => document.body.textContent), "Main screen. Pages will open here.", "no drag-me message");
+  assert.equal(await PL.evaluate(() => window.__features.at(-1)), "popup=yes,left=1366,top=0,width=1920,height=1040", "the next one opens full size on the other screen");
+  assert.equal(await nextWin.evaluate(() => document.querySelector("[data-note]").textContent), "Main screen. Pages will open here.", "no drag-me message");
+  assert.deepEqual(await fullLine(nextWin).then((l) => [l.text, l.shown]), ["Press F11 for full screen", true], "a later main screen says it too");
   await placeCtx.close();
   // The first Connect with a page at the reading line: the window waits on its own page until the
   // permission is answered, moves to the other screen, and only then gets the page (a window showing
@@ -2771,7 +2793,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await SL.waitForTimeout(1200);
   assert.equal(slowWin.url(), "about:blank", "the page waits for the permission's answer");
   assert.deepEqual(await SL.evaluate(() => window.__asked), [true, false], "asked from the click, before the window opens and uses it up");
-  assert.match(await slowWin.evaluate(() => document.body.textContent), /Pages will open here\. Allow window placement in the Prompter to move this window to your main screen\.$/, "the waiting window says where the ask is");
+  assert.match(await slowWin.evaluate(() => document.querySelector("[data-note]").textContent), /Pages will open here\. Allow window placement in the Prompter to move this window to your main screen\.$/, "the waiting window says where the ask is");
   assert.equal(await SL.evaluate(() => document.hasFocus()), true, "the Prompter comes back to the front, so the ask is not hidden behind the new window");
   await SL.evaluate(() => window.__allow());
   await slowWin.waitForURL(`${base}/fonts/OFL.txt`);
@@ -3015,9 +3037,9 @@ export async function run({ browser, base, mode, dist, out }) {
   await OS.waitForTimeout(300);
   assert.equal(await OS.evaluate(() => window.__focus), 1, "answered already: the next Connect does not pull the Prompter to the front");
   assert.ok((await OS.evaluate(() => window.__texts)).every((t) => !t.includes("Allow window placement")), "and its window never shows the waiting line");
-  assert.equal(await oneAgain.evaluate(() => document.body.textContent), "Drag this window to your main screen and make it full size. Pages will open here.", "a plain window to drag");
+  assert.equal(await oneAgain.evaluate(() => document.querySelector("[data-note]").textContent), "Drag this window to your main screen and make it full size. Pages will open here.", "a plain window to drag");
   await oneCtx.close();
-  ok("with the window placement permission (asked from the Connect click), a new main screen opens full size on the other screen and asks for full screen; without it, a plain window to drag; the first Connect sends the page only once the permission is answered and the window has moved (the Prompter comes to the front for the ask; with no answer, after 10 s), and a page that came meanwhile goes instead, once; Connect pressed twice keeps one wait (a link chosen before the second press stays marked); a waiting window closed and replaced by the next page's new main screen (which waits and moves too) or by Connect gets the newest page, and a page held before the close never goes over it; once answered, later Connects do not ask again");
+  ok("with the window placement permission (asked from the Connect click), a new main screen opens full size on the other screen; without it, a plain window to drag; every main screen's own page says Press F11 for full screen (large, one line) until the window is full screen, and again when it leaves full screen; the first Connect sends the page only once the permission is answered and the window has moved (the Prompter comes to the front for the ask; with no answer, after 10 s), and a page that came meanwhile goes instead, once; Connect pressed twice keeps one wait (a link chosen before the second press stays marked); a waiting window closed and replaced by the next page's new main screen (which waits and moves too) or by Connect gets the newest page, and a page held before the close never goes over it; once answered, later Connects do not ask again");
 
   // A page in a window of its own, with no main screen connected yet, stays marked as showing after
   // Text only is turned on and off.
