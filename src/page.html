@@ -575,9 +575,9 @@
   .rec-rail:focus-within::after { display: none; }
   .rec-rail:focus-within .rail-scene { opacity: 1; pointer-events: auto; }
   @media (hover: hover) and (pointer: fine) { /* the same open rail, under a mouse */
-    .rec-rail:not([data-shut]):hover { inline-size: 112px; overflow-y: auto; background: color-mix(in oklch, var(--rail) 94%, transparent); }
-    .rec-rail:not([data-shut]):hover::after { display: none; }
-    .rec-rail:not([data-shut]):hover .rail-scene { opacity: 1; pointer-events: auto; }
+    .rec-rail:where(:not([data-shut])):hover { inline-size: 112px; overflow-y: auto; background: color-mix(in oklch, var(--rail) 94%, transparent); }
+    .rec-rail:where(:not([data-shut])):hover::after { display: none; }
+    .rec-rail:where(:not([data-shut])):hover .rail-scene { opacity: 1; pointer-events: auto; }
   }
   .rail-go {
     flex: none; max-inline-size: 5ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-inline-size: 24px; min-block-size: 24px; padding: 6px 2px;

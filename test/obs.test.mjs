@@ -334,7 +334,7 @@ test("OBS refusing to record says so on the light and leaves OBS's own name as i
   assert.equal(await l.start(takeName(sceneOf("1 · Hook"), 1)), false);
   assert.equal(l.recording, false);
   assert.equal(l.problem, "start");
-  assert.equal(obs.record.format, "%CCYY-%MM-%DD %hh-%mm-%ss");
+  await until(() => obs.record.format === "%CCYY-%MM-%DD %hh-%mm-%ss"); // going back, not waited for by the start
   assert.deepEqual(ended, []);
   obs.answer = null;
   assert.equal(await l.start(takeName(sceneOf("1 · Hook"), 1)), true);
@@ -971,6 +971,46 @@ test("OBS's own name put back slower than the usual wait still never lands on th
   await until(() => obs.record.format === OWN_FORMAT, 4000);
   assert.equal(await l.stop(), true);
   await until(() => !obs.record.active && !l.recording && !l.pending && !l.stopping);
+  l.turn(false);
+});
+
+test("R calls off a take waiting for OBS's own name to go back, however slow OBS is to answer it", async (t) => {
+  const obs = await startObsStandin();
+  t.after(() => obs.stop());
+  const { l } = link(obs);
+  await until(() => l.state === "on");
+  obs.answer = (type, data) => (type === "SetProfileParameter" && data.parameterValue === OWN_FORMAT ? { delay: 3000 } : null);
+  const one = takeName(sceneOf("6 · Held"), 1);
+  assert.equal(await l.start(one), true);
+  await until(() => obs.record.active);
+  assert.equal(await l.stop(), true);
+  await until(() => !obs.record.active && !l.recording && !l.pending && !l.stopping);
+  const two = takeName(sceneOf("6 · Held"), 2);
+  const began = Date.now();
+  const started = l.start(two);
+  await sleep(100);
+  assert.equal(l.starting, two, "take 2 waits for the put-back");
+  assert.equal(await l.stop(), true);
+  assert.equal(await started, false, "called off");
+  assert.ok(Date.now() - began < 1000, `well before OBS answers (${Date.now() - began} ms)`);
+  assert.equal(obs.requests("StartRecord").length, 1, "OBS was never asked to record take 2");
+  assert.ok(!obs.requests("SetProfileParameter").some((d) => d.requestData.parameterValue === two), "take 2's name was never set");
+  l.turn(false);
+});
+
+test("a start whose take name OBS never answers ends in time, even while OBS's own name is slow to go back", async (t) => {
+  const obs = await startObsStandin();
+  t.after(() => obs.stop());
+  const { l } = link(obs);
+  await until(() => l.state === "on");
+  const name = takeName(sceneOf("7 · Stuck"), 1);
+  obs.answer = (type, data) => (type === "SetProfileParameter" ? (data.parameterValue === name ? { silent: true } : { delay: 2 * FAST.wait }) : null);
+  const began = Date.now();
+  const started = l.start(name);
+  await until(() => l.starting === "", 4 * FAST.wait);
+  assert.ok(Date.now() - began < FAST.wait + 300, `Starting ends soon after the usual wait (${Date.now() - began} ms)`);
+  assert.equal(await started, false);
+  await until(() => obs.record.format === OWN_FORMAT, 4000);
   l.turn(false);
 });
 

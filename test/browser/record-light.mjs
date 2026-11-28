@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { startObsStandin } from "../obs-standin.mjs";
+import { SPEECH_STUB } from "./page.mjs";
 
 const FILL = Array.from({ length: 14 }, (_, i) => `Line ${i + 1} of this part.`).join("\n");
 const SCRIPT = `### **INTRO · 00:00**
@@ -878,7 +879,8 @@ export async function run({ browser, base, mode, out }) {
   if (mode === "wrangler") {
     obs = await startObsStandin({ port: 4455 });
     const c = await browser.newContext(MOBILE);
-    await c.addInitScript(() => { localStorage.setItem("prompter-obs", "on"); localStorage.setItem("prompter-line", "0.08"); localStorage.setItem("prompter-text-only", "on"); });
+    await c.addInitScript(() => { localStorage.setItem("prompter-obs", "on"); localStorage.setItem("prompter-line", "0.08"); localStorage.setItem("prompter-text-only", "on"); localStorage.setItem("prompter-voice-ok", "yes"); });
+    await c.addInitScript(SPEECH_STUB);
     const q = await c.newPage();
     watch(q);
     try {
@@ -896,12 +898,16 @@ export async function run({ browser, base, mode, out }) {
       await until(q, () => document.querySelector(".rec-light").dataset.state === "idle" && !document.querySelector(".rec-star").hidden);
       await agent("tools/call", { name: "push_suggestions", arguments: { items: [{ kind: "point", text: "Say where the files end up." }, { kind: "steer", text: "Back to the costs." }] } });
       await q.locator(".ask-pill").waitFor();
-      // The Reconnecting to speech note, as showToast puts it up, then placed again as on any resize.
-      await q.evaluate(() => {
-        document.querySelector(".toast-text").textContent = "Reconnecting to speech…";
-        document.querySelector(".toast").dataset.show = "true";
-        window.dispatchEvent(new Event("resize"));
-      });
+      // Follow my voice on, and speech keeps failing: the page itself puts up the Reconnecting to speech note.
+      await q.evaluate(() => document.querySelector("#settings").showPopover()); // the control bar hides while a phone reads
+      await q.locator("#settings .voice").click();
+      await closeSettings(q);
+      await q.waitForFunction(() => window.__speech.started >= 1);
+      for (let i = 0; i < 10 && !(await q.evaluate(() => document.querySelector(".toast").dataset.show)); i++) {
+        const n = await q.evaluate(() => { window.__speech.fail("network"); return window.__speech.started; });
+        await q.waitForFunction((k) => window.__speech.started > k, n, { timeout: 5000 });
+      }
+      assert.equal(await q.evaluate(() => document.querySelector(".toast").dataset.show && document.querySelector(".toast-text").textContent), "Reconnecting to speech…");
       await q.waitForTimeout(500); // the note's fade in
       const clear = () => q.evaluate(() => {
         const box = (el) => { const r = el.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; };
@@ -933,12 +939,18 @@ export async function run({ browser, base, mode, out }) {
       await shot(q, "record-light-pill-high-line-mobile");
       await agent("tools/call", { name: "clear_suggestions", arguments: {} });
       await q.locator(".ask-pill").waitFor({ state: "hidden" });
-      await q.evaluate(() => window.dispatchEvent(new Event("resize")));
       await q.waitForTimeout(300);
       card = await clear();
       assert.ok(card.next && card.low && card.noteLow, `with no cue waiting, both still sit low: ${JSON.stringify(card)}`);
       assert.equal(card.over, false, `the note is clear of Text only's card with no cue pill: ${JSON.stringify(card)}`);
-      await q.evaluate(() => { delete document.querySelector(".toast").dataset.show; window.dispatchEvent(new Event("resize")); });
+      // Words heard: the note goes, and the card comes back down to just above the control bar.
+      await q.evaluate(() => window.__speech.say("hi"));
+      await until(q, () => !document.querySelector(".toast").dataset.show);
+      const down = await q.evaluate(() => {
+        const next = document.querySelector(".next-up");
+        return { inline: next.style.insetBlockEnd, gap: Math.round(innerHeight - next.getBoundingClientRect().bottom), want: Math.round(parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--dock-h")) + 8) };
+      });
+      assert.deepEqual([down.inline, down.gap], ["", down.want], `the card is back above the control bar: ${JSON.stringify(down)}`);
       ok("a phone with the reading line at the very top: the Producer's cue pill and the Reconnecting to speech note go low, clear of the record light, so a tap on the pill opens the cue; the note sits above Text only's card there, with or without a cue waiting");
     } finally {
       await c.close();
