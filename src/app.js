@@ -1005,13 +1005,15 @@ function drawCutNote() { cutEl.hidden = !cutSays || askShowing; }
 // window the person drags.
 let screenDetails = null;
 let screensAsk = null; // the one ask, also while it waits for its answer
+let screensAnswered = false; // allowed (one screen or more) or refused: later Connects do not ask again
 const SCREENS_WAIT_MS = 10000; // how long the first Connect waits for that answer before it sends the page
 let placing = false; // while that first Connect waits
 let placingHeld = null; // the last page that came meanwhile ({ script, s, l }), sent when the wait ends
+let placingWin = null; // the window that wait sends to: the newest Connect's
 const PLACING_NOTE = " Allow window placement in the Prompter to move this window to your main screen.";
 function askScreens() {
   if (!window.getScreenDetails) return Promise.resolve(null);
-  if (!screensAsk) screensAsk = window.getScreenDetails().then((d) => (screenDetails = d), () => null);
+  if (!screensAsk) screensAsk = window.getScreenDetails().then((d) => (screenDetails = d), () => null).finally(() => { screensAnswered = true; });
   return screensAsk;
 }
 navigator.permissions?.query({ name: "window-management" }).then((p) => { if (p.state === "granted") askScreens(); }, () => {});
@@ -1031,7 +1033,9 @@ function updateSettingsBtn() {
 function connect() {
   if (connectBtn.dataset.on === "true" && !connected()) screenGone(); // before the watch saw it
   const placed = Boolean(screenArea());
-  const asking = !placed && Boolean(window.getScreenDetails);
+  // Only while the ask has no answer yet: answered with no second screen, or refused, a Connect opens
+  // a plain window at once, without pulling the Prompter to the front or a waiting line.
+  const asking = !placed && !screensAnswered && Boolean(window.getScreenDetails);
   // Asked before the window opens: opening it uses up the click, and the browser shows the ask only
   // from a click.
   const answer = asking ? askScreens() : null;
@@ -1059,7 +1063,7 @@ function connect() {
   // The page at the reading line goes on the new main screen. A site that cuts the main screen off
   // opens in a window of its own (from its link, or as the reader reached it), so connecting does not
   // open another one for it.
-  const sendAnchor = () => {
+  const sendAnchor = (win) => {
     const held = placingHeld?.script === scripts.now ? placingHeld : null;
     placingHeld = null;
     if (win !== mainWin || !connected()) return;
@@ -1071,14 +1075,20 @@ function connect() {
     drawNext();
     if (skip.url && !scripts.now.shownUrl) setStatus(`Main screen connected. The last page (${skip.site}) was not sent again: its link button opens it.`);
   };
-  if (!asking) { sendAnchor(); return; }
+  if (!asking) { sendAnchor(win); return; }
   // Asked once per visit, from the first Connect click: allowed, this window moves to the main screen
   // while it still waits, and every later main screen opens there. The page waits for that answer (a
   // window showing another site can no longer be moved), or SCREENS_WAIT_MS when none comes.
+  placingWin = win;
+  // Pressed again during the wait: the one pending wait serves the newest window and keeps what it
+  // holds (a second wait would send the reading line's page over a link chosen meanwhile).
+  if (placing) return;
   placing = true;
   placingHeld = null;
   Promise.race([answer, new Promise((done) => setTimeout(done, SCREENS_WAIT_MS))]).then(() => {
     placing = false;
+    const win = placingWin;
+    placingWin = null;
     const area = screenArea();
     if (win === mainWin) {
       try {
@@ -1093,7 +1103,7 @@ function connect() {
         }
       } catch { /* already showing another site: it stays where it is */ }
     }
-    sendAnchor();
+    sendAnchor(win);
   });
 }
 
@@ -1289,7 +1299,7 @@ function setTextOnly(on, keep = true) {
     render({ redraw: true });
     root.toggleAttribute("data-next-up", stripOn()); // before the place is found again: the column's width may change
     if (curK !== undefined) main.querySelector(`[data-k="${curK}"]`)?.classList.add("cur");
-    if (script.shownUrl) markShown();
+    if (script.shownUrl || script.ownUrl) markShown(); // the main screen's page, or one in its own window
   };
   if (!keep || isEmpty()) { set(); drawNext(); return; }
   anchorQuiet = true;
