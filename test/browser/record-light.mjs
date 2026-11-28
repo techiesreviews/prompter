@@ -349,6 +349,7 @@ export async function run({ browser, base, mode, out }) {
     await page.keyboard.press("r");
     await obsUntil(() => obs.requests("StartRecord").length === starts + 1, "the start is on its way");
     await page.keyboard.press("r");
+    assert.deepEqual(await page.evaluate(() => [document.querySelector(".rec-light").dataset.state, document.querySelector(".rec-tag").textContent]), ["stopping-early", "Stopping…"], "R says Stopping at once, with no timer, before OBS answers");
     await obsUntil(() => obs.requests("StopRecord").length === 4, "stopped once it started", 4000);
     await obsUntil(() => !obs.record.active, "nothing left recording");
     obs.answer = null;

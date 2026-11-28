@@ -1024,12 +1024,14 @@ function drawRecord() {
   const recording = state === "on" && obs.recording;
   // OBS took a take's start and has not said it records yet: the light waits, dim, and says Starting.
   const taken = state === "on" && !recording && Boolean(obs.pending);
-  const stopping = (recording || taken) && obs.stopping;
+  // R while a take is starting: it says Stopping at once (no timer), and the take stops or is called off once OBS answers.
+  const calledOff = state === "on" && Boolean(obs.starting) && obs.calledOff;
+  const stopping = ((recording || taken) && obs.stopping) || calledOff;
   const starting = !stopping && (taken || (state === "on" && !recording && Boolean(obs.starting)));
   const trouble = state !== "on" ? OBS_LIGHT[state] : (!recording || obs.problem === "stop") && OBS_PROBLEM[obs.problem];
   const view = takeView(counts, scene ? picked[scene.base] : 0, false, next);
-  const mine = recording ? (obs.take ? takeOf.get(obs.take) : null) : taken ? takeOf.get(obs.pending) : null;
-  const waiting = obs.starting ? takeOf.get(obs.starting) : null; // the take being started, or the next one waiting for the stop before
+  const mine = recording ? (obs.take ? takeOf.get(obs.take) : null) : taken ? takeOf.get(obs.pending) : calledOff ? takeOf.get(obs.starting) : null;
+  const waiting = obs.starting && !calledOff ? takeOf.get(obs.starting) : null; // the take being started, or the next one waiting for the stop before
   // A stop asked while OBS is out of reach waits for it: the light says so before the trouble. Also for
   // a take OBS has not said it began (`pending`) and one whose start OBS never answered (`maybe`): OBS
   // may be recording it.

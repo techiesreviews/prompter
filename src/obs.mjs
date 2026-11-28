@@ -206,7 +206,8 @@ export function obsAfterMiss(state, misses) {
  * its name stays in OBS, and OBS is asked again, until OBS records it, a stop calls it off, the next
  * take starts or the link is turned off or on),
  * `since` when it started (by `now`), `problem` "start" or "stop" when OBS refused the last
- * click, `starting` the take's name while its start is under way ("" otherwise). `began(name)` is told
+ * click, `starting` the take's name while its start is under way ("" otherwise), `calledOff` that a stop
+ * was asked while it is (it stops, or is called off, once OBS answers). `began(name)` is told
  * once when OBS may have recorded under a take's name (it took the start, said it started, or never
  * answered), so the page counts it and never uses the name again; `ended(name, recorded)` once when a
  * take started here has stopped (`recorded` false: OBS never said it began that take). Nothing here ever throws into the page or waits on it: scrolling goes on
@@ -214,7 +215,7 @@ export function obsAfterMiss(state, misses) {
  */
 export function obsLink({ WebSocket = globalThis.WebSocket, subtle = globalThis.crypto?.subtle, clock = globalThis, now = () => Date.now(), changed = () => {}, began = () => {}, ended = () => {}, url = OBS_URL, delays = OBS_DELAYS } = {}) {
   const { setTimeout: later, clearTimeout: cancel } = clock;
-  const link = { on: false, state: "off", misses: 0, recording: false, pending: "", stopping: false, take: null, maybe: "", since: 0, problem: "", starting: "" };
+  const link = { on: false, state: "off", misses: 0, recording: false, pending: "", stopping: false, take: null, maybe: "", since: 0, problem: "", starting: "", calledOff: false };
   let password = "";
   let sock = null;
   let timer = 0;
@@ -228,6 +229,7 @@ export function obsLink({ WebSocket = globalThis.WebSocket, subtle = globalThis.
   let counted = null; // the last take told to began()
   let restoreTo = null; // OBS's own file name, to put back once the take has started
   let restoring = null; // that put-back while it is on its way to OBS
+  let renaming = null; // a take's name OBS has not answered yet (held until it does, or the connection goes)
   let lastEnded = null; // the take that ended last (a late answer to its start never brings it back)
   let setting = false; // the next take's name is on its way to OBS: no put-back until that take has started
   let startedWait = 0;
@@ -455,8 +457,11 @@ export function obsLink({ WebSocket = globalThis.WebSocket, subtle = globalThis.
       // the file, say), with no stop asked here: OBS did not start recording, and the light says so. A
       // stopped word with no beginning before it is a late one about an older recording: the take waits on.
       const waits = !link.starting && !link.recording && link.pending && !stopping && !stopAsked;
-      const never = waits && beginning === link.pending;
+      // The same for the take starting now, before OBS's answer to its start came: that late answer finds it over.
+      const gaveUp = link.starting && naming && beginning === naming && !link.recording && !stopping;
+      const never = (waits && beginning === link.pending) || gaveUp;
       if (waits && !never) return;
+      if (gaveUp) { link.pending = naming; naming = null; }
       // A late word about the take before must not undo a stop asked for the one starting now.
       if (!link.starting) { naming = null; stopAsked = false; }
       cancel(startedWait);
@@ -619,7 +624,7 @@ export function obsLink({ WebSocket = globalThis.WebSocket, subtle = globalThis.
   // A tab closed while a take waited for OBS to begin it (or before OBS answered its start) left that
   // take's name in OBS, and OBS's own recordings would land in that scene's folder. Once connected with
   // nothing of ours waiting, OBS's default format goes back (its own one was only known to that tab).
-  const ours = () => restoreTo !== null || naming || unsure || setting || stopping || link.starting || link.pending || link.take;
+  const ours = () => restoreTo !== null || renaming || naming || unsure || setting || stopping || link.starting || link.pending || link.take;
   async function tidyName() {
     if (ours() || !sock || link.state !== "on") return;
     let got;
@@ -627,6 +632,19 @@ export function obsLink({ WebSocket = globalThis.WebSocket, subtle = globalThis.
     if (ours() || !isTakeName(got.parameterValue)) return;
     restoreTo = got.defaultParameterValue && !isTakeName(got.defaultParameterValue) ? got.defaultParameterValue : OBS_FORMAT;
     putBack();
+  }
+
+  // A take's name goes to OBS. OBS handles requests side by side, so one it is slow with may still land
+  // after a later one: it is held until OBS answers (or the connection goes), and the put-back and the
+  // next take's name wait for it. The start itself gives up after the usual wait.
+  function rename(value) {
+    const sent = request("SetProfileParameter", { ...FILENAME, parameterValue: value }, true);
+    const mark = sent.then(() => {}, () => {}).then(() => { if (renaming === mark) renaming = null; });
+    renaming = mark;
+    return new Promise((done, fail) => {
+      const timer = later(() => fail(Object.assign(new Error("OBS did not answer."), { code: 0, sent: true })), delays.wait);
+      sent.then((value) => { cancel(timer); done(value); }, (error) => { cancel(timer); fail(error); });
+    });
   }
 
   // OBS's own file name goes back once the take has started (OBS has read the take's name by then).
@@ -637,6 +655,7 @@ export function obsLink({ WebSocket = globalThis.WebSocket, subtle = globalThis.
   function putBack() {
     if (restoreTo === null || naming || unsure || setting) return Promise.resolve();
     restoring ??= (async () => {
+      if (renaming) await renaming; // a take's name OBS is slow with lands first
       const value = restoreTo;
       try {
         await request("SetProfileParameter", { ...FILENAME, parameterValue: value }, true);
@@ -656,7 +675,8 @@ export function obsLink({ WebSocket = globalThis.WebSocket, subtle = globalThis.
     if (link.state !== "on" || ((link.recording || link.pending) && !stopping) || busy) return false;
     busy = true;
     stopAsked = false;
-    set({ problem: "", starting: name });
+    lastEnded = null;
+    set({ problem: "", starting: name, calledOff: false });
     let ok = false;
     let asked = false;
     try {
@@ -675,8 +695,8 @@ export function obsLink({ WebSocket = globalThis.WebSocket, subtle = globalThis.
       // No put-back from here until this take has started, and one still on its way to OBS lands first.
       // A stop (R again) calls the take off while it waits.
       setting = true;
-      if (restoring) {
-        const put = restoring;
+      if (restoring || renaming) {
+        const put = Promise.all([restoring, renaming]);
         await new Promise((resolve) => { wake = resolve; put.then(resolve); });
         wake = null;
       }
@@ -687,7 +707,7 @@ export function obsLink({ WebSocket = globalThis.WebSocket, subtle = globalThis.
         restoreTo = own && !isTakeName(own) ? own : (got.defaultParameterValue && !isTakeName(got.defaultParameterValue) ? got.defaultParameterValue : OBS_FORMAT);
       }
       if (stopAsked) throw new Error("Called off.");
-      await request("SetProfileParameter", { ...FILENAME, parameterValue: name });
+      await rename(name);
       if (stopAsked) throw new Error("Called off.");
       naming = name;
       setting = false;
@@ -715,7 +735,8 @@ export function obsLink({ WebSocket = globalThis.WebSocket, subtle = globalThis.
     } catch (error) {
       setting = false;
       if (naming === name) naming = null;
-      if (link.take === name) ok = true; // OBS said it started before its answer was lost
+      // OBS said it started before its answer was lost, or began and stopped it already (it stays over).
+      if (link.take === name || lastEnded === name) { ok = true; if (lastEnded === name) { stopAsked = false; putBack(); } }
       else {
         // Asked to record and never answered: OBS may be recording under this name, or begin yet, so it
         // is used, and it stays in OBS (no put-back) until OBS records or the take is called off.
@@ -727,7 +748,7 @@ export function obsLink({ WebSocket = globalThis.WebSocket, subtle = globalThis.
       }
     } finally {
       busy = false;
-      set({ starting: "" });
+      set({ starting: "", calledOff: false });
     }
     // Not answered on a connection still up: ask OBS now whether it records that take, and again while
     // it does not (a dropped connection asks once it is back).
@@ -746,6 +767,7 @@ export function obsLink({ WebSocket = globalThis.WebSocket, subtle = globalThis.
     if (link.starting) { // called off, or held once OBS has taken the start
       if (!stopAsked) stopAskedAt = now();
       stopAsked = true;
+      if (!link.calledOff) set({ calledOff: true });
       wake?.();
       return true;
     }
