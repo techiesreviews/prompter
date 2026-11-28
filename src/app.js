@@ -1206,7 +1206,8 @@ function showLink(si, li, fromUser) {
       placingWin = mainWin;
       placingHeld = hold ? { script, s: si, l: li } : { script, done: true };
       if (hold) {
-        try { drawWaiting(mainWin, false, true); } catch { /* not ours to write; it still waits */ }
+        try { drawWaiting(mainWin, false, true); } catch { /* already showing another site: the page still goes there when the wait ends */ }
+        setStatus(""); // as Connect does: the cut-off words go from the status line too
         script.shownUrl = "";
         script.missedKey = "";
         markShown();
