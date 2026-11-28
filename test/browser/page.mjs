@@ -4462,7 +4462,7 @@ export async function run({ browser, base, mode, dist, out }) {
     // under the line stops above it (the rows furthest ahead wait), every row on screen.
     const lowNoteCtx = await browser.newContext({ ...DESKTOP, viewport: { width: 1240, height: 300 } });
     await lowNoteCtx.addInitScript(SPEECH_STUB);
-    await lowNoteCtx.addInitScript(() => { localStorage.setItem("prompter-text-only", "on"); localStorage.setItem("prompter-line", "0.05"); localStorage.setItem("prompter-voice-ok", "yes"); });
+    await lowNoteCtx.addInitScript(() => { localStorage.setItem("prompter-text-only", "on"); localStorage.setItem("prompter-line", "0.08"); localStorage.setItem("prompter-voice-ok", "yes"); }); // the lowest line the setting allows
     const TLN = await lowNoteCtx.newPage();
     watch(TLN, "text only, short window, low note");
     await TLN.goto(await makeLink(longRows, "lex", base));
