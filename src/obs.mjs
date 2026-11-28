@@ -213,7 +213,7 @@ export function obsAfterMiss(state, misses) {
  * take started here has stopped (`recorded` false: OBS never said it began that take). Nothing here ever throws into the page or waits on it: scrolling goes on
  * whatever OBS does.
  */
-export function obsLink({ WebSocket = globalThis.WebSocket, subtle = globalThis.crypto?.subtle, clock = globalThis, now = () => Date.now(), changed = () => {}, began = () => {}, ended = () => {}, url = OBS_URL, delays = OBS_DELAYS, Channel = globalThis.BroadcastChannel } = {}) {
+export function obsLink({ WebSocket = globalThis.WebSocket, subtle = globalThis.crypto?.subtle, clock = globalThis, now = () => Date.now(), changed = () => {}, began = () => {}, ended = () => {}, url = OBS_URL, delays = OBS_DELAYS, Channel = globalThis.BroadcastChannel, locks = globalThis.navigator?.locks } = {}) {
   const { setTimeout: later, clearTimeout: cancel } = clock;
   const link = { on: false, state: "off", misses: 0, recording: false, pending: "", stopping: false, take: null, maybe: "", since: 0, problem: "", starting: "", calledOff: false };
   let password = "";
@@ -258,6 +258,22 @@ export function obsLink({ WebSocket = globalThis.WebSocket, subtle = globalThis.
       if (data === "busy?" && ours()) peers.postMessage("busy");
       else if (data === "busy") peerBusy = true;
     };
+  }
+  // Setting a take's name and putting OBS's own name back take turns across the tabs of this browser
+  // (Web Locks: nothing stored), so a put-back read just before another tab's take name never lands on
+  // it. Each turn ends once OBS answers, or after the usual wait. Without Web Locks (a file:// copy), as before.
+  function named(work) {
+    if (!locks) return work();
+    return new Promise((done, fail) => {
+      locks.request(`prompter-obs-name ${url}`, () => {
+        const run = Promise.resolve().then(work);
+        run.then(done, fail);
+        return new Promise((free) => {
+          const timer = later(free, delays.wait);
+          run.then(() => { cancel(timer); free(); }, () => { cancel(timer); free(); });
+        });
+      }).catch(fail);
+    });
   }
   function closePeers() {
     try { peers?.close(); } catch { /* already closed */ }
@@ -650,19 +666,22 @@ export function obsLink({ WebSocket = globalThis.WebSocket, subtle = globalThis.
     let got;
     try { got = await request("GetProfileParameter", FILENAME); } catch { return; }
     if (ours() || !isTakeName(got.parameterValue)) return;
+    const asked = sock;
     if (peers) {
-      const asked = sock;
       peerBusy = false;
       peers.postMessage("busy?");
       await new Promise((done) => { later(done, delays.peers); });
       if (peerBusy || ours() || sock !== asked || link.state !== "on") return; // another tab's take, ours, or another connection
-      // A tab idle when asked may have set its own take's name since: put back only the very name read before.
+    }
+    // A tab idle when asked may have set its own take's name since: in one turn, read the name again and
+    // put back only the very name read before.
+    await named(async () => {
       let now;
       try { now = await request("GetProfileParameter", FILENAME); } catch { return; }
-      if (now.parameterValue !== got.parameterValue || ours() || sock !== asked) return;
-    }
-    restoreTo = got.defaultParameterValue && !isTakeName(got.defaultParameterValue) ? got.defaultParameterValue : OBS_FORMAT;
-    putBack();
+      if (now.parameterValue !== got.parameterValue || ours() || sock !== asked || link.state !== "on") return;
+      restoreTo = got.defaultParameterValue && !isTakeName(got.defaultParameterValue) ? got.defaultParameterValue : OBS_FORMAT;
+      await putBack();
+    }).catch(() => {});
   }
 
   // A take's name goes to OBS. OBS handles requests side by side, so one it is slow with may still land
@@ -739,7 +758,7 @@ export function obsLink({ WebSocket = globalThis.WebSocket, subtle = globalThis.
         restoreTo = own && !isTakeName(own) ? own : (got.defaultParameterValue && !isTakeName(got.defaultParameterValue) ? got.defaultParameterValue : OBS_FORMAT);
       }
       if (stopAsked) throw new Error("Called off.");
-      await rename(name);
+      await named(() => rename(name)); // in its turn: never between another tab's look at the name and its put-back
       if (stopAsked) throw new Error("Called off.");
       naming = name;
       setting = false;

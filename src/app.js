@@ -867,7 +867,7 @@ handle.addEventListener("lostpointercapture", endLineDrag); // showStart lets go
 handle.addEventListener("keydown", (e) => {
   if (!LINE_KEYS.includes(e.key) || e.metaKey || e.ctrlKey || e.altKey) return;
   e.preventDefault();
-  const pct = Math.round(lineFrac * 100);
+  const pct = Number(handle.getAttribute("aria-valuenow")); // from where the line is drawn (the record light may hold it lower)
   moveLine(e.key === "Home" ? LINE.min : e.key === "End" ? LINE.max : (pct + LINE_STEPS[e.key]) / 100, true);
 });
 
@@ -1014,7 +1014,7 @@ function drawRecord() {
   // Read out once: connected (not when it comes back from a missed try), not found and the password troubles.
   if (was !== state && ((state === "on" && was !== "reconnecting") || ["lost", "password", "wrong"].includes(state))) setStatus(`${name}.`);
 
-  if (recWrap.hidden === obs.on) { recWrap.hidden = !obs.on; setLine(lineFrac, true); } // the line makes room for the light, or takes its place back
+  if (recWrap.hidden === obs.on) { recWrap.hidden = !obs.on; setLine(lineFrac); updateActive(); } // the line makes room for the light, or takes its place back; the same row stays at it
   const scene = sceneHere();
   recRail.hidden = !obs.on || !scene;
   if (!obs.on) { clearInterval(recTimer); recTimer = 0; return; }
@@ -2358,7 +2358,7 @@ document.addEventListener("keydown", (e) => {
   if (e.target.closest("textarea, select, input:not([type=range])")) return;
   const k = e.key;
   // Esc also closes the rail the mouse alone opened (focus elsewhere), until the mouse leaves and comes back.
-  if (k === "Escape" && !recRail.hidden && recRail.matches(":hover") && !recRail.hasAttribute("data-shut")) { recRail.dataset.shut = ""; return; }
+  if (k === "Escape" && !recRail.hidden && recRail.matches(":hover") && !recRail.hasAttribute("data-shut") && !document.querySelector(":popover-open")) { recRail.dataset.shut = ""; return; }
   // A focused slider keeps its arrow keys; every other shortcut still works.
   if (e.target.matches?.("input[type=range]") && k.startsWith("Arrow")) return;
   // The focused reading line keeps its keys (arrows, Page Up/Down, Home, End).

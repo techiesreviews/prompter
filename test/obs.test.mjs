@@ -1072,6 +1072,41 @@ test("a tab that connects over a name left behind never puts OBS's own name back
   second.turn(false);
 });
 
+test("without BroadcastChannel or Web Locks (a file:// copy) a take's name left behind still goes back", async (t) => {
+  const obs = await startObsStandin();
+  t.after(() => obs.stop());
+  obs.record.format = takeName(sceneOf("3 · Left behind"), 2);
+  const { l } = link(obs, { Channel: undefined, locks: undefined });
+  await until(() => l.state === "on");
+  await until(() => obs.record.format === OWN_FORMAT);
+  l.turn(false);
+});
+
+test("a tab putting OBS's own name back and another tab setting its take's name take turns: the put-back never lands on the take's name", async (t) => {
+  const obs = await startObsStandin();
+  t.after(() => obs.stop());
+  const first = link(obs).l;
+  await until(() => first.state === "on");
+  await sleep(100);
+  obs.record.format = takeName(sceneOf("3 · Left behind"), 2); // a tab closed mid-take left it
+  obs.startLag = 800; // OBS reads the name as the recording begins
+  const two = takeName(sceneOf("4 · Between"), 1);
+  let reads = 0;
+  // The second tab's second look at the name is answered as things are, but only after a while; the
+  // idle first tab starts its take the moment that look reaches OBS.
+  obs.answer = (type) => {
+    if (type !== "GetProfileParameter" || ++reads !== 2) return null;
+    setTimeout(() => { first.start(two); }, 0);
+    return { late: 300 };
+  };
+  const second = link(obs).l;
+  await until(() => second.state === "on");
+  await until(() => obs.record.active, 4000);
+  assert.match(obs.record.path, /scene-04-between-take-01/, "the take records under its own name");
+  first.turn(false);
+  second.turn(false);
+});
+
 test("a take name OBS is slow to set never lands on the next take: that one waits for it", async (t) => {
   const obs = await startObsStandin();
   t.after(() => obs.stop());

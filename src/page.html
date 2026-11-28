@@ -670,8 +670,8 @@
   @media (max-width: 760px) {
     .script { padding-inline: 5vw; }
   }
-  @media (pointer: coarse) { /* after the narrow-screen padding: on phones the words start clear of the rail's 44px strip */
-    :where(:root:has(.rec-rail:not([hidden]))) .script { padding-inline-start: max(5vw, 52px); }
+  @media (pointer: coarse) { /* after the narrow-screen padding: on phones the words start clear of the rail's 44px strip, the column still centred */
+    :where(:root:has(.rec-rail:not([hidden]))) .script { padding-inline: max(5vw, 52px); }
   }
   @media (max-width: 760px) {
     .dock-wrap { padding-inline: 8px; }

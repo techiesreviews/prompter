@@ -827,6 +827,14 @@ export async function run({ browser, base, mode, out }) {
     const where = () => s.evaluate(() => ({ line: parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--line")), light: document.querySelector(".rec-light").getBoundingClientRect().bottom, rec: !document.querySelector(".rec").hidden }));
     let at = await where();
     assert.ok(at.rec && at.line >= at.light + 8, `the reading line sits under the record light: ${JSON.stringify(at)}`);
+    assert.equal(Number(await s.locator(".line-handle").getAttribute("aria-valuenow")), Math.round((at.line / 390) * 100), "the handle says where the line is drawn");
+    // Wider than 760px too, the closed strip never lies over the script's words.
+    const clear = await s.evaluate(() => {
+      const rail = document.querySelector(".rec-rail").getBoundingClientRect();
+      const script = document.querySelector(".script");
+      return { rail: rail.right, left: script.getBoundingClientRect().left + parseFloat(getComputedStyle(script).paddingLeft) };
+    });
+    assert.ok(clear.left >= clear.rail, `sideways, the script's words start right of the rail's strip: ${JSON.stringify(clear)}`);
     await s.locator(".settings-btn").click();
     await s.locator(".big-toggle.obs").click(); // OBS off
     await until(s, () => document.querySelector(".rec").hidden);
