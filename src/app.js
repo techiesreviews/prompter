@@ -1041,8 +1041,10 @@ function connect() {
   const answer = asking ? askScreens() : null;
   const win = mainWin = openScreen("", WINDOW_NAME);
   if (!mainWin) { blocked(); return; }
+  let blank = false;
   try {
     if (mainWin.location.href === "about:blank") {
+      blank = true;
       mainWin.document.title = "Main screen";
       mainWin.document.body.style.cssText = "margin:0;box-sizing:border-box;display:grid;place-items:center;height:100vh;background:#000;color:#f4f1ea;font:600 32px system-ui;text-align:center;padding:0 5vw;overflow-wrap:anywhere";
       mainWin.document.body.textContent = (placed ? "Main screen. Pages will open here." : "Drag this window to your main screen and make it full size. Pages will open here.")
@@ -1058,7 +1060,9 @@ function connect() {
   hideHint();
   hideCutNote();
   watchScreen();
-  scripts.now.shownUrl = "";
+  // During the placement wait, Connect pressed again finds the same window: what it shows (a link
+  // chosen meanwhile) stays marked, so the reading line's page is not held to go over it.
+  if (blank || !placing) scripts.now.shownUrl = "";
   markShown();
   // The page at the reading line goes on the new main screen. A site that cuts the main screen off
   // opens in a window of its own (from its link, or as the reader reached it), so connecting does not
@@ -1167,7 +1171,8 @@ function showLink(si, li, fromUser) {
   }
   // The first Connect is still waiting for the placement answer: it sends the page at the reading line
   // once the window has moved; a page that comes meanwhile (a settled scroll, Follow my voice) is held
-  // and sent then instead. A window closed during the wait holds nothing back.
+  // and sent then instead. A window closed during the wait holds nothing back: the page opens a new
+  // main screen below, which the wait then serves.
   if (!fromUser && placing && connected()) { placingHeld = { script, s: si, l: li }; return; }
   const opened = !connected();
   if (opened) {
@@ -1184,6 +1189,9 @@ function showLink(si, li, fromUser) {
     setConnected(true);
     watchScreen();
     hideCutNote();
+    // During the placement wait, the wait moves to this window: a page that comes after this one is
+    // held and goes here when the wait ends, and nothing held before it goes over it.
+    if (placing) { placingWin = mainWin; placingHeld = { script, done: true }; }
     if (!fromUser) window.focus(); // the Prompter keeps the keys (clicker, Space) where the browser allows it
   }
   if (opened || url !== script.shownUrl || fromUser) {
