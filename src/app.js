@@ -1650,15 +1650,33 @@ function placeNext() {
   nextUp.style.removeProperty("inset-block-end");
   for (const li of nextList.children) li.hidden = false;
   if (narrow) {
+    // At the top the card ends above the line (and the cue pill or the note just above it); low it starts
+    // under the line being read, and above the speech note when that went low too. Where neither place
+    // fits, the row furthest ahead waits (never the one just done), then the place with the least overlap wins.
+    const note = noteBox();
     const pillAbove = !askPill.hidden && askPill.dataset.place === "above";
-    const limit = pillAbove ? Math.min(reading.y, askPill.getBoundingClientRect().top) : reading.y;
-    if (nextUp.getBoundingClientRect().bottom + 12 > limit) {
-      nextUp.setAttribute("data-low", "");
-      if (toastEl.dataset.show && toastEl.hasAttribute("data-low")) { // the speech note low too: the card sits above it
-        const noteTop = parseFloat(getComputedStyle(toastEl).insetBlockEnd) + toastEl.offsetHeight;
-        nextUp.style.insetBlockEnd = `${Math.max(parseFloat(getComputedStyle(nextUp).insetBlockEnd), noteTop + 8)}px`;
+    const limit = Math.min(reading.y, pillAbove ? askPill.getBoundingClientRect().top : Infinity, note && !note.low ? note.top : Infinity);
+    const below = reading.y + parseFloat(getComputedStyle(main).lineHeight);
+    const shown = [...nextList.children].filter((li) => getComputedStyle(li).display !== "none");
+    const over = (low) => {
+      nextUp.toggleAttribute("data-low", low);
+      nextUp.style.removeProperty("inset-block-end");
+      if (low && note?.low) nextUp.style.insetBlockEnd = `${Math.max(parseFloat(getComputedStyle(nextUp).insetBlockEnd), innerHeight - note.top + 8)}px`;
+      const r = nextUp.getBoundingClientRect();
+      return Math.max(0, low ? below - r.top : r.bottom + 12 - limit);
+    };
+    let best = null;
+    for (let n = shown.length; n > 0; n--) {
+      shown.forEach((li, i) => { li.hidden = i >= n; });
+      for (const low of [false, true]) {
+        const o = over(low);
+        if (!o) return;
+        if (!best || o < best.o) best = { n, low, o };
       }
     }
+    if (!best) return;
+    shown.forEach((li, i) => { li.hidden = i >= best.n; });
+    over(best.low);
     return;
   }
   // The Reconnecting note keeps its room: low, the strip stays above it; above the line, a strip moved up stays under it.
