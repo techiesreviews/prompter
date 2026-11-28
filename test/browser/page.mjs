@@ -2850,11 +2850,12 @@ export async function run({ browser, base, mode, dist, out }) {
   await TW2.waitForTimeout(800);
   assert.deepEqual(twiceVisits, [`${base}/fonts/OFL.txt?other=1`], "the reading line's page does not go over the link chosen after a second Connect");
   await twiceCtx.close();
-  // A link chosen during the wait, then Connect pressed again: the window still shows that link, so it
-  // stays marked as showing after the wait.
+  // A link chosen during the wait, then Connect pressed again while that link still loads: the window
+  // still gets that link, so it stays marked as showing after the wait.
   const markCtx = await browser.newContext(DESKTOP);
   await markCtx.addInitScript(NO_SPEECH);
   await markCtx.addInitScript(() => { window.getScreenDetails = () => new Promise((done) => { window.__deny = () => done(null); }); });
+  await markCtx.route(/OFL\.txt\?other=1$/, async (route) => { await new Promise((done) => setTimeout(done, 1500)); await route.continue(); });
   const MK = await markCtx.newPage();
   watch(MK, "main screen placement, a pick then Connect again during the wait");
   await MK.goto(await makeLink(`### **INTRO · 00:00**\n\n- Licence: ${base}/fonts/OFL.txt\n- Other: ${base}/fonts/OFL.txt?other=1\n\nA page at the reading line.\nWaiting for the answer.\n`, "lex", base));
@@ -2864,9 +2865,10 @@ export async function run({ browser, base, mode, dist, out }) {
   const otherLink = MK.locator('.section[data-i="0"] .links .link').nth(1);
   await MK.waitForTimeout(1000); // the scroll to the reading line's page has settled
   await otherLink.dispatchEvent("click");
-  await pickedWin.waitForURL(`${base}/fonts/OFL.txt?other=1`);
+  await MK.waitForTimeout(200); // the link is still loading
   await viaSettings(MK, ".screen");
   await MK.evaluate(() => window.__deny());
+  await pickedWin.waitForURL(`${base}/fonts/OFL.txt?other=1`);
   await MK.waitForTimeout(800);
   assert.deepEqual([pickedWin.url(), await otherLink.getAttribute("data-shown")], [`${base}/fonts/OFL.txt?other=1`, "true"], "the link the window shows stays marked after a second Connect");
   await markCtx.close();
@@ -2891,6 +2893,29 @@ export async function run({ browser, base, mode, dist, out }) {
   await newWin.waitForURL(`${base}/fonts/OFL.txt?c=1`, { timeout: 3000 }).catch(() => {});
   assert.equal(newWin.url(), `${base}/fonts/OFL.txt?c=1`, "the page held during the wait goes to the new main screen");
   await goneCtx.close();
+  // A page held before the waiting window closed does not go over the new main screen's page.
+  const heldCtx = await browser.newContext(DESKTOP);
+  await heldCtx.addInitScript(NO_SPEECH);
+  await heldCtx.addInitScript(() => { window.getScreenDetails = () => new Promise((done) => { window.__deny = () => done(null); }); });
+  const HW = await heldCtx.newPage();
+  watch(HW, "main screen placement, a page held before the waiting window closed");
+  await HW.goto(await makeLink(`### **INTRO · 00:00**\n\nNo page here.\nWaiting for the answer.\n\n### **A · 00:30**\n\n- Page A: ${base}/fonts/OFL.txt?a=1\n\nHeld during the wait.\nIts window is closed next.\n\n### **B · 01:00**\n\n- Page B: ${base}/fonts/OFL.txt?b=1\n\nA new main screen opens.\nIt keeps this page.\n`, "lex", base));
+  await HW.locator(".section").first().waitFor();
+  await scrollToSection(HW, 0);
+  const [heldWin] = await Promise.all([heldCtx.waitForEvent("page"), viaSettings(HW, ".screen")]);
+  await scrollToSection(HW, 1);
+  await HW.waitForTimeout(1500); // page A is held now
+  assert.equal(heldWin.url(), "about:blank", "page A waits");
+  await heldWin.close();
+  await HW.waitForFunction(() => document.querySelector("#settings .screen").dataset.on === "cut");
+  const [freshWin] = await Promise.all([heldCtx.waitForEvent("page"), scrollToSection(HW, 2)]);
+  const freshVisits = [];
+  freshWin.on("framenavigated", (frame) => { if (frame === freshWin.mainFrame() && frame.url() !== "about:blank") freshVisits.push(frame.url()); });
+  await freshWin.waitForURL(`${base}/fonts/OFL.txt?b=1`);
+  await HW.evaluate(() => window.__deny());
+  await HW.waitForTimeout(1000);
+  assert.deepEqual([freshWin.url(), freshVisits.filter((u) => u.includes("a=1"))], [`${base}/fonts/OFL.txt?b=1`, []], "page A never goes over page B");
+  await heldCtx.close();
   // Answered once with no second screen: later Connects do not ask again, so the Prompter does not
   // jump to the front and the new window shows no waiting line.
   const oneCtx = await browser.newContext(DESKTOP);
