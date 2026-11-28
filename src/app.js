@@ -2250,9 +2250,11 @@ recRail.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || e.metaKey || e.ctrlKey || e.altKey) return;
   e.preventDefault();
   e.stopPropagation();
+  if (recRail.matches(":hover")) recRail.dataset.shut = ""; // a mouse resting over it does not hold it open; it opens again once the mouse comes back
   recLight.focus();
   if (recRail.contains(document.activeElement)) document.activeElement.blur(); // no light to go to
 });
+recRail.addEventListener("pointerleave", () => { delete recRail.dataset.shut; });
 // A held Enter on the light presses it once, as a held R does (the browser repeats a held key's click).
 recLight.addEventListener("keydown", (e) => { if (e.repeat && (e.key === "Enter" || e.key === " ")) e.preventDefault(); });
 $("#settings").addEventListener("toggle", (e) => { if (e.newState === "open") camframe.check(); });
