@@ -40,6 +40,10 @@
     --ok: oklch(80% 0.15 155);
     --ql: oklch(88% 0.11 80);
     --next: oklch(83% 0.085 282);
+    --rec: oklch(62% 0.24 25);          /* the record light's dot: recording */
+    --star: oklch(85% 0.15 85);         /* the best take's star */
+    --rail: oklch(20% 0.06 282);        /* the scene rail at the left edge, opened */
+    --rec-focus: oklch(51% 0.11 282);   /* keyboard focus on the record pieces: a fill (no ring), 3:1 on the page and the rail */
     --read-veil: oklch(16% 0.06 282 / 0.86); /* the page colour over read text: ~14% of it shows */
     --lift: 0 1px 1px oklch(4% 0.06 282 / 0.5), 0 4px 8px oklch(4% 0.06 282 / 0.4), 0 16px 32px oklch(4% 0.06 282 / 0.3); /* --shadow without its 1px top highlight: no edge line */
     --shadow: var(--lift), inset 0 1px 0 oklch(97.5% 0.012 282 / 0.07);
@@ -344,6 +348,12 @@
   }
   @media (max-height: 520px) { /* a phone on its side: more room for the words, the control bar still clear */
     .ask-box { inset-block: 12px 84px; max-block-size: calc(100dvh - 96px); gap: 12px; padding: 16px 20px 12px; }
+    /* With the record light showing (the OBS link on, a script open), the box starts below it: a long
+       cue never covers the light, so a take can still be stopped. */
+    :root:not([data-view="empty"]):has(.rec:not([hidden])) .ask-box {
+      --under-light: calc(58px + env(safe-area-inset-top, 0px));
+      inset-block-start: var(--under-light); max-block-size: calc(100dvh - var(--under-light) - 84px);
+    }
   }
   .ask-box:focus { outline: none; } /* no ring or edge on the box (Lex, 2026-11-25); its buttons keep theirs */
   .ask-text {
@@ -373,7 +383,7 @@
     display: flex; align-items: center; gap: 4px; padding: 6px;
     background: var(--panel); border-radius: 18px; box-shadow: var(--shadow);
   }
-  :root[data-view="empty"] :is(.dock, .reading-line, .read-veil, .script, .toast, .next-up) { display: none; }
+  :root[data-view="empty"] :is(.dock, .reading-line, .read-veil, .script, .toast, .next-up, .rec, .rec-rail) { display: none; }
   /* Scrolling down tucks the bar away; scrolling up or the bottom edge brings it back. */
   .dock[data-tucked="true"] { opacity: 0; }
   /* On touch screens a hidden bar must not take taps; a mouse reveals it on approach. */
@@ -504,6 +514,92 @@
   .mcp-prompt { display: block; min-inline-size: min(300px, 100%); min-block-size: 9em; margin: 6px 0 2px; font-size: 12px; resize: vertical; }
   .mcp-prompt[hidden] { display: none; }
 
+  /* The record light (OBS, as the chosen mockup shows): a dim dot with the scene and take at the
+     top centre; a click (or R) starts a take in OBS and again stops it. Recording: the dot is red
+     and pulses, the timer runs, the scene and take hide. The star marks the best take; it shows
+     once the scene has a take and nothing records. OBS's trouble shows in words on the light
+     itself. Fill and shadow only: no border, ring or edge band. It stays above the Producer's cue
+     veil (z-index 15), as the control bar does, so a take can be stopped while a cue shows; the
+     cue's box never reaches it: on a tall screen the box keeps 104px clear at the top, on a short
+     one (a phone on its side) it starts below the light (see .ask-box). */
+  .rec {
+    position: fixed; inset-block-start: calc(10px + env(safe-area-inset-top, 0px)); inset-inline: 0; z-index: 16;
+    display: flex; justify-content: center; gap: 2px; pointer-events: none;
+  }
+  .rec[hidden], .rec-rail[hidden] { display: none; }
+  .rec > * { pointer-events: auto; }
+  .rec-light {
+    display: inline-flex; align-items: center; gap: 9px; block-size: 40px; padding: 0 12px;
+    color: var(--dim); background: transparent; border: 0; border-radius: 12px; cursor: pointer;
+    font: 600 13px/1 var(--font-body); white-space: nowrap;
+  }
+  .rec-dot { flex: none; inline-size: 10px; block-size: 10px; border-radius: 50%; background: var(--rec); opacity: 0.4; }
+  .rec-time { font: 500 14px/1 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text); }
+  .rec-light[data-state="recording"] .rec-dot { opacity: 1; box-shadow: 0 0 10px var(--rec); }
+  /* Stopping (OBS finishing the file): the dot dims and the time stands still until OBS has stopped. */
+  .rec-light:is([data-state="recording"], [data-state="stopping"]) .rec-tag, .rec-light:not([data-state="recording"], [data-state="stopping"]) .rec-time { display: none; }
+  .rec-light[data-state="trouble"] { color: var(--muted); }
+  .rec-light[data-state="trouble"] .rec-dot { background: var(--dim); }
+  .rec-star { inline-size: 34px; block-size: 40px; padding: 0; color: var(--dim); background: transparent; border: 0; border-radius: 12px; font-size: 15px; line-height: 1; cursor: pointer; }
+  .rec-star[aria-pressed="true"] { color: var(--star); }
+  @media (hover: hover) and (pointer: fine) {
+    .rec-light:hover { color: var(--muted); background: var(--panel); }
+    .rec-light:not([data-state="stopping"], [data-state="stopping-early"], [data-state="starting"]):hover .rec-dot { opacity: 0.85; } /* the stopping and the starting dot stay dim: red only once OBS records */
+    .rec-light[data-state="recording"]:hover .rec-dot { opacity: 1; }
+    .rec-star:hover { background: var(--panel); }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .rec-light[data-state="recording"] .rec-dot { animation: pulse 1.2s ease-in-out infinite; }
+    .rec-dot { transition: opacity 200ms var(--ease-out); }
+  }
+  /* The scene rail: a thin grip at the left edge that opens into the scenes, each with a dot per take
+     (gold: the best). It opens on focus (the keyboard, or a tap on a touch screen) and on hover only
+     with a mouse: the hover a tap leaves behind on a touch screen must not hold it open. A click on a
+     scene goes there; a click on a take's dot picks it, so its star can be set. The current scene is
+     white; the take picked is the larger dot. */
+  .rec-rail {
+    position: fixed; inset-block: 0; inset-inline-start: 0; z-index: 6; inline-size: 10px; overflow: hidden;
+    display: flex; flex-direction: column; justify-content: safe center; gap: 6px; padding-block: 12px;
+  }
+  .rec-rail::after { content: ""; position: absolute; inset-inline-start: 3px; inset-block-start: 40%; block-size: 20%; inline-size: 3px; border-radius: 2px; background: var(--chip); }
+  .rail-scene { display: flex; flex-wrap: wrap; align-items: center; gap: 0 4px; padding-inline: 9px 6px; opacity: 0; pointer-events: none; } /* closed, the grip takes no clicks meant for the script */
+  .rec-rail:focus-within { inline-size: 112px; overflow-y: auto; background: color-mix(in oklch, var(--rail) 94%, transparent); }
+  .rec-rail:focus-within::after { display: none; }
+  .rec-rail:focus-within .rail-scene { opacity: 1; pointer-events: auto; }
+  @media (hover: hover) and (pointer: fine) { /* the same open rail, under a mouse */
+    .rec-rail:hover { inline-size: 112px; overflow-y: auto; background: color-mix(in oklch, var(--rail) 94%, transparent); }
+    .rec-rail:hover::after { display: none; }
+    .rec-rail:hover .rail-scene { opacity: 1; pointer-events: auto; }
+  }
+  .rail-go {
+    flex: none; max-inline-size: 5ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-inline-size: 24px; min-block-size: 24px; padding: 6px 2px;
+    color: var(--dim); background: transparent; border: 0; border-radius: 6px; font: 700 14px/1 var(--font-body); text-align: start; cursor: pointer;
+  }
+  .rail-go[aria-current="true"] { color: var(--text); }
+  .rail-take { display: grid; place-items: center; inline-size: 24px; block-size: 24px; padding: 0; background: transparent; border: 0; border-radius: 4px; cursor: pointer; }
+  .rail-take::before { content: ""; inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--dim); }
+  .rail-take[data-best="true"]::before { background: var(--star); }
+  .rail-take[aria-pressed="true"]::before { inline-size: 11px; block-size: 11px; }
+  /* Focus shows as a fill, never a ring (no ring on the record pieces). */
+  :is(.rec, .rec-rail) :focus-visible { outline: none; background: var(--rec-focus); }
+  :is(.rec-light, .rec-star[aria-pressed="false"], .rail-go):focus-visible { color: var(--text); }
+  .rail-take:focus-visible::before { scale: 1.3; }
+  .rail-take:not([data-best="true"]):focus-visible::before { background: var(--text); }
+  @media (pointer: coarse) { /* 44px targets on phones; the dots look the same */
+    .rec-light, .rec-star, .rail-go, .rail-take { min-inline-size: 44px; min-block-size: 44px; }
+    .rec-rail { inline-size: 44px; } /* closed: a 44px strip to tap, still showing only the thin grip */
+    .rec-rail:focus-within { inline-size: 160px; } /* opened by a tap */
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .rec-rail { transition: inline-size 200ms var(--ease-out), background-color 200ms var(--ease-out); }
+    .rail-scene { transition: opacity 150ms var(--ease-out); }
+  }
+  .obs-pass { display: grid; gap: 6px; margin-block-start: 16px; }
+  .obs-pass[hidden] { display: none; }
+  .obs-pass label { font-weight: 600; font-size: 14px; }
+  .obs-pass input { font: 500 16px/1.3 var(--font-body); color: var(--text); background: var(--chip); border: 0; border-radius: 10px; padding: 9px 12px; inline-size: 100%; }
+  .obs-pass input::placeholder { color: var(--muted); opacity: 1; }
+
   /* Follow my voice, the main screen and the CamFrame link: big buttons side
      by side, about as tall as the control bar, icons only (their names, and
      CamFrame's status, are for screen readers and the hover title). Off: a
@@ -541,6 +637,23 @@
   @media (prefers-reduced-motion: reduce) {
     .camframe:is([data-state="looking"], [data-state="reconnecting"]) { outline: 2px dashed var(--accent); outline-offset: -6px; }
     .camframe:is([data-state="looking"], [data-state="reconnecting"]):focus-visible { outline-style: solid; outline-offset: 2px; }
+  }
+  /* OBS: connecting blinks (reduced motion: steady and faint); connected is a filled orange record
+     icon with a soft glow, red while OBS records; not found or a password trouble is a quiet
+     crossed-out icon. No ring (Lex: no borders on new pieces). */
+  .obs .i-obs-off, .obs:is([data-state="lost"], [data-state="password"], [data-state="wrong"]) .i-obs { display: none; }
+  .obs:is([data-state="lost"], [data-state="password"], [data-state="wrong"]) .i-obs-off { display: block; }
+  .big-toggle.obs:is([data-state="lost"], [data-state="password"], [data-state="wrong"]) { color: var(--muted); }
+  .obs .i-obs .core { fill: none; }
+  .obs[data-state="on"] .i-obs .core { fill: currentColor; }
+  .obs[data-state="on"] svg { filter: drop-shadow(0 0 5px color-mix(in oklch, var(--accent) 55%, transparent)); }
+  .big-toggle.obs[data-recording="true"] { color: var(--rec); }
+  .obs[data-recording="true"] svg { filter: drop-shadow(0 0 5px color-mix(in oklch, var(--rec) 60%, transparent)); }
+  @media (prefers-reduced-motion: no-preference) {
+    .obs:is([data-state="connecting"], [data-state="reconnecting"]) svg { animation: blink 1.2s steps(1, end) infinite; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .obs:is([data-state="connecting"], [data-state="reconnecting"]) svg { opacity: 0.6; }
   }
   @keyframes blink { 50% { opacity: 0.25; } }
 
@@ -588,6 +701,11 @@
   </div>
   <main class="script" aria-label="Script"></main>
   <aside class="next-up" aria-labelledby="next-up-label" hidden><h2 class="next-up-label" id="next-up-label">What happens next</h2><ol class="next-list" tabindex="-1" aria-labelledby="next-up-label"></ol></aside>
+  <div class="rec" role="group" aria-label="Recording" hidden>
+    <button class="rec-light" type="button" data-action="rec" aria-keyshortcuts="R"><span class="rec-dot" aria-hidden="true"></span><span class="rec-tag"></span><span class="rec-time">00:00</span></button>
+    <button class="rec-star" type="button" data-action="rec-star" aria-pressed="false" hidden><span aria-hidden="true">☆</span></button>
+  </div>
+  <nav class="rec-rail" aria-label="Scenes" tabindex="-1" hidden></nav>
   <button class="ask-pill" type="button" data-kind="question" hidden><span class="ask-pill-mark" aria-hidden="true"></span><span class="ask-pill-name"></span><span class="ask-more"></span></button>
   <!-- Read out through the status line instead, once. -->
   <p class="toast" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg><span class="toast-text"></span></p>
@@ -712,7 +830,12 @@
       <svg class="i-cam" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="6" width="13" height="12" rx="2"/><path d="m15.5 10.5 6-3.5v10l-6-3.5z"/></svg>
       <svg class="i-cam-off" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 6h3a2 2 0 0 1 2 2v2.5l6-3.5v10M15.5 15.5V16a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2"/><path d="m2 2 20 20"/></svg>
     </button>
+    <button class="big-toggle obs" type="button" aria-pressed="false" data-state="off" aria-label="OBS link: off" title="OBS link: off">
+      <svg class="i-obs" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle class="core" cx="12" cy="12" r="4"/></svg>
+      <svg class="i-obs-off" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5.6 5.6A9 9 0 0 0 18.4 18.4M8 3.9A9 9 0 0 1 20.1 16"/><path d="m2 2 20 20"/></svg>
+    </button>
   </div>
+  <div class="setting obs-pass" hidden><label for="obs-password">OBS password</label><input id="obs-password" class="obs-password" type="password" autocomplete="off" spellcheck="false" placeholder="Only if OBS asks for one"></div>
 </div>
 
 <dialog class="dialog paste-dialog" aria-labelledby="paste-title">

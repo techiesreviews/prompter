@@ -11,6 +11,7 @@ export const REACHES = {
   page: either(/^(src\/(?!.*\.md$)|fonts\/|scripts\/build\.mjs$|wrangler\.jsonc$|test\/browser\/page\.mjs$)/, RUNNER),
   "reading-wrap": either(/^(src\/(page\.html|app\.js|core\.mjs|settings\.mjs)$|fonts\/|scripts\/build\.mjs$|test\/browser\/reading-wrap\.mjs$)/, RUNNER),
   paragraphs: either(/^(src\/(page\.html|app\.js|core\.mjs|settings\.mjs|reading-line\.mjs)$|fonts\/|scripts\/build\.mjs$|test\/browser\/paragraphs\.mjs$)/, RUNNER),
+  "record-light": either(/^(src\/(page\.html|app\.js|core\.mjs|obs\.mjs|settings\.mjs)$|scripts\/build\.mjs$|test\/obs-standin\.mjs$|test\/browser\/record-light\.mjs$)/, RUNNER),
   "*": either(/^(src\/(?!.*\.md$)|test\/browser\/)/, RUNNER),
 };
 

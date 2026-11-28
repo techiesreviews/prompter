@@ -18,7 +18,9 @@ file wins.
     `src/ui/`; `kit pr` runs the suites a change reaches (`--affected`). Each file in
     `test/browser/` is one suite: `page.mjs` is the whole page (about 30 s, local `wrangler dev`),
     `range-field.mjs` the shared slider on its own (about 2 s, no server), and `reading-wrap.mjs`
-    long unbroken script text and section titles (a few seconds, local server). Run the small suite
+    long unbroken script text and section titles (a few seconds, local server), and
+    `record-light.mjs` the OBS link and record light against a stand-in OBS (`test/obs-standin.mjs`,
+    with and without a made-up password; never a real OBS). Run the small suite
     while working and the whole set before landing. What a suite checks lives in its file, not here.
     Screenshots and close-ups (`*-close-up-*`, `range-field-*`) land in the evidence folder; open the
     close-ups first, they are a fraction of a full page.
