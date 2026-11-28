@@ -160,7 +160,7 @@ export async function run({ browser, base, out }) {
 
     // Settings: the two sliders and the layout change the page at once and are remembered.
     await settings(page);
-    assert.deepEqual(await page.locator("#settings .setting").evaluateAll((rows) => rows.map((row) => row.querySelector("legend, label").textContent.trim())),
+    assert.deepEqual(await page.locator("#settings .setting:not([hidden])").evaluateAll((rows) => rows.map((row) => row.querySelector("legend, label").textContent.trim())),
       ["Text size", "Scroll speed", "Line height", "Paragraph spacing", "Width", "Layout", "Show"]);
     assert.deepEqual(await page.locator("#settings .layout .seg label").allTextContents(), ["Lines", "Paragraphs"]);
     assert.deepEqual([await page.locator(".line-height-val").inputValue(), await page.locator(".para-space-val").inputValue(), await page.locator('input[name="layout"]:checked').getAttribute("value")], ["165", "200", "lines"]);
