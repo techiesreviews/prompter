@@ -546,8 +546,7 @@ function placePill() {
   }
   // The Reconnecting to speech note sits above the line (and above the pill there); with no room for it
   // there, under the record light or off the top, it goes low on the right, above the control bar.
-  const lift = askPill.hidden ? 10 : askPill.dataset.place === "above" ? 60 : 34; // as the page's styles lift it
-  toastEl.toggleAttribute("data-low", line - lift - toastEl.offsetHeight < top);
+  toastEl.toggleAttribute("data-low", line - noteLift() - toastEl.offsetHeight < top);
   placeNext(); // the pill's new place can move Text only's card
 }
 new ResizeObserver(placePill).observe(main);
@@ -1630,6 +1629,16 @@ function drawNext() {
 new ResizeObserver(() => root.style.setProperty("--dock-h", `${dockWrap.offsetHeight}px`)).observe(dockWrap);
 new ResizeObserver(() => placeNext()).observe(nextUp); // shown, or a row more or less: never a layout on every scroll frame
 new ResizeObserver(placePill).observe(recWrap); // the record light shown, gone or wider: the pill, the speech note and the card at the top keep clear of it
+// How far the Reconnecting note stands above the line, as the page's styles lift it.
+function noteLift() { return askPill.hidden ? 10 : askPill.dataset.place === "above" ? 60 : 34; }
+// Where the note stands by the page's styles (not where its fade has got to), or null while it is hidden.
+function noteBox() {
+  if (!toastEl.dataset.show) return null;
+  const low = toastEl.hasAttribute("data-low");
+  const bottom = low ? innerHeight - parseFloat(getComputedStyle(toastEl).insetBlockEnd) : reading.y - noteLift();
+  return { top: bottom - toastEl.offsetHeight, bottom, low };
+}
+
 // On a wide screen the strip hangs under the reading line; when it would run under the control bar it
 // goes above the line if there is more room there, and on a window too short for it either way the rows
 // furthest ahead wait (never the one just done, where Missed and Open show) until there is room.
@@ -1652,10 +1661,16 @@ function placeNext() {
     }
     return;
   }
-  const floor = innerHeight - dockWrap.offsetHeight - 8;
+  // The Reconnecting note keeps its room: low, the strip stays above it; above the line, a strip moved up stays under it.
+  const note = noteBox();
+  const floor = Math.min(innerHeight - dockWrap.offsetHeight, note?.low ? note.top : Infinity) - 8;
+  const ceil = note && !note.low ? Math.min(note.top - 8, reading.y - NEXT_GAP) : reading.y - NEXT_GAP;
   const box = nextUp.getBoundingClientRect();
   if (box.bottom <= floor) return;
-  if (reading.y - NEXT_GAP - 8 > floor - box.top) nextUp.setAttribute("data-up", "");
+  if (ceil - 8 > floor - box.top) {
+    nextUp.setAttribute("data-up", "");
+    if (ceil < reading.y - NEXT_GAP) nextUp.style.insetBlockEnd = `${innerHeight - ceil}px`;
+  }
   const fits = () => { const r = nextUp.getBoundingClientRect(); return r.top >= 8 && r.bottom <= floor; };
   const lis = [...nextList.children];
   for (let n = lis.length - 1; n > 0 && !fits(); n--) lis[n].hidden = true;
