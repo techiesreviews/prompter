@@ -1041,10 +1041,11 @@ function connect() {
   const answer = asking ? askScreens() : null;
   const win = mainWin = openScreen("", WINDOW_NAME);
   if (!mainWin) { blocked(); return; }
-  let blank = false;
+  // Pressed again during the placement wait and the same window came back (the browser gives the same
+  // window for the same name; one opened after a close is another): it still shows what it showed.
+  const again = placing && win === placingWin;
   try {
     if (mainWin.location.href === "about:blank") {
-      blank = true;
       mainWin.document.title = "Main screen";
       mainWin.document.body.style.cssText = "margin:0;box-sizing:border-box;display:grid;place-items:center;height:100vh;background:#000;color:#f4f1ea;font:600 32px system-ui;text-align:center;padding:0 5vw;overflow-wrap:anywhere";
       mainWin.document.body.textContent = (placed ? "Main screen. Pages will open here." : "Drag this window to your main screen and make it full size. Pages will open here.")
@@ -1060,9 +1061,8 @@ function connect() {
   hideHint();
   hideCutNote();
   watchScreen();
-  // During the placement wait, Connect pressed again finds the same window: what it shows (a link
-  // chosen meanwhile) stays marked, so the reading line's page is not held to go over it.
-  if (blank || !placing) scripts.now.shownUrl = "";
+  // So a link chosen meanwhile, also one still loading, stays marked as showing.
+  if (!again) scripts.now.shownUrl = "";
   markShown();
   // The page at the reading line goes on the new main screen. A site that cuts the main screen off
   // opens in a window of its own (from its link, or as the reader reached it), so connecting does not
