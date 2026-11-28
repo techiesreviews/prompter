@@ -4347,6 +4347,12 @@ export async function run({ browser, base, mode, dist, out }) {
     await M.locator(".next-up .redo").click();
     await M.waitForFunction(() => window.__screen.visits.at(-1) === "https://example.com/intro", null, { timeout: 2000 });
     await M.waitForFunction(() => document.querySelector(".next-up li")?.dataset.state === "done");
+    // Where the keyboard is in the strip: a fill on its first row (never a ring), only when it came by keyboard.
+    const stripFocus = () => M.evaluate(() => {
+      const row = document.querySelector(".next-up li");
+      return { inStrip: Boolean(document.activeElement?.closest(".next-up")), marked: getComputedStyle(row).backgroundColor !== "rgba(0, 0, 0, 0)", ring: getComputedStyle(document.activeElement).outlineStyle };
+    });
+    assert.equal((await stripFocus()).marked, false, "Open clicked with the mouse: no focus mark");
     assert.equal(await M.locator("#settings .screen").getAttribute("data-on"), "true", "opened by hand, so the main screen is connected");
     // The main screen is cut off (TOOLS-492) and the browser blocks a new window without a click (pop-ups
     // not allowed): the next page is missed too, and nothing opens by itself.
@@ -4368,7 +4374,10 @@ export async function run({ browser, base, mode, dist, out }) {
     await M.keyboard.press(" "); // Space on the focused Open button opens the page, as Enter or a click would
     await M.waitForFunction(() => window.__screen.visits.at(-1) === "https://patchstack.com", null, { timeout: 2000 });
     await M.waitForFunction(() => !document.querySelector('.next-up li[data-state="missed"]'));
-    assert.equal(await M.evaluate(() => Boolean(document.activeElement?.closest(".next-up"))), true, "Open's row went, and the keyboard stays in the strip");
+    assert.deepEqual(await stripFocus(), { inStrip: true, marked: true, ring: "none" }, "Open's row went: the keyboard stays in the strip, and its first row shows it with a fill, no ring");
+    await passEl(M, "[data-cue]", 0, 2); // the rows change while the keyboard is there
+    await M.waitForFunction(() => document.querySelector(".next-up li .sw-what")?.textContent !== "face full");
+    assert.deepEqual(await stripFocus(), { inStrip: true, marked: true, ring: "none" }, "the rows changed: still in the strip, still marked");
     assert.equal(await M.locator(".dock-btn.auto").getAttribute("aria-pressed"), "false", "Space on Open did not start auto-scroll");
     assert.equal(await M.locator(".next-up .sw-what").first().getAttribute("title"), await M.locator(".next-up .sw-what").first().textContent(), "a name cut at two lines shows in full on hover");
     await missCtx.close();
@@ -4405,7 +4414,8 @@ export async function run({ browser, base, mode, dist, out }) {
     // A wide but short window with the reading line low: the strip goes above the line, every row in view.
     const longRows = `### **SHORT · 00:00**\n\nThe first words to say.\n[Pick up the remote control that lies on the desk next to the keyboard]\nSecond words to say.\n[Look at the second camera on the left side of the room for a while]\nThird words to say.\n[Hold the product box up to the camera so the label can be read clearly]\nFourth words to say.\n[Put the box down again and slide it out of the shot to the right]\nFifth words to say.\n`;
     const shortCtx = await browser.newContext({ ...DESKTOP, viewport: { width: 1240, height: 600 } });
-    await shortCtx.addInitScript(() => { localStorage.setItem("prompter-text-only", "on"); localStorage.setItem("prompter-line", "0.75"); });
+    await shortCtx.addInitScript(SPEECH_STUB);
+    await shortCtx.addInitScript(() => { localStorage.setItem("prompter-text-only", "on"); localStorage.setItem("prompter-line", "0.75"); localStorage.setItem("prompter-voice-ok", "yes"); });
     const TL = await shortCtx.newPage();
     watch(TL, "text only, short window");
     await TL.goto(await makeLink(longRows, "lex", base));
@@ -4422,6 +4432,25 @@ export async function run({ browser, base, mode, dist, out }) {
     assert.deepEqual([shortLook.rows, shortLook.inView, shortLook.clear], [4, true, true], "four rows, all in view above the control bar and clear of the reading line");
     assert.ok(shortLook.twoLines >= 3, "long names take two lines");
     await shot(TL, "text-only-short-window");
+    // Speech keeps failing: "Reconnecting to speech…" shows just above the low line, and the strip above
+    // the line moves up to keep clear of it, every row still in view.
+    await viaSettings(TL, ".voice");
+    await TL.waitForFunction(() => window.__speech.started === 1);
+    for (let i = 0; i < 4; i++) {
+      const n = await TL.evaluate(() => { window.__speech.fail("network"); return window.__speech.started; });
+      await TL.waitForFunction((k) => window.__speech.started === k + 1, n, { timeout: 5000 });
+    }
+    await TL.waitForFunction(() => document.querySelector(".toast").dataset.show === "true");
+    await TL.waitForTimeout(500); // the note's fade-in
+    const withNote = await TL.evaluate(() => {
+      const note = document.querySelector(".toast").getBoundingClientRect();
+      const bar = document.querySelector(".dock-wrap").getBoundingClientRect().top;
+      const rows = [...document.querySelectorAll(".next-up li")].filter((el) => getComputedStyle(el).display !== "none").map((el) => el.getBoundingClientRect());
+      const apart = (r) => r.bottom <= note.top || r.top >= note.bottom || r.right <= note.left || r.left >= note.right;
+      return { low: document.querySelector(".toast").hasAttribute("data-low"), first: rows.length > 0, apart: rows.every(apart), inView: rows.every((r) => r.top >= 0 && r.bottom <= bar) };
+    });
+    assert.deepEqual(withNote, { low: false, first: true, apart: true, inView: true }, "the note above the line, the strip's rows clear of it and in view");
+    await shot(TL, "text-only-short-window-speech-note");
     await TL.setViewportSize({ width: 1240, height: 260 });
     await TL.waitForTimeout(200);
     const tiny = await TL.evaluate(() => {
@@ -4431,7 +4460,7 @@ export async function run({ browser, base, mode, dist, out }) {
     });
     assert.deepEqual(tiny, { first: true, inView: true }, "too short for all of them: the rows furthest ahead wait, the first stays");
     await shortCtx.close();
-    ok("Text only on a short wide window: the strip moves above a low reading line with every row in view, and on a window too short for it the rows furthest ahead wait");
+    ok("Text only on a short wide window: the strip moves above a low reading line with every row in view, clear of the Reconnecting to speech note, and on a window too short for it the rows furthest ahead wait");
 
     // A hidden camera cue reaches CamFrame at the next spoken line, once per pass, not before.
     const toCam = fakeCamFrame();
@@ -4514,6 +4543,25 @@ export async function run({ browser, base, mode, dist, out }) {
     assert.deepEqual(high, { open: true, missed: true, clear: true, hint: true, uncovered: true }, "Missed and Open in view; the card clear of the reading line and above the main screen note");
     await shot(TH, "text-only-mobile-high-line");
     await highPhone.close();
+    // A very small phone window with two long reminders next: too tall at the top and too tall above the
+    // control bar, so the row further ahead waits and the card keeps clear of the line being read.
+    const tinyPhone = await browser.newContext({ ...MOBILE, viewport: { width: 320, height: 240 } });
+    await tinyPhone.addInitScript(() => { localStorage.setItem("prompter-text-only", "on"); });
+    const TT = await tinyPhone.newPage();
+    watch(TT, "text only, tiny phone");
+    await TT.goto(await makeLink(longRows, "lex", base));
+    await TT.locator(".next-up").waitFor();
+    await TT.waitForTimeout(300);
+    const tinyCard = await TT.evaluate(() => {
+      const card = document.querySelector(".next-up").getBoundingClientRect();
+      const y = document.querySelector(".reading-line").getBoundingClientRect().top;
+      const row = parseFloat(getComputedStyle(document.querySelector(".script")).lineHeight); // the line being read, under the reading line
+      const rows = [...document.querySelectorAll(".next-up li")].filter((el) => getComputedStyle(el).display !== "none");
+      return { first: rows[0] === document.querySelector(".next-up li"), clear: card.bottom < y || card.top >= y + row, inView: card.top >= 0 && card.bottom <= innerHeight };
+    });
+    assert.deepEqual(tinyCard, { first: true, clear: true, inView: true }, "the first row in view, the card clear of the reading line and the line being read");
+    await shot(TT, "text-only-tiny-phone");
+    await tinyPhone.close();
     // The Producer's cue pill on a phone with the line high: the card never covers the pill or the line,
     // with the pill just above the line, or low above the control bar on a short screen.
     if (mode === "wrangler") {

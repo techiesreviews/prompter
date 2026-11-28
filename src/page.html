@@ -44,6 +44,7 @@
     --star: oklch(85% 0.15 85);         /* the best take's star */
     --rail: oklch(20% 0.06 282);        /* the scene rail at the left edge, opened */
     --rec-focus: oklch(51% 0.11 282);   /* keyboard focus on the record pieces: a fill (no ring), 3:1 on the page and the rail */
+    --strip-focus: oklch(54% 0.11 282); /* the keyboard in Text only's strip: a fill (no ring), 3:1 on the page and the phone card */
     --read-veil: oklch(16% 0.06 282 / 0.86); /* the page colour over read text: ~14% of it shows */
     --lift: 0 1px 1px oklch(4% 0.06 282 / 0.5), 0 4px 8px oklch(4% 0.06 282 / 0.4), 0 16px 32px oklch(4% 0.06 282 / 0.3); /* --shadow without its 1px top highlight: no edge line */
     --shadow: var(--lift), inset 0 1px 0 oklch(97.5% 0.012 282 / 0.07);
@@ -257,6 +258,9 @@
   }
   .next-up-label { margin: 0 0 6px; font: 500 11px/1.3 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
   .next-up .next-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; outline: 0; } /* focused only to keep the keyboard here after Open */
+  /* The keyboard there (after Open from the keyboard): a fill on the first row, never a ring. */
+  .next-list:focus-visible > li:first-child { color: var(--text); background: var(--strip-focus); box-shadow: 0 0 0 4px var(--strip-focus); border-radius: 4px; }
+  .next-list:focus-visible > li:first-child :is(.sw-kind, .sw-state) { color: var(--text); }
   .next-up li { display: flex; align-items: baseline; gap: 0 6px; }
   .next-up li[data-state="done"] { color: var(--text); }
   .sw-kind { flex: none; font: 500 11px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
