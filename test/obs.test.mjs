@@ -1004,13 +1004,14 @@ test("a start whose take name OBS never answers ends in time, even while OBS's o
   const { l } = link(obs);
   await until(() => l.state === "on");
   const name = takeName(sceneOf("7 · Stuck"), 1);
-  obs.answer = (type, data) => (type === "SetProfileParameter" ? (data.parameterValue === name ? { silent: true } : { delay: 2 * FAST.wait }) : null);
+  obs.answer = (type, data) => (type === "SetProfileParameter" ? (data.parameterValue === name ? { late: 10 * FAST.wait } : { delay: 2 * FAST.wait }) : null);
   const began = Date.now();
   const started = l.start(name);
   await until(() => l.starting === "", 4 * FAST.wait);
   assert.ok(Date.now() - began < FAST.wait + 300, `Starting ends soon after the usual wait (${Date.now() - began} ms)`);
   assert.equal(await started, false);
-  await until(() => obs.record.format === OWN_FORMAT, 4000);
+  assert.equal(obs.record.format, name, "OBS did set the take's name, only never answered");
+  await until(() => obs.record.format === OWN_FORMAT, 4000); // the put-back landed
   l.turn(false);
 });
 
