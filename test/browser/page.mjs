@@ -36,7 +36,7 @@ const DEMO_SECTIONS = parse(DEMO_SCRIPT).length;
 // in doubleStarts), and each start is a new session whose results number
 // from 0. On-device recognition answers window.__speechOnDevice (unset:
 // "unavailable"); install() resolves true. window.__speechBroken makes start() throw.
-const SPEECH_STUB = () => {
+export const SPEECH_STUB = () => {
   const state = { started: 0, made: 0, aborted: 0, doubleStarts: 0, reused: 0, installs: 0, startedAt: [], instance: null, results: [] };
   class FakeRecognition {
     constructor() { state.made++; }

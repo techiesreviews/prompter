@@ -720,7 +720,7 @@ export function obsLink({ WebSocket = globalThis.WebSocket, subtle = globalThis.
         // Asked to record and never answered: OBS may be recording under this name, or begin yet, so it
         // is used, and it stays in OBS (no put-back) until OBS records or the take is called off.
         if (asked && error.sent) { unsure = name; link.maybe = name; count(name); }
-        if (!restoring) await putBack(); // one already on its way is not waited for again
+        putBack(); // not waited for: it has no time limit, and the next take waits for it (R can call that off)
         if (link.on && !stopAsked) set({ problem: "start" });
         // A stop asked for a take OBS may be recording holds until the next connect says how OBS is.
         if (unsure !== name) stopAsked = false;
