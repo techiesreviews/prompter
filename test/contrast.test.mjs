@@ -95,10 +95,10 @@ const PAIRS = [
   ["rec-focus", "rail", "the focus fill on the rail (graphic)", 3],
   ["text", "rec-focus", "the record light, a star not the best, a rail scene, a take's dot, focused"],
   ["star", "rec-focus", "the best take's star or dot, focused (graphic)", 3],
-  // The keyboard in Text only's strip (after Open from the keyboard): a fill on its first row, never a ring.
+  // The keyboard in Text only's strip: a fill on its Open button, or on its first row after Open, never a ring.
   ["strip-focus", "bg", "the focus fill on the strip's first row beside the text (graphic)", 3],
   ["strip-focus", "panel", "the focus fill on the first row of the phone card (graphic)", 3],
-  ["text", "strip-focus", "the strip's first row, its kind word and Missed, with the keyboard in it"],
+  ["text", "strip-focus", "the strip's first row, its kind word and Missed, with the keyboard in it; its Open button focused"],
 ];
 
 test("page uses the indigo night colour and every text colour meets WCAG AA on its background", () => {
