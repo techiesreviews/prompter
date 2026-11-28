@@ -1598,11 +1598,18 @@ function placeNext() {
   const narrow = matchMedia("(width < 1240px)").matches;
   nextUp.removeAttribute("data-low");
   nextUp.removeAttribute("data-up");
+  nextUp.style.removeProperty("inset-block-end");
   for (const li of nextList.children) li.hidden = false;
   if (narrow) {
     const pillAbove = !askPill.hidden && askPill.dataset.place === "above";
     const limit = pillAbove ? Math.min(reading.y, askPill.getBoundingClientRect().top) : reading.y;
-    if (nextUp.getBoundingClientRect().bottom + 12 > limit) nextUp.setAttribute("data-low", "");
+    if (nextUp.getBoundingClientRect().bottom + 12 > limit) {
+      nextUp.setAttribute("data-low", "");
+      if (toastEl.dataset.show && toastEl.hasAttribute("data-low")) { // the speech note low too: the card sits above it
+        const noteTop = parseFloat(getComputedStyle(toastEl).insetBlockEnd) + toastEl.offsetHeight;
+        nextUp.style.insetBlockEnd = `${Math.max(parseFloat(getComputedStyle(nextUp).insetBlockEnd), noteTop + 8)}px`;
+      }
+    }
     return;
   }
   const floor = innerHeight - dockWrap.offsetHeight - 8;
@@ -1665,12 +1672,13 @@ function showAlert(t) {
 const RECONNECTING = "Reconnecting to speech…";
 function showToast(text) {
   toastText.textContent = text;
-  placePill(); // the note's own height decides whether it fits above the line
   toastEl.dataset.show = "true";
+  placePill(); // the note's own height decides whether it fits above the line
   setStatus(text);
 }
 function hideToast() {
   delete toastEl.dataset.show;
+  placeNext(); // Text only's card comes back down when it made room for the note
 }
 
 // Once per page: a link would have opened by itself, but no main screen is connected.
