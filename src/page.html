@@ -530,6 +530,9 @@
      one (a phone on its side) it starts below the light (see .ask-box). */
   :root { --rec-clear: 58px; } /* room the light takes at the top: 10px above it, 40px for it, 8px under it */
   @media (pointer: coarse) { :root { --rec-clear: 62px; } } /* its 44px phone target */
+  /* The same room plus a notch's safe area, registered so the reading line can read it back in px. */
+  @property --rec-room { syntax: "<length>"; inherits: true; initial-value: 0px; }
+  :root { --rec-room: calc(var(--rec-clear) + env(safe-area-inset-top, 0px)); }
   .rec {
     position: fixed; inset-block-start: calc(10px + env(safe-area-inset-top, 0px)); inset-inline: 0; z-index: 16;
     display: flex; justify-content: center; gap: 2px; pointer-events: none;

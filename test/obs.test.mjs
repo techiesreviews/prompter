@@ -1053,6 +1053,25 @@ test("a second tab connecting never puts OBS's own name back over a take the fir
   second.turn(false);
 });
 
+test("a tab that connects over a name left behind never puts OBS's own name back once another tab's take has set its own meanwhile", async (t) => {
+  const obs = await startObsStandin();
+  t.after(() => obs.stop());
+  const first = link(obs).l;
+  await until(() => first.state === "on");
+  await sleep(100);
+  obs.record.format = takeName(sceneOf("3 · Left behind"), 2); // a tab closed mid-take left it
+  obs.startLag = 800; // OBS reads the name as the recording begins
+  const second = link(obs, { delays: { ...FAST, peers: 600 } }).l; // asks the other tabs, then waits
+  await until(() => second.state === "on");
+  await sleep(100);
+  const two = takeName(sceneOf("4 · Meanwhile"), 1);
+  first.start(two); // the idle first tab starts a take while the second one waits
+  await until(() => obs.record.active, 4000);
+  assert.match(obs.record.path, /scene-04-meanwhile-take-01/, "the take records under its own name");
+  first.turn(false);
+  second.turn(false);
+});
+
 test("a take name OBS is slow to set never lands on the next take: that one waits for it", async (t) => {
   const obs = await startObsStandin();
   t.after(() => obs.stop());

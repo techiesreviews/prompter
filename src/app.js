@@ -805,8 +805,8 @@ const viewHeight = () => document.documentElement.clientHeight || window.innerHe
 function setLine(frac, keepText = false) {
   lineFrac = settingValue("line", frac);
   // Never under the record light: dragged above it (a phone held sideways), the line waits just below it.
-  // (--rec-clear, the room the light takes at the top; read from the style, as the light is not laid out on the start screen)
-  const y = Math.max(Math.round(viewHeight() * lineFrac), recWrap.hidden ? 0 : Math.ceil(parseFloat(getComputedStyle(root).getPropertyValue("--rec-clear")) || 0));
+  // (--rec-room, the room the light takes at the top with a notch's safe area; read from the style, as the light is not laid out on the start screen)
+  const y = Math.max(Math.round(viewHeight() * lineFrac), recWrap.hidden ? 0 : Math.ceil(parseFloat(getComputedStyle(root).getPropertyValue("--rec-room")) || 0));
   const delta = reading.place(y);
   root.style.setProperty("--line", `${y}px`);
   placePill(); // dragged high, the pill goes low (and Text only's card on a phone goes above the control bar)

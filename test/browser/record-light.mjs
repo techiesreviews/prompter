@@ -838,6 +838,28 @@ export async function run({ browser, base, mode, out }) {
   }
   ok("a phone held sideways with the reading line dragged to the top: the record light never covers the line, which sits just under it while OBS is on and goes back up once OBS is off");
 
+  // The same on an upright phone with a notch (a 59px safe area at the top): the light sits lower,
+  // and the line still waits just below it.
+  obs = await startObsStandin({ port: 4455 });
+  const notch = await browser.newContext(MOBILE);
+  await notch.addInitScript(() => { localStorage.setItem("prompter-obs", "on"); localStorage.setItem("prompter-line", "0.08"); });
+  const n = await notch.newPage();
+  watch(n);
+  try {
+    const cdp = await notch.newCDPSession(n);
+    await cdp.send("Emulation.setSafeAreaInsetsOverride", { insets: { top: 59, topMax: 59 } });
+    await open(n);
+    await toSection(n, 1);
+    await tagIs(n, "S1 · T1");
+    const at = await n.evaluate(() => ({ line: parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--line")), light: document.querySelector(".rec-light").getBoundingClientRect().bottom }));
+    assert.ok(at.light > 100, `the notch moves the light down: ${JSON.stringify(at)}`);
+    assert.ok(at.line >= at.light + 8, `the reading line sits under the light below a notch: ${JSON.stringify(at)}`);
+  } finally {
+    await notch.close();
+    await obs.stop();
+  }
+  ok("an upright phone with a notch (59px safe area) and the reading line dragged to the top: the line still sits just under the record light");
+
   // Text only's "what happens next" strip (TOOLS-491) and the record light never overlap: under 1240px wide
   // the strip is a card at the top, where the light is, so the card starts below the light while the light
   // shows (and goes back to the top when the OBS link is off); on a wide screen the strip stays beside the

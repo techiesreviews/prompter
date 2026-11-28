@@ -651,10 +651,15 @@ export function obsLink({ WebSocket = globalThis.WebSocket, subtle = globalThis.
     try { got = await request("GetProfileParameter", FILENAME); } catch { return; }
     if (ours() || !isTakeName(got.parameterValue)) return;
     if (peers) {
+      const asked = sock;
       peerBusy = false;
       peers.postMessage("busy?");
       await new Promise((done) => { later(done, delays.peers); });
-      if (peerBusy || ours() || !sock || link.state !== "on") return; // another tab's take, or ours began meanwhile
+      if (peerBusy || ours() || sock !== asked || link.state !== "on") return; // another tab's take, ours, or another connection
+      // A tab idle when asked may have set its own take's name since: put back only the very name read before.
+      let now;
+      try { now = await request("GetProfileParameter", FILENAME); } catch { return; }
+      if (now.parameterValue !== got.parameterValue || ours() || sock !== asked) return;
     }
     restoreTo = got.defaultParameterValue && !isTakeName(got.defaultParameterValue) ? got.defaultParameterValue : OBS_FORMAT;
     putBack();
