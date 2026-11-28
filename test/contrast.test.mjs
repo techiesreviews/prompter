@@ -64,7 +64,7 @@ const PAIRS = [
   ["text", "panel-2", "hovered menu items, the main screen's cut-off note"],
   ["muted", "panel-2", "code on raised surfaces"],
   ["text", "chip", "buttons, chosen width, tooltips"],
-  ["muted", "chip", "section times, the save date on the start screen's Continue button"],
+  ["muted", "chip", "section times, the save date on the start screen's Continue button, the OBS password box's hint"],
   ["muted", "chip-hover", "the save date on a hovered Continue button"],
   ["text", "chip-hover", "hovered buttons"],
   ["on-accent", "accent", "orange buttons: 19px bold labels only (large text)", 3],
@@ -75,6 +75,26 @@ const PAIRS = [
   ["muted", "chip", "the icon of an off Settings toggle (graphic)", 3],
   ["accent", "chip", "the ring of the CamFrame button when CamFrame is not found (graphic)", 3],
   ["accent", "bg", "border of the link on the main screen (graphic)", 3],
+  // The record light (OBS): its scene and take, its timer and OBS's messages, on the page or hovered.
+  ["dim", "bg", "the record light's scene and take, idle"],
+  ["muted", "panel", "the record light hovered, OBS's messages on it hovered"],
+  ["muted", "bg", "OBS's messages on the record light"],
+  ["text", "bg", "the record light's timer while a take records"],
+  ["rec", "bg", "the record light's dot (graphic)", 3],
+  ["star", "bg", "the star of the best take (graphic)", 3],
+  ["star", "panel", "the same, hovered (graphic)", 3],
+  ["dim", "bg", "the star of a take that is not the best (graphic)", 3],
+  // The scene rail at the left edge, opened.
+  ["dim", "rail", "scene numbers on the rail"],
+  ["text", "rail", "the current scene on the rail"],
+  ["star", "rail", "the best take's dot on the rail (graphic)", 3],
+  ["dim", "rail", "the other takes' dots on the rail (graphic)", 3],
+  ["rec", "chip", "the OBS button's icon while OBS records (graphic)", 3],
+  // Keyboard focus on the record light, its star and the rail: a fill, never a ring.
+  ["rec-focus", "bg", "the focus fill on the record light and its star (graphic)", 3],
+  ["rec-focus", "rail", "the focus fill on the rail (graphic)", 3],
+  ["text", "rec-focus", "the record light, a star not the best, a rail scene, a take's dot, focused"],
+  ["star", "rec-focus", "the best take's star or dot, focused (graphic)", 3],
 ];
 
 test("page uses the indigo night colour and every text colour meets WCAG AA on its background", () => {

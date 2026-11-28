@@ -19,8 +19,12 @@ test("the page is one self-contained file: no external scripts, styles or fetche
   assert.deepEqual(html.match(/fetch\([^,)]*/g), ["fetch(TOKEN_PATH", "fetch(`${CAMFRAME_ORIGIN}/camframe/${path}`"]);
   assert.ok(html.includes('const TOKEN_PATH = "/api/agent-token";'), "the token comes from this site");
   assert.ok(html.includes('const CAMFRAME_ORIGIN = "http://127.0.0.1:47833";'), "CamFrame is reached on this computer only");
-  // The tab link opens its sockets on the address the page gives it: this site's relay.
-  assert.deepEqual(html.match(/new \w*WebSocket\([^,)]*/g), ["new WebSocket(url", "new WebSocket(url"]);
+  // The tab link opens its sockets on the address the page gives it: this site's relay. The OBS link opens
+  // its one on OBS's own WebSocket server on this computer (127.0.0.1:4455 only, as the CSP allows).
+  assert.deepEqual(html.match(/new \w*WebSocket\([^,)]*/g), ["new WebSocket(url", "new WebSocket(url", "new WebSocket(url"]);
+  assert.ok(html.includes('const OBS_URL = "ws://127.0.0.1:4455";'), "OBS is reached on this computer only");
+  assert.equal((html.match(/= obsLink\(\{/g) || []).length, 1, "one OBS link");
+  assert.doesNotMatch(html.match(/= obsLink\(\{[^}]*\}/)?.[0] || "", /\burl\b/, "the page's OBS link keeps OBS_URL");
   assert.equal((html.match(/= relayLink\(\{/g) || []).length, 1, "one tab link");
   assert.ok(html.includes('url: `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${RELAY_PATH}`'), "the relay is on this site");
   assert.ok(html.includes('const RELAY_PATH = "/api/relay";'));

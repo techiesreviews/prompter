@@ -1166,17 +1166,17 @@ export async function run({ browser, base, mode, dist, out }) {
   // voice (only with the speech API), the main screen and the CamFrame link (off).
   await (await dock(page, ".settings-btn")).click();
   await popAbove(page, "#settings", ".settings-btn", "desktop Settings");
-  assert.deepEqual(await page.locator("#settings").evaluate((el) => [...el.querySelectorAll(".setting")].map((row) => row.querySelector("legend, label").textContent.trim())),
-    ["Text size", "Scroll speed", "Line height", "Paragraph spacing", "Width", "Layout", "Show"]);
+  assert.deepEqual(await page.locator("#settings").evaluate((el) => [...el.querySelectorAll(".setting:not([hidden])")].map((row) => row.querySelector("legend, label").textContent.trim())),
+    ["Text size", "Scroll speed", "Line height", "Paragraph spacing", "Width", "Layout", "Show"], "the OBS password row shows only while the OBS link is on (record-light.mjs)");
   assert.equal(await page.locator("#settings .camframe").getAttribute("aria-pressed"), "false", "the CamFrame link is off by default");
   // Follow my voice, the main screen and the CamFrame link: big buttons side by side (icons only).
   const bigButtons = (p) => p.locator("#settings .big-toggle:not([hidden])").evaluateAll((els) => els.map((el) => [el.getAttribute("aria-label"), el.innerText.trim()]));
-  assert.deepEqual(await bigButtons(page), [["Connect main screen", ""], ["CamFrame link: off", ""]], "icons only; no Follow my voice without the speech API; the main screen's and CamFrame's buttons");
-  assert.equal(await page.locator("#settings").locator("input, select, button, textarea").count(), 18, "four sliders with their value boxes, three width, two layout and two show choices, the voice, main screen and CamFrame buttons, nothing else");
+  assert.deepEqual(await bigButtons(page), [["Connect main screen", ""], ["CamFrame link: off", ""], ["OBS link: off", ""]], "icons only; no Follow my voice without the speech API; the main screen's, CamFrame's and OBS's buttons");
+  assert.equal(await page.locator("#settings").locator("input, select, button, textarea").count(), 20, "four sliders with their value boxes, three width, two layout and two show choices, the voice, main screen, CamFrame and OBS buttons, the (hidden) OBS password, nothing else");
   assert.equal(await page.locator("#settings .camframe-status, #settings .check-row").count(), 0, "no CamFrame status text in Settings");
   const screenBox = await page.locator("#settings .screen").boundingBox();
   const rowBox = await page.locator("#settings .big-toggles").boundingBox();
-  assert.ok(Math.abs(screenBox.width * 2 + 8 - rowBox.width) < 1.5, "without voice the main screen's and CamFrame's buttons share the row");
+  assert.ok(Math.abs(screenBox.width * 3 + 16 - rowBox.width) < 1.5, "without voice the main screen's, CamFrame's and OBS's buttons share the row");
   const dockHeight = (await page.locator(".dock").boundingBox()).height;
   assert.ok(screenBox.height >= dockHeight && screenBox.height <= dockHeight + 24, `about as tall as the control bar: ${screenBox.height} vs ${dockHeight}`);
   assert.deepEqual(await page.locator("#settings .screen").evaluate((el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).color]), ["oklch(0.33 0.096 282)", "oklch(0.763 0.027 282)"], "not connected: quiet indigo");
@@ -1807,9 +1807,9 @@ export async function run({ browser, base, mode, dist, out }) {
   await (await dock(v, ".settings-btn")).click();
   await popAbove(v, "#settings", ".settings-btn", "Settings with voice on");
   assert.deepEqual(await v.locator("#settings .big-toggle").evaluateAll((els) => els.map((el) => [el.innerText.trim(), getComputedStyle(el).backgroundColor, getComputedStyle(el).color])),
-    [["", "oklch(0.33 0.096 282)", "oklch(0.7 0.19 32.3)"], ["", "oklch(0.33 0.096 282)", "oklch(0.763 0.027 282)"], ["", "oklch(0.33 0.096 282)", "oklch(0.763 0.027 282)"]], "icons only; on: an orange icon, off: a quiet one, on the same indigo button; side by side");
-  const [vb, sb, cb] = await Promise.all([v.locator("#settings .voice").boundingBox(), v.locator("#settings .screen").boundingBox(), v.locator("#settings .camframe").boundingBox()]);
-  assert.ok(Math.abs(vb.y - sb.y) < 1 && Math.abs(sb.y - cb.y) < 1 && Math.abs(vb.width - sb.width) < 1 && Math.abs(sb.width - cb.width) < 1 && vb.x < sb.x && sb.x < cb.x, "three equal buttons side by side");
+    [["", "oklch(0.33 0.096 282)", "oklch(0.7 0.19 32.3)"], ["", "oklch(0.33 0.096 282)", "oklch(0.763 0.027 282)"], ["", "oklch(0.33 0.096 282)", "oklch(0.763 0.027 282)"], ["", "oklch(0.33 0.096 282)", "oklch(0.763 0.027 282)"]], "icons only; on: an orange icon, off: a quiet one, on the same indigo button; side by side");
+  const [vb, sb, cb, ob] = await Promise.all([v.locator("#settings .voice").boundingBox(), v.locator("#settings .screen").boundingBox(), v.locator("#settings .camframe").boundingBox(), v.locator("#settings .obs").boundingBox()]);
+  assert.ok(Math.abs(vb.y - sb.y) < 1 && Math.abs(sb.y - cb.y) < 1 && Math.abs(cb.y - ob.y) < 1 && Math.abs(vb.width - sb.width) < 1 && Math.abs(sb.width - cb.width) < 1 && Math.abs(cb.width - ob.width) < 1 && vb.x < sb.x && sb.x < cb.x && cb.x < ob.x, "four equal buttons side by side");
   await shot(v, "settings-voice-on-desktop");
   await v.evaluate(() => document.querySelector("#settings").hidePopover());
   assert.equal(await v.locator(".auto").getAttribute("aria-pressed"), "false", "auto-scroll pauses");
@@ -3337,8 +3337,8 @@ export async function run({ browser, base, mode, dist, out }) {
   await popAbove(m, "#settings", ".settings-btn", "mobile Settings");
   await noOverflow(m, "mobile Settings popover");
   await m.locator('#settings .seg label:has-text("Narrow")').click();
-  assert.deepEqual(await bigButtons(m), [["Follow my voice", ""], ["Connect main screen", ""], ["CamFrame link: off", ""]]);
-  for (const sel of ["#settings .voice", "#settings .screen", "#settings .camframe", "#settings .size", "#settings .speed", "#settings .line-height", "#settings .para-space", "#settings .width label", "#settings .layout label"]) {
+  assert.deepEqual(await bigButtons(m), [["Follow my voice", ""], ["Connect main screen", ""], ["CamFrame link: off", ""], ["OBS link: off", ""]]);
+  for (const sel of ["#settings .voice", "#settings .screen", "#settings .camframe", "#settings .obs", "#settings .size", "#settings .speed", "#settings .line-height", "#settings .para-space", "#settings .width label", "#settings .layout label"]) {
     for (const loc of await m.locator(sel).all()) {
       const box = await loc.boundingBox();
       assert.ok(box.height >= 44 && box.x >= 0 && box.x + box.width <= 390, `${sel} fits a phone as a 44px target: ${JSON.stringify(box)}`);

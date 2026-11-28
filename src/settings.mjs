@@ -25,13 +25,18 @@ export const SETTINGS = {
   voiceOk: { key: "prompter-voice-ok", fallback: false, on: "yes" }, // the speech notice was accepted
   // Text only: reminders, camera cues and link lines are hidden and happen by themselves (TOOLS-491).
   textOnly: { key: "prompter-text-only", fallback: false, on: "on" },
+  obs: { key: "prompter-obs", fallback: false, on: "on" }, // the record light's link to OBS
 };
 
 /**
- * Other things kept on this device: the last script opened, the day it was saved, the agent's token,
- * and the sites that cut the main screen off (host names only, src/main-screen.mjs).
+ * Other things kept on this device: the last script opened, the day it was saved, the agent's token, the sites
+ * that cut the main screen off (host names only, src/main-screen.mjs), the OBS password the person typed (it
+ * never leaves this device) and the take memory (takes per scene, the best).
  */
-export const STORED = { lastScript: "prompter-last-script", lastSaved: "prompter-last-saved", agent: "prompter-agent", cutSites: "prompter-cut-sites" };
+export const STORED = {
+  lastScript: "prompter-last-script", lastSaved: "prompter-last-saved", agent: "prompter-agent", cutSites: "prompter-cut-sites",
+  obsPassword: "prompter-obs-password", takes: "prompter-takes",
+};
 
 /**
  * Keys no setting may use again: the old Line spacing (Normal, Roomy, Spacious), which Line height,

@@ -59,6 +59,15 @@ const showInputs = document.querySelectorAll('input[name="show"]');
 const toastEl = $(".toast");
 const toastText = $(".toast-text");
 const camframeBtn = $(".big-toggle.camframe"); // in Settings
+const obsBtn = $(".big-toggle.obs"); // in Settings
+const obsPass = $(".obs-pass"); // the OBS password row in Settings
+const obsPassword = $(".obs-password");
+const recWrap = $(".rec"); // the record light and the star, top centre
+const recLight = $(".rec-light");
+const recTag = $(".rec-tag");
+const recTime = $(".rec-time");
+const recStar = $(".rec-star");
+const recRail = $(".rec-rail"); // the scene rail at the left edge
 const pasteStatus = $(".paste-status"); // the same for the paste window, which is modal too
 const WINDOW_NAME = "prompter-main-screen";
 const SETTLE_MS = 700; // wait this long on a section before changing the main screen
@@ -103,6 +112,13 @@ let resumeAuto = false;
 let cueArmed = false;
 // CamFrame link (camframeLink in src/camframe.mjs): off unless turned on in Settings; the page only draws it.
 const camframe = camframeLink({ fetch, clock: window, visible: () => document.visibilityState === "visible", changed: () => drawCamframe() });
+// The OBS link (obsLink in src/obs.mjs): off unless turned on in Settings. The record light starts and
+// stops a take in OBS, named after the scene at the reading line. The password stays on this device.
+const obs = obsLink({ clock: window, changed: () => { drawRecord(); sayTake(); }, began: (name) => countTake(name), ended: (name, recorded) => takeEnded(name, recorded) });
+// A take started here (its name in OBS) → { say, take, video, base, counted }, for its name while it records.
+const takeOf = new Map();
+let picked = {}; // the take picked on the rail, by scene folder; a new take or a new script clears it
+let recTimer = 0; // the timer's tick while OBS records
 // The line under the Camera cues list: the words last read out, and the read-out still due.
 const layoutsSay = { said: "", timer: 0 };
 
@@ -170,6 +186,7 @@ function rememberedTitle(text) {
 
 /** The start screen: open, paste, ask your AI or try the demo. Opens nothing by itself. */
 function showStart() {
+  stopTake();
   if (voiceOn) stopVoice();
   setAuto(false);
   hidePopovers();
@@ -379,7 +396,9 @@ function render({ redraw = false } = {}) {
   }).join("");
   if (redraw) return;
   camframe.dropCue();
+  picked = {};
   updateActive();
+  drawRecord();
 }
 
 // Open and Settings are native popovers (light dismiss, Escape) anchored above
@@ -548,6 +567,9 @@ function askKey(e) {
     askOpen();
     return true;
   }
+  // R still starts and stops a take while the box shows (the page's key handler below): a take recording
+  // must never wait on a cue.
+  if ((k === "r" || k === "R") && obs.on) return false;
   if (k === "Escape") askSkip();
   else if (k === "ArrowRight" || k === "PageDown") { ask.move(1); drawAsk(); }
   else if (k === "ArrowLeft" || k === "PageUp") { ask.move(-1); drawAsk(); }
@@ -558,6 +580,8 @@ function askKey(e) {
     // Space on a focused button of the control bar means auto-scroll, as it does without the box (the page's key
     // handler below): Play shows the change and the scrolling still waits for the box.
     if (k === " " && e.target.closest?.(".dock button")) return false;
+    // Space on the record light, its star or the scene rail, reached by keyboard, presses it as a button.
+    if (k === " " && e.target.closest?.(".rec, .rec-rail")) return true;
     if (k === "Enter") askUse();
   } else return true; // the page's own keys (digits, Space, size…) wait while the box shows; the browser's, like Tab, still work
   e.preventDefault();
@@ -854,6 +878,7 @@ function updateActive(look = reading.look()) {
     script.active = idx;
     main.querySelectorAll(".section").forEach((el, i) => el.classList.toggle("active", i === idx));
     updateClock();
+    drawRecord();
   }
   // The most recent link above the reading line goes on the main screen once
   // the reader settles there, so fast scrolling does not flash every link.
@@ -918,6 +943,279 @@ function drawCamframe() {
   showCueMenu();
   // Not again when it comes back from a missed check or two (reconnecting).
   if (was !== camframe.state && ((camframe.state === "on" && was !== "reconnecting") || camframe.state === "lost")) setStatus(`${name}.`);
+}
+
+// ---------- The record light (OBS) ----------
+// Each take OBS records lands in its scene's folder, named after the scene and the take
+// (takeName in src/obs.mjs). The takes and the best one are kept on this device per script
+// (STORED.takes), counted once OBS has started the take, so a reload while recording never
+// gives the next take the same name. OBS's trouble shows in words on the light itself and
+// never stops the scrolling.
+const OBS_SAYS = {
+  off: "OBS link: off",
+  connecting: "OBS link: connecting",
+  reconnecting: "OBS link: reconnecting",
+  on: "OBS link: connected",
+  lost: "OBS link: OBS not found",
+  password: "OBS link: OBS asks for its password",
+  wrong: "OBS link: OBS password wrong",
+};
+const OBS_LIGHT = {
+  connecting: "Connecting to OBS…",
+  reconnecting: "Reconnecting to OBS…",
+  lost: "OBS not found",
+  password: "OBS password needed",
+  wrong: "OBS password wrong",
+};
+const OBS_PROBLEM = { start: "OBS didn’t start recording", stop: "OBS didn’t stop recording" };
+const OBS_LOST_HELP = ". In OBS, open Tools, WebSocket Server Settings, and tick Enable WebSocket server (port 4455). Chrome may ask once to let this page reach apps on this device: allow it.";
+const OBS_PASSWORD_HELP = ". Type the password from OBS (Tools, WebSocket Server Settings, Show Connect Info) in Settings.";
+// The take book lives on this device. When the browser will not keep it, this session holds it, so two
+// takes never share a name (it is said once that the numbers will not last past a reload).
+let takesMemo = null;
+let takesUnsaved = false;
+const takesBook = () => takesMemo || readTakes(store.get(STORED.takes));
+function saveTakes(book) {
+  const kept = store.set(STORED.takes, JSON.stringify(book));
+  takesMemo = kept ? null : book;
+  if (!kept && !takesUnsaved) setStatus("Take numbers can’t be saved on this device; they last until the page is closed.");
+  takesUnsaved = !kept;
+}
+const sceneSay = (scene) => (scene.number ? `scene ${scene.number}` : scene.words || scene.tag);
+// The scene at the reading line, and this script's mark in the take memory.
+function sceneHere() {
+  const s = scripts.now.sections[Math.max(0, scripts.now.active)];
+  return s ? sceneOf(s.title) : null;
+}
+const videoHere = () => videoKey(scripts.now.sections.map((s) => s.title));
+
+function drawRecord() {
+  const state = obs.state;
+  // CamFrame's pattern: blinking while connecting, lit when connected (red while OBS records),
+  // a quiet crossed-out icon when OBS is not found or wants its password.
+  const was = obsBtn.dataset.state;
+  const name = OBS_SAYS[state];
+  obsBtn.dataset.state = state;
+  obsBtn.dataset.recording = String(state === "on" && obs.recording);
+  obsBtn.setAttribute("aria-pressed", String(obs.on));
+  obsBtn.setAttribute("aria-label", name);
+  obsBtn.title = name + (state === "lost" ? OBS_LOST_HELP : state === "password" || state === "wrong" ? OBS_PASSWORD_HELP : "");
+  obsPass.hidden = !obs.on;
+  updateSettingsBtn();
+  // Read out once: connected (not when it comes back from a missed try), not found and the password troubles.
+  if (was !== state && ((state === "on" && was !== "reconnecting") || ["lost", "password", "wrong"].includes(state))) setStatus(`${name}.`);
+
+  recWrap.hidden = !obs.on;
+  const scene = sceneHere();
+  recRail.hidden = !obs.on || !scene;
+  if (!obs.on) { clearInterval(recTimer); recTimer = 0; return; }
+  const video = scene && videoHere();
+  const book = takesBook();
+  const counts = scene ? takesFor(book, video, scene.base) : { takes: [], best: 0 };
+  const next = scene ? nextTake(book, scene.base) : 1; // above every take of this folder, also from another script
+  // Red, the timer and "Recording" only once OBS itself says it records (the link's `recording`).
+  const recording = state === "on" && obs.recording;
+  // OBS took a take's start and has not said it records yet: the light waits, dim, and says Starting.
+  const taken = state === "on" && !recording && Boolean(obs.pending);
+  const stopping = (recording || taken) && obs.stopping;
+  const starting = !stopping && (taken || (state === "on" && !recording && Boolean(obs.starting)));
+  const trouble = state !== "on" ? OBS_LIGHT[state] : (!recording || obs.problem === "stop") && OBS_PROBLEM[obs.problem];
+  const view = takeView(counts, scene ? picked[scene.base] : 0, false, next);
+  const mine = recording ? (obs.take ? takeOf.get(obs.take) : null) : taken ? takeOf.get(obs.pending) : null;
+  const waiting = obs.starting ? takeOf.get(obs.starting) : null; // the take being started, or the next one waiting for the stop before
+  // A stop asked while OBS is out of reach waits for it: the light says so before the trouble. Also for
+  // a take OBS has not said it began (`pending`) and one whose start OBS never answered (`maybe`): OBS
+  // may be recording it.
+  const held = state !== "on" && obs.stopping;
+  const heldTake = held ? takeOf.get(obs.take || obs.pending || obs.maybe) : null;
+  const shown = held ? `Stopping… ${trouble}` : trouble;
+  // A start OBS has not answered, or took and has not begun after the usual wait, on a connection
+  // still up: the take keeps its name in OBS and may still begin, so R calls it off first (see toggleTake).
+  const unanswered = state === "on" && !recording && !obs.stopping && (obs.maybe || obs.pending) ? takeOf.get(obs.maybe || obs.pending) : null;
+  // A stop asked for a take OBS has not begun ("stopping-early") shows no timer: nothing recorded yet.
+  recLight.dataset.state = trouble ? "trouble" : stopping ? (recording ? "stopping" : "stopping-early") : recording ? "recording" : starting ? "starting" : "idle";
+  recTag.textContent = shown || (stopping ? "Stopping…" : starting ? "Starting…" : scene ? `${scene.tag} · T${view.take}` : "");
+  const label = (held ? `Stopping${heldTake ? ` ${heldTake.say}, take ${heldTake.take}` : ""} once OBS is back. ` : "")
+    + (state === "password" || state === "wrong" ? `${trouble}. Type it in Settings`
+    : state === "connecting" || state === "reconnecting" ? trouble
+    : trouble && unanswered ? `${trouble} yet. Call off take ${unanswered.take} of ${unanswered.say}`
+    : trouble ? `${trouble}. Try again` // not found, or OBS refused the click
+    : stopping && waiting ? `Stopping${mine ? ` ${mine.say}, take ${mine.take}` : ""}. Take ${waiting.take} of ${waiting.say} starts once it has stopped. Call it off`
+    : stopping ? `Stopping${mine ? ` ${mine.say}, take ${mine.take}` : ""}. ${scene ? `Record ${sceneSay(scene)}, take ${next}` : "Record"}`
+    : recording ? (mine ? `Recording ${mine.say}, take ${mine.take}. Stop` : "OBS is recording. Stop")
+    : starting ? `Starting${mine || waiting ? ` ${(mine || waiting).say}, take ${(mine || waiting).take}` : ""}: waiting for OBS to say it records. Stop`
+    : scene ? `Record ${sceneSay(scene)}, take ${next}` : "Record");
+  recLight.setAttribute("aria-label", label);
+  recLight.title = state === "lost" ? shown + OBS_LOST_HELP : state === "password" || state === "wrong" ? shown + OBS_PASSWORD_HELP : `${label} (R)`;
+  // The timer runs while OBS records; the scene and take come back once it stops.
+  if (recording && !recTimer) recTimer = setInterval(drawTime, 1000);
+  if (!recording && recTimer) { clearInterval(recTimer); recTimer = 0; }
+  drawTime();
+  // The star: once the scene has a take and nothing records.
+  const star = recording || taken || (state === "on" && obs.starting) || !scene ? "none" : view.star; // OBS's trouble never keeps the best take from being chosen
+  recStar.hidden = star === "none";
+  recStar.setAttribute("aria-pressed", String(star === "on"));
+  recStar.firstElementChild.textContent = star === "on" ? "★" : "☆";
+  if (scene) {
+    const starName = star === "on" ? `Take ${view.take} is the best of ${sceneSay(scene)}` : `Make take ${view.take} the best of ${sceneSay(scene)}`;
+    recStar.setAttribute("aria-label", starName);
+    recStar.title = starName;
+  }
+  drawRail(book, video);
+}
+
+function drawTime() {
+  if (obs.stopping) return; // the time stands still while OBS finishes the file
+  recTime.textContent = clockText(obs.recording ? Date.now() - obs.since : 0);
+}
+
+// The rail: each scene with a dot per take (gold: the best; the one shown is bigger). Drawn again
+// only when something changed, and the focused button keeps its focus.
+let railDrawn = "";
+function drawRail(book, video) {
+  const current = Math.max(0, scripts.now.active);
+  const html = scripts.now.sections.map((s, i) => {
+    const scene = sceneOf(s.title);
+    const t = takesFor(book, video, scene.base);
+    const view = takeView(t, picked[scene.base], false);
+    const say = sceneSay(scene);
+    const dots = t.takes.map((n) => {
+      return `<button class="rail-take" type="button" data-i="${i}" data-take="${n}" data-best="${t.best === n}" aria-pressed="${view.take === n}" aria-label="${esc(say)}, take ${n}${t.best === n ? ", the best" : ""}"></button>`;
+    }).join("");
+    const takes = t.takes.length ? `, ${t.takes.length} take${t.takes.length === 1 ? "" : "s"}` : "";
+    return `<div class="rail-scene"><button class="rail-go" type="button" data-i="${i}" aria-current="${i === current}" aria-label="Go to ${esc(say)}${takes}" title="${esc(s.title)}">${esc(scene.tag)}</button>${dots}</div>`;
+  }).join("");
+  if (railDrawn === html) return;
+  const focused = recRail.contains(document.activeElement) && document.activeElement !== recRail ? document.activeElement : null;
+  const key = focused && `.${focused.className}[data-i="${focused.dataset.i}"]${focused.dataset.take ? `[data-take="${focused.dataset.take}"]` : ""}`;
+  recRail.innerHTML = html;
+  railDrawn = html;
+  if (key) recRail.querySelector(key)?.focus();
+}
+
+/** Start a take of the scene at the reading line, or stop the one recording. */
+async function toggleTake() {
+  const up = obs.state === "on";
+  // The stop comes first, whatever the connection: a take of ours stops also while OBS is out of reach
+  // (the link holds the stop until OBS is back). A take still starting stops once it has started. While
+  // one is stopping, the next take may start: it waits until OBS has stopped. A take whose start OBS
+  // never answered (`maybe`) may be recording, so it is stopped the same way, and so is one OBS took and
+  // has not said it began (`pending`: stopped once OBS has begun it, called off if OBS never does).
+  if (obs.starting || (!obs.stopping && ((obs.recording && (up || obs.take)) || obs.pending || obs.maybe))) {
+    const mine = takeOf.get(obs.starting || obs.take || obs.pending || obs.maybe); // a take waiting on the stop before is the one called off
+    if (mine) mine.stop = true; // read out once OBS has stopped it (the link's ended)
+    const stopped = obs.stop();
+    if (up) {
+      if (await stopped && !mine) {
+        await obs.whenStopped();
+        if (obs.on && !obs.recording) setStatus("OBS stopped recording."); // the link turned off meanwhile leaves OBS as it is: nothing to say
+      }
+      return;
+    }
+    // OBS is out of reach: the light says the stop waits, and the click goes on to look for OBS again.
+    if (obs.stopping) setStatus(`Stopping${mine ? ` ${mine.say}, take ${mine.take}` : ""} once OBS is back.`);
+  }
+  if (obs.state === "lost") { obs.retry(); return; }
+  if (obs.state === "password" || obs.state === "wrong") { askObsPassword(); return; }
+  if (!up) return;
+  const scene = sceneHere();
+  if (!scene) return;
+  const video = videoHere();
+  const take = nextTake(takesBook(), scene.base); // above every take of this folder, also from an older version of the script
+  const name = takeName(scene, take);
+  takeOf.set(name, { say: sceneSay(scene), take, video, base: scene.base, counted: false });
+  const starting = obs.start(name);
+  if (obs.stopping && obs.starting === name) setStatus(`Take ${take} of ${sceneSay(scene)} starts once the take before has stopped.`);
+  const started = await starting;
+  const t = takeOf.get(name);
+  if (!started) {
+    if (!t?.counted) takeOf.delete(name);
+    if (t?.stop && !t.counted) setStatus("Take called off."); // stopped before OBS was asked to record
+    return;
+  }
+  drawRecord(); // "Recording …" is read out by sayTake, once OBS says it records
+}
+
+// Read out once per take, and never from the click alone: that OBS records it (once OBS says so), or
+// that OBS, asked after the usual wait, has not begun it.
+let saidTake = "";
+function sayTake() {
+  const on = obs.recording && obs.take;
+  const late = !on && obs.problem === "start" && obs.pending;
+  const key = on ? `on ${on}` : late ? `late ${late}` : "";
+  if (!key || key === saidTake) return;
+  saidTake = key;
+  const t = takeOf.get(on || late);
+  if (!t || t.stop) return; // a stop was asked meanwhile: its own words follow
+  setStatus(on ? `Recording ${t.say}, take ${t.take}.` : `OBS didn’t start recording ${t.say}, take ${t.take}, yet.`);
+}
+
+// Counted once OBS may have recorded under its name (the link says when): the newest take carries the
+// star until another is chosen, and a reload never reuses the name.
+function countTake(name) {
+  const t = takeOf.get(name);
+  if (!t || t.counted) return;
+  t.counted = true;
+  delete picked[t.base];
+  saveTakes(addTake(takesBook(), t.video, t.base, Date.now(), t.take));
+  drawRecord();
+}
+
+// A take started here has stopped (asked here, in OBS, or found stopped after a reconnect): read out.
+// One OBS took and never began (`recorded` false) was not recorded: it is called off, or OBS gave it up.
+function takeEnded(name, recorded = true) {
+  const t = takeOf.get(name);
+  takeOf.delete(name);
+  drawRecord();
+  if (!t) return;
+  setStatus(recorded ? `Stopped ${t.say}, take ${t.take}.` : t.stop ? "Take called off." : `OBS didn’t start recording ${t.say}, take ${t.take}.`);
+}
+
+// A take started here stops before the reader moves to another scene (one still starting, once it has;
+// one OBS has not begun yet is called off, or stopped once OBS begins it).
+function stopTake() {
+  if (obs.starting || (!obs.stopping && ((obs.recording && obs.take) || obs.pending || obs.maybe))) {
+    const mine = takeOf.get(obs.starting || obs.pending);
+    if (mine) mine.stop = true; // a take OBS never began is then read out as called off
+    obs.stop();
+  }
+}
+
+function starShownTake() {
+  const scene = sceneHere();
+  if (!scene || (obs.state === "on" && (obs.recording || obs.pending || obs.starting))) return; // as the star is drawn
+  const video = videoHere();
+  const book = takesBook();
+  const { take } = takeView(takesFor(book, video, scene.base), picked[scene.base], false, nextTake(book, scene.base));
+  saveTakes(starTake(book, video, scene.base, take));
+  drawRecord();
+  setStatus(`Take ${take} is the best of ${sceneSay(scene)}.`);
+}
+
+function railPress(button) {
+  const i = Number(button.dataset.i);
+  const section = main.querySelectorAll(".section")[i];
+  if (!section) return;
+  stopTake();
+  if (button.dataset.take) picked[sceneOf(scripts.now.sections[i].title).base] = Number(button.dataset.take);
+  if (i !== scripts.now.active) { reading.bring(section); followLine(); }
+  drawRecord();
+}
+
+function askObsPassword() {
+  const settings = $("#settings");
+  if (!settings.matches(":popover-open")) settingsBtn.click();
+  obsPassword.focus();
+}
+
+function setObsOn(on) {
+  obs.turn(prefs.save("obs", on), store.get(STORED.obsPassword) || "");
+}
+
+// The password stays on this device, as typed; an empty box forgets it.
+function setObsPassword(value) {
+  if (value) store.set(STORED.obsPassword, value); else store.del(STORED.obsPassword);
+  if (obs.on) obs.turn(true, value);
 }
 
 function connected() { return mainWin && !mainWin.closed; }
@@ -1036,7 +1334,7 @@ function openScreen(url, name) { return window.open(url, name, mainScreenFeature
 // A dot on the Settings button, and its name, while Follow my voice is on, a main screen is connected
 // or cut off, or CamFrame is connected.
 function updateSettingsBtn() {
-  const on = [voiceOn && "Follow my voice on", connectBtn.dataset.on === "true" && "main screen connected", connectBtn.dataset.on === "cut" && "main screen cut off", camframe.on && camframe.state === "on" && "CamFrame connected"].filter(Boolean);
+  const on = [voiceOn && "Follow my voice on", connectBtn.dataset.on === "true" && "main screen connected", connectBtn.dataset.on === "cut" && "main screen cut off", camframe.on && camframe.state === "on" && "CamFrame connected", obs.on && obs.state === "on" && (obs.recording ? "OBS recording" : "OBS connected")].filter(Boolean);
   if (on.length) settingsBtn.dataset.dot = "on"; else delete settingsBtn.dataset.dot;
   const label = ["Settings", ...on].join(" · ");
   settingsBtn.setAttribute("aria-label", label);
@@ -1559,6 +1857,7 @@ function setLayout(name, keep = true) {
 }
 
 function goSection(delta) {
+  stopTake(); // as the chosen mockup does: the next scene is a new take
   const els = main.querySelectorAll(".section");
   const target = els[Math.min(els.length - 1, Math.max(0, scripts.now.active + delta))];
   if (!target) return;
@@ -1916,6 +2215,29 @@ widthInputs.forEach((input) => input.addEventListener("change", () => setWidth(i
 layoutInputs.forEach((input) => input.addEventListener("change", () => setLayout(input.value)));
 showInputs.forEach((input) => input.addEventListener("change", () => setTextOnly(input.value === "text")));
 camframeBtn.addEventListener("click", () => setCamframeOn(!camframe.on));
+obsBtn.addEventListener("click", () => setObsOn(!obs.on));
+obsPassword.addEventListener("change", () => setObsPassword(obsPassword.value));
+// A tap on the closed strip only opens the rail (the scene that appears under the finger is not pressed);
+// the rail itself keeps focus, so it stays open until the next tap picks a scene or a take, or a tap elsewhere.
+let railOpening = false;
+recRail.addEventListener("pointerdown", (e) => { railOpening = e.pointerType !== "mouse" && !e.target.closest(".rail-go, .rail-take"); });
+recRail.addEventListener("pointercancel", () => { railOpening = false; }); // the touch became a scroll: no click follows
+recRail.addEventListener("click", (e) => {
+  if (railOpening) { railOpening = false; recRail.focus(); return; }
+  const b = e.target.closest(".rail-go, .rail-take");
+  if (b) railPress(b);
+  if (e.detail && recRail.contains(document.activeElement)) document.activeElement.blur(); // see letGo
+});
+// Esc closes the rail a keyboard (or a tap) opened: focus goes to the record light, and the key does nothing else.
+recRail.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || e.metaKey || e.ctrlKey || e.altKey) return;
+  e.preventDefault();
+  e.stopPropagation();
+  recLight.focus();
+  if (recRail.contains(document.activeElement)) document.activeElement.blur(); // no light to go to
+});
+// A held Enter on the light presses it once, as a held R does (the browser repeats a held key's click).
+recLight.addEventListener("keydown", (e) => { if (e.repeat && (e.key === "Enter" || e.key === " ")) e.preventDefault(); });
 $("#settings").addEventListener("toggle", (e) => { if (e.newState === "open") camframe.check(); });
 main.addEventListener("click", (e) => {
   const b = e.target.closest(".link, .mark, .inlink");
@@ -1951,6 +2273,9 @@ document.addEventListener("click", (e) => {
   else if (action === "ask-use") askUse();
   else if (action === "ask-skip") askSkip();
   else if (action === "redo") showLink(Number(button.dataset.s), Number(button.dataset.l), true);
+  else if (action === "rec") toggleTake();
+  else if (action === "rec-star") starShownTake();
+  if (e.detail && button.closest(".rec")) button.blur(); // see letGo
 });
 // One file input for the start screen and the Open menu.
 fileInput.addEventListener("change", () => {
@@ -1982,14 +2307,17 @@ document.addEventListener("keydown", (e) => {
   if (e.target.matches?.("input[type=range]") && k.startsWith("Arrow")) return;
   // The focused reading line keeps its keys (arrows, Page Up/Down, Home, End).
   if (e.target.closest(".line-handle") && LINE_KEYS.includes(k)) return;
-  // Space on these buttons (and the Producer's cue pill, and Use and Skip in its box) presses them; on the control bar and the links it still means auto-scroll.
-  if (k === " " && e.target.closest(".note-row, .pop, .ask-box, .ask-pill, .next-up button")) return;
+  // Space on these buttons (and the Producer's cue pill, Use and Skip in its box, the strip's buttons, the record light, its star and the rail) presses them; on the control bar and the links it still means auto-scroll.
+  // letGo: the record light, its star and the rail let go of focus after a mouse click or a tap, so Space
+  // there presses them only when reached by keyboard, and never stops a take by surprise after a click.
+  if (k === " " && e.target.closest(".note-row, .pop, .ask-box, .ask-pill, .next-up button, .rec, .rec-rail")) return;
   if (k === " ") { e.preventDefault(); toggleAuto(); }
   else if (k === "ArrowRight" || k === "PageDown") { e.preventDefault(); goSection(1); }
   else if (k === "ArrowLeft" || k === "PageUp") { e.preventDefault(); goSection(-1); }
   else if (k === "+" || k === "=") setSize(curSize() + 4);
   else if (k === "-" || k === "_") setSize(curSize() - 4);
   else if (k === "]" || k === "[") setSpeed(speed + (k === "]" ? 10 : -10));
+  else if ((k === "r" || k === "R") && obs.on) { e.preventDefault(); if (!e.repeat) toggleTake(); } // a held key (or a pedal) presses once
   else if (k === "f" || k === "F") {
     if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen?.();
   }
@@ -2006,4 +2334,6 @@ setParaSpace(prefs.read("paraSpace"), false);
 setLayout(prefs.read("layout"), false);
 setTextOnly(prefs.read("textOnly"), false);
 camframe.turn(prefs.read("camframe"));
+obsPassword.value = store.get(STORED.obsPassword) || "";
+setObsOn(prefs.read("obs"));
 route();
