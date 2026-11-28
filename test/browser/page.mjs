@@ -4352,7 +4352,7 @@ export async function run({ browser, base, mode, dist, out }) {
       const row = document.querySelector(".next-up li");
       return { inStrip: Boolean(document.activeElement?.closest(".next-up")), marked: getComputedStyle(row).backgroundColor !== "rgba(0, 0, 0, 0)", ring: getComputedStyle(document.activeElement).outlineStyle };
     });
-    assert.equal((await stripFocus()).marked, false, "Open clicked with the mouse: no focus mark");
+    assert.deepEqual(await stripFocus(), { inStrip: true, marked: false, ring: "none" }, "Open clicked with the mouse: the keyboard stays in the strip, with no focus mark");
     assert.equal(await M.locator("#settings .screen").getAttribute("data-on"), "true", "opened by hand, so the main screen is connected");
     // The main screen is cut off (TOOLS-492) and the browser blocks a new window without a click (pop-ups
     // not allowed): the next page is missed too, and nothing opens by itself.
@@ -4370,6 +4370,12 @@ export async function run({ browser, base, mode, dist, out }) {
     await passEl(M, "[data-cue]", 0, 1);
     await M.waitForTimeout(100);
     assert.equal(await M.evaluate(() => document.activeElement?.matches(".next-up .redo")), true, "the Open button keeps focus while the rows change");
+    await M.keyboard.press("Shift+Tab");
+    await M.keyboard.press("Tab"); // back to Open from the keyboard
+    assert.deepEqual(await M.evaluate(() => {
+      const b = document.activeElement, cs = getComputedStyle(b);
+      return { open: b.matches(".next-up .redo:focus-visible"), ring: cs.outlineStyle, filled: cs.backgroundColor !== getComputedStyle(document.querySelector(".dock-btn")).backgroundColor && cs.backgroundColor !== "rgba(0, 0, 0, 0)" };
+    }), { open: true, ring: "none", filled: true }, "Open focused from the keyboard: a fill, no ring");
     assert.deepEqual((await stripRows(M)).slice(0, 2), ["missed | Page | Patchstack | Open", "done | Camera | face full | "]);
     await M.keyboard.press(" "); // Space on the focused Open button opens the page, as Enter or a click would
     await M.waitForFunction(() => window.__screen.visits.at(-1) === "https://patchstack.com", null, { timeout: 2000 });
@@ -4561,7 +4567,41 @@ export async function run({ browser, base, mode, dist, out }) {
     });
     assert.deepEqual(tinyCard, { first: true, clear: true, inView: true }, "the first row in view, the card clear of the reading line and the line being read");
     await shot(TT, "text-only-tiny-phone");
+    // Shorter still: neither place fits even with one row, so only the first row shows, on screen.
+    await TT.setViewportSize({ width: 320, height: 160 });
+    await TT.waitForTimeout(300);
+    assert.deepEqual(await TT.evaluate(() => {
+      const card = document.querySelector(".next-up").getBoundingClientRect();
+      const rows = [...document.querySelectorAll(".next-up li")].filter((el) => getComputedStyle(el).display !== "none");
+      return { rows: rows.length, first: rows[0] === document.querySelector(".next-up li"), inView: card.top >= 0 && card.bottom <= innerHeight };
+    }), { rows: 1, first: true, inView: true }, "no place fits: only the first row, the card on screen");
     await tinyPhone.close();
+    // A phone with the line high and "Reconnecting to speech…" just above it: the card at the top would
+    // run into the note, so it goes low, clear of the note and of the line being read.
+    const notePhone = await browser.newContext(MOBILE);
+    await notePhone.addInitScript(SPEECH_STUB);
+    await notePhone.addInitScript(() => { localStorage.setItem("prompter-text-only", "on"); localStorage.setItem("prompter-line", "0.12"); localStorage.setItem("prompter-voice-ok", "yes"); });
+    const TN = await notePhone.newPage();
+    watch(TN, "text only phone, speech note");
+    await TN.goto(await makeLink(longRows, "lex", base));
+    await TN.locator(".next-up").waitFor();
+    await viaSettings(TN, ".voice");
+    await TN.waitForFunction(() => window.__speech.started === 1);
+    for (let i = 0; i < 4; i++) {
+      const n = await TN.evaluate(() => { window.__speech.fail("network"); return window.__speech.started; });
+      await TN.waitForFunction((k) => window.__speech.started === k + 1, n, { timeout: 5000 });
+    }
+    await TN.waitForFunction(() => document.querySelector(".toast").dataset.show === "true");
+    await TN.waitForTimeout(500); // the note's fade-in
+    assert.deepEqual(await TN.evaluate(() => {
+      const card = document.querySelector(".next-up").getBoundingClientRect();
+      const note = document.querySelector(".toast").getBoundingClientRect();
+      const y = document.querySelector(".reading-line").getBoundingClientRect().top;
+      const row = parseFloat(getComputedStyle(document.querySelector(".script")).lineHeight);
+      return { noteLow: document.querySelector(".toast").hasAttribute("data-low"), apart: card.bottom <= note.top || card.top >= note.bottom, clear: card.bottom < y || card.top >= y + row };
+    }), { noteLow: false, apart: true, clear: true }, "the note above the line; the card clear of it and of the line being read");
+    await shot(TN, "text-only-phone-speech-note");
+    await notePhone.close();
     // The Producer's cue pill on a phone with the line high: the card never covers the pill or the line,
     // with the pill just above the line, or low above the control bar on a short screen.
     if (mode === "wrangler") {
