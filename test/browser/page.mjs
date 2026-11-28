@@ -2898,6 +2898,9 @@ export async function run({ browser, base, mode, dist, out }) {
   await GW.waitForTimeout(300);
   assert.equal(newWin.url(), "about:blank", "the new main screen waits too");
   assert.match(await newWin.evaluate(() => document.body.textContent), /Allow window placement in the Prompter/, "and says where the ask is");
+  await viaSettings(GW, ".screen"); // Connect pressed again finds that window: still the one wait
+  await GW.waitForTimeout(300);
+  assert.deepEqual([goneCtx.pages().length, newWin.url()], [2, "about:blank"], "no other window, and it still waits");
   await scrollToSection(GW, 2);
   await GW.waitForTimeout(1500); // page C is held now
   await GW.evaluate(() => window.__deny());
@@ -2920,10 +2923,11 @@ export async function run({ browser, base, mode, dist, out }) {
   assert.equal(heldWin.url(), "about:blank", "page A waits");
   await heldWin.close();
   await HW.waitForFunction(() => document.querySelector("#settings .screen").dataset.on === "cut");
-  const [freshWin] = await Promise.all([heldCtx.waitForEvent("page"), scrollToSection(HW, 2)]);
   const freshVisits = [];
-  freshWin.on("framenavigated", (frame) => { if (frame === freshWin.mainFrame() && frame.url() !== "about:blank") freshVisits.push(frame.url()); });
+  heldCtx.on("page", (win) => win.on("framenavigated", (frame) => { if (frame === win.mainFrame() && frame.url() !== "about:blank") freshVisits.push(frame.url()); }));
+  const [freshWin] = await Promise.all([heldCtx.waitForEvent("page"), scrollToSection(HW, 2)]);
   await HW.waitForTimeout(300);
+  assert.deepEqual([freshWin.url(), await HW.locator(".status").textContent()], ["about:blank", ""], "page B waits too, and the status line no longer says cut off");
   await HW.evaluate(() => window.__deny());
   await freshWin.waitForURL(`${base}/fonts/OFL.txt?b=1`);
   await HW.waitForTimeout(800);
