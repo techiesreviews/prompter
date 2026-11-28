@@ -47,10 +47,10 @@ export async function run({ browser, base, mode, out }) {
       if (m.type() === "error" && !/ws:\/\/127\.0\.0\.1:4455|\/api\//.test(m.text() + (m.location()?.url || ""))) errors.push(`record-light console: ${m.text()}`);
     });
   };
-  const open = async (page) => {
+  const open = async (page, script = SCRIPT) => {
     await page.goto(base);
     await page.locator('.empty [data-action="paste"]').click();
-    await page.locator("#paste-text").fill(SCRIPT);
+    await page.locator("#paste-text").fill(script);
     await page.locator('[data-action="open-paste"]').click();
     await page.locator(".section").first().waitFor();
   };
@@ -774,6 +774,81 @@ export async function run({ browser, base, mode, out }) {
     await obs.stop();
   }
   ok("phone: the light fits at the top, nothing scrolls sideways; with a browser that will not keep the take book, two takes still get their own names (take-01, take-02); the light, star, rail scenes and dots are 44px targets; the rail opens by a tap, never by hover, and closes back to its strip once a scene is picked");
+
+  // Text only's "what happens next" strip (TOOLS-491) and the record light never overlap: under 1240px wide
+  // the strip is a card at the top, where the light is, so the card starts below the light while the light
+  // shows (and goes back to the top when the OBS link is off); on a wide screen the strip stays beside the
+  // text, clear of the light at the top centre. Checked idle, recording, and with OBS gone (the light's
+  // longest words), and the link turned on with the card already showing.
+  {
+    const STRIP_SCRIPT = SCRIPT
+      .replace("### **1 · FIRST PART · 01:00**\n\n", "### **1 · FIRST PART · 01:00**\n\n- Docs: https://example.com/docs\n\nThe docs open now.\n[Face small]\nThe camera goes small.\n")
+      .replace("### **2 · SECOND PART · 02:00**\n\n", "### **2 · SECOND PART · 02:00**\n\n[Face full]\nThe camera comes back.\n");
+    const apart = (page) => page.evaluate(() => {
+      const box = (sel) => { const r = document.querySelector(sel).getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; };
+      const shown = (sel) => { const el = document.querySelector(sel); return !el.closest("[hidden]") && getComputedStyle(el).display !== "none"; };
+      const l = box(".rec"), c = box(".next-up");
+      const light = box(".rec-light");
+      return {
+        light: shown(".rec-light"), strip: shown(".next-up"), lightBox: light, stripBox: c,
+        overlap: light.top < c.bottom && light.bottom > c.top && light.left < c.right && light.right > c.left,
+        stripTop: Math.round(c.top), lightBottom: Math.round(l.bottom), fits: document.documentElement.scrollWidth <= innerWidth,
+      };
+    });
+    for (const [where, options, name] of [["a phone (390×844)", MOBILE, "mobile"], ["a narrow laptop window (1024×768)", { viewport: { width: 1024, height: 768 } }, "narrow"], ["a wide screen (1366×900)", DESKTOP, "wide"]]) {
+      obs = await startObsStandin({ port: 4455 });
+      const c = await browser.newContext(options);
+      await c.addInitScript(() => { localStorage.setItem("prompter-text-only", "on"); });
+      const q = await c.newPage();
+      watch(q);
+      try {
+        await open(q, STRIP_SCRIPT);
+        await toSection(q, 1);
+        await q.locator(".next-up").waitFor();
+        const before = await apart(q);
+        assert.equal(before.light, false, `${where}: the OBS link is off, no light`);
+        // The OBS link turned on while the strip already shows.
+        await settings(q);
+        await q.locator("#settings .big-toggle.obs").click();
+        await until(q, () => document.querySelector(".big-toggle.obs").dataset.state === "on");
+        await closeSettings(q);
+        await tagIs(q, "S1 · T1");
+        const narrow = options.viewport.width < 1240;
+        const check = async (state) => {
+          await q.waitForTimeout(150);
+          const a = await apart(q);
+          assert.ok(a.light && a.strip, `${where}, ${state}: the light and the strip both show: ${JSON.stringify(a)}`);
+          assert.equal(a.overlap, false, `${where}, ${state}: the record light and the strip do not overlap: ${JSON.stringify(a)}`);
+          assert.ok(a.fits, `${where}, ${state}: nothing scrolls sideways`);
+          if (narrow) assert.ok(a.stripTop >= a.lightBottom, `${where}, ${state}: the card starts below the light: ${JSON.stringify(a)}`);
+          return a;
+        };
+        await check("idle");
+        await shot(q, `record-light-strip-${name}`);
+        await q.locator(".rec-light").click();
+        await until(q, () => document.querySelector(".rec-light").dataset.state === "recording");
+        await obsUntil(() => obs.record.active, `${where}: the take records`);
+        await check("recording");
+        await q.locator(".rec-light").click();
+        await until(q, () => document.querySelector(".rec-light").dataset.state === "idle");
+        await obs.stop();
+        await until(q, () => /OBS not found|Reconnecting/.test(document.querySelector(".rec-light").textContent), null, 20000);
+        await check("OBS gone");
+        // The link off: the light goes and the card is back at the top (no empty room above it).
+        await settings(q);
+        await q.locator("#settings .big-toggle.obs").click();
+        await closeSettings(q);
+        await q.waitForTimeout(150);
+        const off = await apart(q);
+        assert.equal(off.light, false, `${where}: off, no light`);
+        if (narrow) assert.equal(off.stripTop, before.stripTop, `${where}: off, the card is back where it was: ${JSON.stringify(off)}`);
+      } finally {
+        await c.close();
+        await obs.stop();
+      }
+    }
+    ok("Text only's strip and the record light never overlap: on a phone (390×844) and a narrow laptop window (1024×768) the card starts below the light while it shows (idle, recording, OBS gone, and the link turned on with the card already showing) and goes back to the top when the link is off; on a wide screen (1366×900) the strip stays beside the text, clear of the light");
+  }
 
   // The longest cue the Producer may send (300 characters), on a phone held sideways and on a laptop:
   // its box never covers the record light, so the light still stops the take, and the cue stays open.
