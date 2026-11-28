@@ -72,9 +72,10 @@ test("the window features: full size on that area, else a plain window; never th
 
 test("full screen: the browser says so, or the page fills the whole screen", () => {
   const screen = { screenWidth: 1920, screenHeight: 1080 };
-  assert.equal(isFullScreen({ ...screen, innerWidth: 1920, innerHeight: 1080 }), true, "F11: the page fills the screen");
-  assert.equal(isFullScreen({ ...screen, innerWidth: 1920, innerHeight: 1009 }), false, "a full-size window with a title bar");
-  assert.equal(isFullScreen({ ...screen, innerWidth: 1400, innerHeight: 900 }), false, "a plain window");
+  assert.equal(isFullScreen({ ...screen, innerWidth: 1920, innerHeight: 1080, outerWidth: 1920, outerHeight: 1080 }), true, "F11: the page fills the screen");
+  assert.equal(isFullScreen({ ...screen, innerWidth: 1920, innerHeight: 1009, outerWidth: 1920, outerHeight: 1040 }), false, "a full-size window with a title bar");
+  assert.equal(isFullScreen({ ...screen, innerWidth: 1400, innerHeight: 900, outerWidth: 1400, outerHeight: 971 }), false, "a plain window");
+  assert.equal(isFullScreen({ ...screen, innerWidth: 2400, innerHeight: 1212, outerWidth: 1920, outerHeight: 1040 }), false, "zoomed out to 80 %: the page looks bigger than the screen, the window does not");
   assert.equal(isFullScreen({ ...screen, innerWidth: 1536, innerHeight: 864, displayFullscreen: true }), true, "F11 at 125% zoom: the browser's display mode says so");
   assert.equal(isFullScreen({ ...screen, innerWidth: 1400, innerHeight: 900, fullscreenElement: true }), true, "a page's own full screen");
   assert.equal(isFullScreen({ innerWidth: 0, innerHeight: 0, screenWidth: 0, screenHeight: 0 }), false, "no sizes known: not full screen");

@@ -2622,6 +2622,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await viaSettings(CW, ".screen");
   await CW.waitForTimeout(1200);
   assert.deepEqual([fourthWin.url(), (await screenOf(CW))[0], cutCtx.pages().length, await noteOf()], ["about:blank", "true", 6, ""], "the new window waits with its message, after a second Reconnect too");
+  assert.deepEqual(await fourthWin.evaluate(() => [...document.querySelectorAll("[data-full]")].map((l) => l.textContent)), ["Press F11 for full screen"], "a page held back: the line is there too, once after a second Reconnect");
   assert.match(await fourthWin.locator("[data-note]").textContent(), /Drag this window to your main screen.*The last page \(cut3\.localhost\) was not sent again.*its link button opens it anyway/);
   assert.equal(await CW.locator('[data-shown="true"]').count(), 0, "no link marked as showing");
   assert.match(await CW.locator(".status").textContent(), /^Main screen connected\. The last page \(cut3\.localhost\) was not sent again: its link button opens it\.$/, "read out once");
@@ -2751,12 +2752,24 @@ export async function run({ browser, base, mode, dist, out }) {
   const line = await fullLine(placedWin);
   assert.deepEqual([line.text, line.shown], ["Press F11 for full screen", true], "not full screen: one plain line says how");
   assert.ok(line.size >= 48, `the line is large (${line.size}px)`);
+  await shot(placedWin, "main-screen-f11-desktop");
   await placedWin.setViewportSize({ width: 1920, height: 1080 });
   await placedWin.waitForFunction(() => document.querySelector("[data-full]").hidden, null, { timeout: 3000 });
   assert.equal((await fullLine(placedWin)).shown, false, "full screen (the page fills the screen): the line goes");
   await placedWin.setViewportSize({ width: 1366, height: 900 });
   await placedWin.waitForFunction(() => !document.querySelector("[data-full]").hidden, null, { timeout: 3000 });
   assert.equal((await fullLine(placedWin)).shown, true, "out of full screen again: the line comes back");
+  // The browser's own word for it (a page's full screen, or F11 where it reports it), at any size.
+  await placedWin.evaluate(() => {
+    Object.defineProperty(Document.prototype, "fullscreenElement", { get: () => document.body, configurable: true });
+    document.dispatchEvent(new Event("fullscreenchange"));
+  });
+  assert.equal((await fullLine(placedWin)).shown, false, "the browser says full screen: the line goes");
+  await placedWin.evaluate(() => {
+    delete Document.prototype.fullscreenElement;
+    document.dispatchEvent(new Event("fullscreenchange"));
+  });
+  assert.equal((await fullLine(placedWin)).shown, true, "and comes back when it leaves");
   await placedWin.close();
   await PL.waitForFunction(() => document.querySelector("#settings .screen").dataset.on === "cut");
   const [nextWin] = await Promise.all([placeCtx.waitForEvent("page"), PL.locator('.cut-note [data-action="connect"]').click()]);
@@ -2793,6 +2806,7 @@ export async function run({ browser, base, mode, dist, out }) {
   await SL.waitForTimeout(1200);
   assert.equal(slowWin.url(), "about:blank", "the page waits for the permission's answer");
   assert.deepEqual(await SL.evaluate(() => window.__asked), [true, false], "asked from the click, before the window opens and uses it up");
+  assert.equal(await slowWin.evaluate(() => document.querySelector("[data-full]")?.textContent), "Press F11 for full screen", "the window waiting for the answer has the line too");
   assert.match(await slowWin.evaluate(() => document.querySelector("[data-note]").textContent), /Pages will open here\. Allow window placement in the Prompter to move this window to your main screen\.$/, "the waiting window says where the ask is");
   assert.equal(await SL.evaluate(() => document.hasFocus()), true, "the Prompter comes back to the front, so the ask is not hidden behind the new window");
   await SL.evaluate(() => window.__allow());

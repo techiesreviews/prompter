@@ -81,11 +81,14 @@ export function mainScreenFeatures(area) {
 
 /**
  * Whether a window is full screen, from what its page can see: the browser says so (the
- * `display-mode: fullscreen` media query, which the browser's own F11 full screen matches in Chrome
- * and Edge, also when the page is zoomed; or a page's own full screen element), or the page fills the
- * whole screen, which a window with a title bar or tabs never does.
+ * `display-mode: fullscreen` media query, for the browser's own F11 full screen where the browser
+ * reports it, also when the page is zoomed; or a page's own full screen element), or the page fills
+ * the whole screen, which a window with a title bar or tabs never does. The page's size is in CSS
+ * pixels, which grow when the page is zoomed out, so the window's outer size (which zoom leaves alone)
+ * must fill the screen too.
  */
-export function isFullScreen({ displayFullscreen, fullscreenElement, innerWidth, innerHeight, screenWidth, screenHeight }) {
+export function isFullScreen({ displayFullscreen, fullscreenElement, innerWidth, innerHeight, outerWidth, outerHeight, screenWidth, screenHeight }) {
   if (displayFullscreen || fullscreenElement) return true;
-  return screenWidth > 0 && screenHeight > 0 && innerWidth >= screenWidth && innerHeight >= screenHeight;
+  return screenWidth > 0 && screenHeight > 0 && innerWidth >= screenWidth && innerHeight >= screenHeight
+    && outerWidth >= screenWidth && outerHeight >= screenHeight;
 }
